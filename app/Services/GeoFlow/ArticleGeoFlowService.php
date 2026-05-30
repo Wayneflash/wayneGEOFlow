@@ -4,6 +4,7 @@ namespace App\Services\GeoFlow;
 
 use App\Exceptions\ApiException;
 use App\Models\Article;
+use App\Models\ArticleDistribution;
 use App\Models\ArticleImage;
 use App\Models\ArticleReview;
 use App\Models\Author;
@@ -14,6 +15,8 @@ use Illuminate\Support\Facades\DB;
 
 class ArticleGeoFlowService
 {
+    public function __construct(private readonly DistributionOrchestrator $distributionOrchestrator) {}
+
     public function listArticles(int $page = 1, int $perPage = 20, array $filters = []): array
     {
         $page = max(1, $page);
@@ -83,6 +86,7 @@ class ArticleGeoFlowService
             'is_ai_generated' => $normalized['is_ai_generated'],
             'published_at' => $workflowState['published_at'],
         ]);
+        $this->enqueueDistributionIfPublishable($article);
 
         return $this->getArticle((int) $article->id);
     }
@@ -145,6 +149,10 @@ class ArticleGeoFlowService
         $normalized['updated_at'] = now();
 
         Article::query()->whereKey($articleId)->update($normalized);
+        $article = Article::query()->whereKey($articleId)->first();
+        if ($article) {
+            $this->enqueueDistributionIfPublishable($article, $this->distributionActionForArticle($article));
+        }
 
         return $this->getArticle($articleId);
     }
@@ -194,6 +202,10 @@ class ArticleGeoFlowService
                 'review_note' => trim($reviewNote),
             ]);
         });
+        $articleModel = Article::query()->whereKey($articleId)->first();
+        if ($articleModel) {
+            $this->enqueueDistributionIfPublishable($articleModel, $this->distributionActionForArticle($articleModel));
+        }
 
         return $this->getArticle($articleId);
     }
@@ -218,6 +230,10 @@ class ArticleGeoFlowService
             'published_at' => $workflowState['published_at'],
             'updated_at' => now(),
         ]);
+        $articleModel = Article::query()->whereKey($articleId)->first();
+        if ($articleModel) {
+            $this->enqueueDistributionIfPublishable($articleModel, $this->distributionActionForArticle($articleModel));
+        }
 
         return $this->getArticle($articleId);
     }
@@ -275,6 +291,24 @@ class ArticleGeoFlowService
         $normalized['task_id'] = $this->normalizeNullableReference(Task::class, $data['task_id'] ?? null, 'task_id');
 
         return $normalized;
+    }
+
+    private function enqueueDistributionIfPublishable(Article $article, string $action = 'publish'): void
+    {
+        if (in_array((string) $article->status, ['published', 'private'], true)) {
+            $this->distributionOrchestrator->enqueueForArticle($article, $action);
+        }
+    }
+
+    private function distributionActionForArticle(Article $article): string
+    {
+        return ArticleDistribution::query()
+            ->where('article_id', (int) $article->id)
+            ->where('action', '!=', 'delete')
+            ->where('status', 'synced')
+            ->exists()
+            ? 'update'
+            : 'publish';
     }
 
     /**

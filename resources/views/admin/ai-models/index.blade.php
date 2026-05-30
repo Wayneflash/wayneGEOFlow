@@ -190,11 +190,11 @@
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
                                     <div class="flex items-center gap-3">
-                                        <button type="button" onclick="testModelConnection({{ (int) $model['id'] }}, this)" class="text-emerald-600 hover:text-emerald-900">{{ __('admin.ai_models.test') }}</button>
+                                        <button type="button" onclick="testModelConnection({{ (int) $model['id'] }}, this)" class="inline-flex min-w-14 items-center justify-center gap-1.5 rounded-md px-2 py-1 text-emerald-600 hover:bg-emerald-50 hover:text-emerald-900">{{ __('admin.ai_models.test') }}</button>
                                         <button type="button" onclick='editModel(@json($model, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP))' class="text-blue-600 hover:text-blue-900">{{ __('admin.ai_models.edit') }}</button>
                                         <button type="button" onclick="deleteModel({{ (int) $model['id'] }}, @js($model['name']))" class="text-red-600 hover:text-red-900">{{ __('admin.ai_models.delete') }}</button>
                                     </div>
-                                    <div id="model-test-result-{{ (int) $model['id'] }}" class="mt-2 text-xs whitespace-normal max-w-xs"></div>
+                                    <div id="model-test-result-{{ (int) $model['id'] }}" class="mt-2 text-xs whitespace-normal max-w-xs" role="status" aria-live="polite"></div>
                                 </td>
                             </tr>
                         @endforeach
@@ -328,6 +328,7 @@
             testFailedPrefix: @json(__('admin.ai_models.test_failed_prefix')),
             testNetworkError: @json(__('admin.ai_models.test_network_error')),
         };
+        const MODEL_TEST_TIMEOUT_MS = 60000;
         const UPDATE_URL_TEMPLATE = @json(route('admin.ai-models.update', ['modelId' => '__MODEL_ID__'], false));
         const DELETE_URL_TEMPLATE = @json(route('admin.ai-models.delete', ['modelId' => '__MODEL_ID__'], false));
         const TEST_URL_TEMPLATE = @json(route('admin.ai-models.test', ['modelId' => '__MODEL_ID__'], false));
@@ -404,10 +405,21 @@
         async function testModelConnection(id, button) {
             const resultEl = document.getElementById(`model-test-result-${id}`);
             const originalText = button.textContent;
+            const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
+            const controller = new AbortController();
+            const startedAt = Date.now();
+            const timeout = window.setTimeout(() => controller.abort(), MODEL_TEST_TIMEOUT_MS);
+            const tick = window.setInterval(() => {
+                const seconds = Math.max(1, Math.floor((Date.now() - startedAt) / 1000));
+                button.innerHTML = `<i data-lucide="loader-2" class="h-3.5 w-3.5 animate-spin"></i><span>${AI_MODELS_I18N.testing} ${seconds}s</span>`;
+                window.lucide?.createIcons?.();
+            }, 1000);
             button.disabled = true;
-            button.textContent = AI_MODELS_I18N.testing;
-            button.classList.add('opacity-60', 'cursor-not-allowed');
+            button.innerHTML = `<i data-lucide="loader-2" class="h-3.5 w-3.5 animate-spin"></i><span>${AI_MODELS_I18N.testing}</span>`;
+            button.setAttribute('aria-busy', 'true');
+            button.classList.add('opacity-70', 'cursor-wait');
             setModelTestResult(resultEl, 'neutral', AI_MODELS_I18N.testing);
+            window.lucide?.createIcons?.();
 
             try {
                 const response = await fetch(TEST_URL_TEMPLATE.replace('__MODEL_ID__', String(id)), {
@@ -415,25 +427,62 @@
                     headers: {
                         'Accept': 'application/json',
                         'Content-Type': 'application/json',
-                        'X-CSRF-TOKEN': @json(csrf_token()),
+                        'X-CSRF-TOKEN': csrf,
+                        'X-Requested-With': 'XMLHttpRequest',
                     },
                     body: JSON.stringify({}),
+                    signal: controller.signal,
                 });
-                const data = await response.json().catch(() => ({}));
-                const message = data.message || (response.ok ? AI_MODELS_I18N.testSuccessPrefix : AI_MODELS_I18N.testFailedPrefix);
-                const duration = data.meta && data.meta.duration_ms ? ` · ${data.meta.duration_ms}ms` : '';
+                const data = await parseModelTestResponse(response);
+                const succeeded = data.success === true;
+                const message = data.message || data.error || (succeeded ? AI_MODELS_I18N.testSuccessPrefix : AI_MODELS_I18N.testFailedPrefix);
+                const durationLabel = data.meta && data.meta.duration_ms ? ` · ${data.meta.duration_ms}ms` : '';
                 setModelTestResult(
                     resultEl,
-                    response.ok && data.success ? 'success' : 'failed',
-                    `${response.ok && data.success ? AI_MODELS_I18N.testSuccessPrefix : AI_MODELS_I18N.testFailedPrefix}${message}${duration}`
+                    succeeded ? 'success' : 'failed',
+                    `${succeeded ? AI_MODELS_I18N.testSuccessPrefix : AI_MODELS_I18N.testFailedPrefix}${message}${durationLabel}`
                 );
             } catch (error) {
-                setModelTestResult(resultEl, 'failed', AI_MODELS_I18N.testNetworkError);
+                const message = error?.name === 'AbortError'
+                    ? `${AI_MODELS_I18N.testFailedPrefix}${AI_MODELS_I18N.testNetworkError}`
+                    : AI_MODELS_I18N.testNetworkError;
+                setModelTestResult(resultEl, 'failed', message);
             } finally {
+                window.clearTimeout(timeout);
+                window.clearInterval(tick);
                 button.disabled = false;
                 button.textContent = originalText;
-                button.classList.remove('opacity-60', 'cursor-not-allowed');
+                button.removeAttribute('aria-busy');
+                button.classList.remove('opacity-70', 'cursor-wait');
             }
+        }
+
+        async function parseModelTestResponse(response) {
+            const contentType = response.headers.get('content-type') || '';
+            if (contentType.includes('application/json')) {
+                const data = await response.json().catch(() => ({}));
+                if (response.ok) {
+                    return data;
+                }
+
+                return {
+                    success: false,
+                    message: data.message || data.error || `HTTP ${response.status}`,
+                    meta: data.meta || {http_status: response.status},
+                };
+            }
+
+            const body = await response.text().catch(() => '');
+
+            return {
+                success: false,
+                message: (body || `HTTP ${response.status}`)
+                    .replace(/<[^>]*>/g, ' ')
+                    .replace(/\s+/g, ' ')
+                    .trim()
+                    .slice(0, 240),
+                meta: {http_status: response.status},
+            };
         }
 
         function setModelTestResult(element, state, message) {
@@ -441,11 +490,11 @@
                 return;
             }
             const classes = {
-                neutral: 'text-slate-500',
-                success: 'text-emerald-700',
-                failed: 'text-red-700',
+                neutral: 'border-slate-200 bg-slate-50 text-slate-600',
+                success: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+                failed: 'border-red-200 bg-red-50 text-red-700',
             };
-            element.className = `mt-2 text-xs whitespace-normal max-w-xs ${classes[state] || classes.neutral}`;
+            element.className = `mt-2 max-w-xs rounded-md border px-2 py-1.5 text-xs leading-5 whitespace-normal ${classes[state] || classes.neutral}`;
             element.textContent = message;
         }
 
@@ -460,6 +509,13 @@
             document.getElementById('api_url').value = preset.api_url;
             document.getElementById('model_type').value = preset.model_type;
         }
+
+        window.testModelConnection = testModelConnection;
+        window.showCreateModelModal = showCreateModelModal;
+        window.editModel = editModel;
+        window.closeModelModal = closeModelModal;
+        window.deleteModel = deleteModel;
+        window.fillPreset = fillPreset;
 
         window.addEventListener('click', function (event) {
             const modal = document.getElementById('modelModal');

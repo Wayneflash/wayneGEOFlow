@@ -16,6 +16,7 @@ RUN set -eux; \
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
+        ca-certificates \
         curl \
         git \
         libfreetype6-dev \
@@ -27,6 +28,7 @@ RUN apt-get update \
         libzip-dev \
         postgresql-client \
         unzip \
+    && update-ca-certificates \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-install \
         gd \
@@ -35,8 +37,12 @@ RUN apt-get update \
         pdo_sqlite \
         pcntl \
         zip \
-    && pecl install redis \
+    && curl -fsSL https://github.com/phpredis/phpredis/archive/refs/tags/6.2.0.tar.gz -o /tmp/phpredis.tar.gz \
+    && mkdir -p /usr/src/php/ext/redis \
+    && tar -xzf /tmp/phpredis.tar.gz -C /usr/src/php/ext/redis --strip-components=1 \
+    && docker-php-ext-install redis \
     && docker-php-ext-enable redis \
+    && rm -f /tmp/phpredis.tar.gz \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer

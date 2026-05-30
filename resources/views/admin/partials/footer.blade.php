@@ -1,25 +1,13 @@
 @php
-    $projectGithubUrl = 'https://github.com/yaojingang/GEOFlow';
-    $xProfileUrl = 'https://x.com/yaojingang';
     $appVersion = (string) config('geoflow.app_version', '2.0');
-    $changelogUrl = app()->getLocale() === 'en'
-        ? 'https://github.com/yaojingang/GEOFlow/blob/main/docs/CHANGELOG_en.md'
-        : 'https://github.com/yaojingang/GEOFlow/blob/main/docs/CHANGELOG.md';
 @endphp
-<footer class="bg-white border-t border-gray-200 mt-12">
+<footer class="mt-12 border-t border-slate-200/70 bg-slate-50">
     <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-        <div class="flex flex-col md:flex-row md:flex-wrap justify-center items-center gap-3 md:gap-4 text-sm text-gray-500 text-center">
+        <div class="flex flex-col items-center justify-between gap-3 text-center text-sm text-slate-500 md:flex-row md:text-left">
             <span>{{ __('admin.footer.copyright') }}</span>
-            <span>|</span>
-            <span>{{ __('admin.footer.version', ['version' => $appVersion]) }}</span>
-            <span>|</span>
-            <span class="flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
-                {{ __('admin.footer.author') }}
-                <a href="{{ $xProfileUrl }}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-700 underline-offset-2 hover:underline">{{ __('admin.footer.author_x_profile') }}</a>
-                <a href="{{ $projectGithubUrl }}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-700 underline-offset-2 hover:underline">{{ __('admin.footer.project_github_link') }}</a>
-                <a href="{{ $changelogUrl }}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-700 underline-offset-2 hover:underline">{{ __('admin.footer.changelog_link') }}</a>
-                <span>|</span>
-                <button type="button" data-open-admin-welcome class="text-blue-600 hover:text-blue-700 underline-offset-2 hover:underline">
+            <span class="flex flex-wrap items-center justify-center gap-3">
+                <span class="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600">{{ __('admin.footer.version', ['version' => $appVersion]) }}</span>
+                <button type="button" data-open-admin-welcome class="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700">
                     {{ __('admin.footer.project_intro_link') }}
                 </button>
             </span>

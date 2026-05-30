@@ -23,6 +23,13 @@ elif [ "${COMPOSER_ON_START}" = "true" ]; then
 fi
 
 if [ "${RUN_COMPOSER}" = "true" ]; then
+  mkdir -p storage/framework
+  COMPOSER_LOCK_DIR="storage/framework/.geoflow-composer-install.lock"
+  while ! mkdir "${COMPOSER_LOCK_DIR}" 2>/dev/null; do
+    echo "[entrypoint] waiting for another container to finish composer install"
+    sleep 2
+  done
+  trap 'rmdir "${COMPOSER_LOCK_DIR}" 2>/dev/null || true' EXIT INT TERM
   # Packagist 中国镜像，加速 composer install。
   COMPOSER_PACKAGIST_MIRROR="${COMPOSER_PACKAGIST_MIRROR:-https://mirrors.aliyun.com/composer/}"
   COMPOSER_HOME="${COMPOSER_HOME:-/tmp/composer}"
@@ -39,6 +46,9 @@ if [ "${RUN_COMPOSER}" = "true" ]; then
     composer install --no-interaction --prefer-dist --no-scripts --optimize-autoloader
     COMPOSER_NEED_POST_INSTALL=true
   fi
+
+  rmdir "${COMPOSER_LOCK_DIR}" 2>/dev/null || true
+  trap - EXIT INT TERM
 fi
 
 # 自动初始化 APP_KEY（仅在 .env 里缺失时生成，避免每次重置密钥）
@@ -82,8 +92,17 @@ fi
 
 # 每次容器启动执行迁移（拉代码/换新镜像后默认需要；设为 false 可关闭）
 if [ "${AUTO_MIGRATE:-true}" = "true" ]; then
+  mkdir -p storage/framework
+  MIGRATE_LOCK_DIR="storage/framework/.geoflow-migrate.lock"
+  while ! mkdir "${MIGRATE_LOCK_DIR}" 2>/dev/null; do
+    echo "[entrypoint] waiting for another container to finish database migrations"
+    sleep 2
+  done
+  trap 'rmdir "${MIGRATE_LOCK_DIR}" 2>/dev/null || true' EXIT INT TERM
   echo "[entrypoint] php artisan migrate --force"
   php artisan migrate --force --no-interaction
+  rmdir "${MIGRATE_LOCK_DIR}" 2>/dev/null || true
+  trap - EXIT INT TERM
 fi
 
 # 每次启动是否跑 seed（默认关；仅在你明确要重置演示数据时打开）

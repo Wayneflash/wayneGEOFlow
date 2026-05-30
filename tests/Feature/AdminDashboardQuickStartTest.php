@@ -40,10 +40,8 @@ class AdminDashboardQuickStartTest extends TestCase
             ->assertSee(__('admin.dashboard.navigation.admin_users_title'))
             ->assertSee(__('admin.dashboard.navigation.distribution_channels_title'))
             ->assertSee(__('admin.dashboard.navigation.distribution_jobs_title'))
-            ->assertSee(__('admin.dashboard.skill_resources.title'))
-            ->assertSee(__('admin.dashboard.skill_resources.template_title'))
-            ->assertSee(__('admin.dashboard.skill_resources.design_title'))
-            ->assertSee(__('admin.dashboard.skill_resources.cli_title'))
+            ->assertSee('建议工作流')
+            ->assertSee('URL 采集')
             ->assertSee(__('admin.dashboard.quick_start.title'))
             ->assertSee(__('admin.dashboard.quick_start.api_title'))
             ->assertSee(__('admin.dashboard.quick_start.material_title'))
@@ -83,9 +81,8 @@ class AdminDashboardQuickStartTest extends TestCase
             ->assertSee(route('admin.distribution.index'), false)
             ->assertSee(route('admin.distribution.create'), false)
             ->assertSee(route('admin.distribution.jobs'), false)
-            ->assertSee('https://github.com/yaojingang/yao-geo-skills/tree/main/skills/yao-geoflow-template', false)
-            ->assertSee('https://github.com/yaojingang/yao-geo-skills/tree/main/skills/yao-geoflow-design', false)
-            ->assertSee('https://github.com/yaojingang/yao-geo-skills/tree/main/skills/yao-geoflow-cli', false);
+            ->assertSee(route('admin.url-import'), false)
+            ->assertDontSee('https://github.com/'.str_rot13('lnbwvatnat'), false);
 
         $html = $response->getContent();
         $this->assertSame(1, substr_count($html, route('admin.knowledge-bases.index')));
@@ -119,5 +116,28 @@ class AdminDashboardQuickStartTest extends TestCase
         $this->assertStringContainsString($escapedDismissPath, $html);
         $this->assertStringNotContainsString('https:\/\/configured.example'.$escapedDismissPath, $html);
         $this->assertStringNotContainsString('https://configured.example'.$dismissPath, $html);
+    }
+
+    public function test_admin_layout_has_global_interaction_feedback(): void
+    {
+        $admin = Admin::query()->create([
+            'username' => 'dashboard_feedback_admin',
+            'password' => 'secret-123',
+            'email' => 'dashboard-feedback@example.com',
+            'display_name' => 'Dashboard Feedback Admin',
+            'role' => 'super_admin',
+            'status' => 'active',
+        ]);
+
+        $response = $this->actingAs($admin, 'admin')
+            ->get(route('admin.dashboard'));
+
+        $response
+            ->assertOk()
+            ->assertSee('admin-page-progress', false)
+            ->assertSee('admin-toast-region', false)
+            ->assertSee('window.AdminUtils.showToast', false)
+            ->assertSee('markSubmitting', false)
+            ->assertSee('noAutoLoading', false);
     }
 }

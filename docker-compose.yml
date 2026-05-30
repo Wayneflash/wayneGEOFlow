@@ -64,7 +64,10 @@ services:
     working_dir: /var/www/html
     env_file:
       - ./.env
-    command: ["php", "artisan", "serve", "--host=0.0.0.0", "--port=8080"]
+    environment:
+      COMPOSER_ON_START: "false"
+      PHP_CLI_SERVER_WORKERS: "8"
+    command: ["php", "artisan", "serve", "--host=0.0.0.0", "--port=8080", "--no-reload"]
     ports:
       - "${APP_PORT:-18080}:8080"
     volumes:
@@ -86,6 +89,8 @@ services:
     working_dir: /var/www/html
     env_file:
       - ./.env
+    environment:
+      COMPOSER_ON_START: "false"
     command: ["php", "artisan", "queue:work", "redis", "--queue=geoflow,distribution,default", "--sleep=1", "--tries=1", "--timeout=300"]
     volumes:
       - ./:/var/www/html
@@ -106,6 +111,8 @@ services:
     working_dir: /var/www/html
     env_file:
       - ./.env
+    environment:
+      COMPOSER_ON_START: "false"
     command: ["php", "artisan", "schedule:work"]
     volumes:
       - ./:/var/www/html
@@ -126,6 +133,8 @@ services:
     working_dir: /var/www/html
     env_file:
       - ./.env
+    environment:
+      COMPOSER_ON_START: "false"
     command: ["php", "artisan", "reverb:start", "--host=0.0.0.0", "--port=8080"]
     ports:
       - "${REVERB_EXPOSE_PORT:-18081}:8080"

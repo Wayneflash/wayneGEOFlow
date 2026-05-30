@@ -608,7 +608,7 @@ class KnowledgeChunkSyncService
 
     private function semanticChunkingSystemPrompt(): string
     {
-        return 'You are GEOFlow\'s knowledge-base semantic chunk planner. You only group original block indexes into chunks. Do not rewrite, summarize, translate, add facts, or return source text. Output strict JSON only.';
+        return 'You are GEOFlow\'s knowledge-base semantic chunk planner for GEO/RAG retrieval. You only group original block indexes into answer-ready knowledge chunks. Do not rewrite, summarize, translate, add facts, or return source text. Output strict JSON only.';
     }
 
     /**
@@ -629,8 +629,8 @@ class KnowledgeChunkSyncService
             ."Requirements:\n"
             ."1. Every block index must appear exactly once.\n"
             ."2. Keep block indexes in original ascending order; never reorder, skip, or duplicate blocks.\n"
-            ."3. Merge adjacent blocks when they are semantically continuous; split at heading, topic, list, or table boundaries when useful.\n"
-            ."4. Return only a concise chunk title and block_indexes. Do not include source text, summaries, explanations, Markdown fences, or comments.\n"
+            ."3. Merge adjacent blocks when they describe the same entity, capability, scenario, limitation, or evidence chain; split at heading, topic, list, table, entity, scenario, or boundary changes when useful for retrieval.\n"
+            ."4. Return only a concise chunk title and block_indexes. The title should name the entity/topic and retrieval intent, not a generic heading. Do not include source text, summaries, explanations, Markdown fences, or comments.\n"
             ."5. Output strict JSON only with this schema: {\"chunks\":[{\"title\":\"...\",\"block_indexes\":[0,1]}]}.\n\n"
             ."blocks:\n".json_encode($blockPayload, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
     }

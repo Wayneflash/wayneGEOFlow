@@ -185,8 +185,12 @@ final class OpenAiRuntimeProvider
     public static function normalizeGeneratedText(string $content): string
     {
         $trimmed = trim($content);
-        if ($trimmed === '' || ! self::looksLikeSseCompletionPayload($trimmed)) {
-            return $trimmed;
+        if ($trimmed === '') {
+            return '';
+        }
+
+        if (! self::looksLikeSseCompletionPayload($trimmed)) {
+            return self::sanitizeGeneratedText($trimmed);
         }
 
         $segments = [];
@@ -237,7 +241,7 @@ final class OpenAiRuntimeProvider
             }
         }
 
-        return trim(implode('', array_filter($segments, static fn (string $segment): bool => $segment !== '')));
+        return self::sanitizeGeneratedText(trim(implode('', array_filter($segments, static fn (string $segment): bool => $segment !== ''))));
     }
 
     public static function looksLikeSseCompletionPayload(string $content): bool
@@ -304,5 +308,32 @@ final class OpenAiRuntimeProvider
         }
 
         return $text;
+    }
+
+    private static function sanitizeGeneratedText(string $content): string
+    {
+        $content = trim(preg_replace('/^\xEF\xBB\xBF/', '', $content) ?? $content);
+        if ($content === '') {
+            return '';
+        }
+
+        $content = preg_replace('/<(think|thinking|reasoning|analysis)\b[^>]*>.*?<\/\1>/isu', '', $content) ?? $content;
+        $content = preg_replace('/^\s*(?:思考过程|推理过程|分析过程|我的思考|Reasoning|Analysis)\s*[:：].*?(?=(?:\R\s*)?(?:#{1,6}\s+|最终文章|文章正文|正文\s*[:：]|以下是))/isu', '', $content) ?? $content;
+        $content = trim($content);
+
+        if (preg_match('/^```(?:markdown|md|text)?\s*(.*?)\s*```$/su', $content, $matches) === 1) {
+            $content = trim((string) ($matches[1] ?? $content));
+        }
+
+        $leadInPatterns = [
+            '/^(?:最终文章|文章正文|正文|最终答案|输出结果|Final article|Final answer)\s*[:：]\s*/iu',
+            '/^以下是(?:按要求生成的)?(?:最终)?(?:文章正文|Markdown文章|文章|内容)[:：]?\s*/u',
+        ];
+
+        foreach ($leadInPatterns as $pattern) {
+            $content = trim(preg_replace($pattern, '', $content) ?? $content);
+        }
+
+        return $content;
     }
 }

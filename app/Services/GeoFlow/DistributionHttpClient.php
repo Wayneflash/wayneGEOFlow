@@ -88,7 +88,7 @@ class DistributionHttpClient
         $channel->loadMissing('activeSecret');
         $body = '{}';
         $path = '/geoflow-agent/v1/health';
-        $request = Http::timeout(10)->acceptJson();
+        $request = Http::connectTimeout(5)->timeout(10)->acceptJson();
         if ($channel->activeSecret) {
             $request = $request->withHeaders($this->signingService->headers(
                 $channel->activeSecret,
@@ -183,7 +183,8 @@ class DistributionHttpClient
 
     private function postSignedJson(DistributionChannelSecret $secret, string $endpoint, string $path, string $body, string $event, string $idempotencyKey, int $timeout): Response
     {
-        return Http::timeout($timeout)
+        return Http::connectTimeout(8)
+            ->timeout($timeout)
             ->withHeaders($this->signingService->headers(
                 $secret,
                 'POST',

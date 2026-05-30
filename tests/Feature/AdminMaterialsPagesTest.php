@@ -611,6 +611,11 @@ class AdminMaterialsPagesTest extends TestCase
         $this->assertNotContains('查看详情', $result['analysis']['keywords'] ?? []);
         $this->assertContains('AI生成标题一', $result['analysis']['titles'] ?? []);
         $this->assertArrayNotHasKey('images', $result['analysis'] ?? []);
+
+        Http::assertSent(fn ($request): bool => $request->url() === 'https://ai.test/v1/chat/completions'
+            && str_contains(json_encode($request->data(), JSON_UNESCAPED_UNICODE), 'entity_relations'));
+        Http::assertSent(fn ($request): bool => $request->url() === 'https://ai.test/v1/chat/completions'
+            && str_contains(json_encode($request->data(), JSON_UNESCAPED_UNICODE), '实体 - 属性 - 证据'));
     }
 
     public function test_url_import_accepts_ai_json_wrapped_in_markdown_or_reasoning_text(): void

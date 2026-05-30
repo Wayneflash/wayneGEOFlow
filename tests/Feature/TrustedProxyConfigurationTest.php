@@ -21,6 +21,7 @@ class TrustedProxyConfigurationTest extends TestCase
         ])
             ->assertOk()
             ->assertSee('action="'.$expectedLoginUrl.'"', false)
-            ->assertSee('src="https://geo.example.com/docs/js/tailwindcss.play-cdn.js"', false);
+            ->assertSee('href="https://geo.example.com/docs/build/assets/app-', false)
+            ->assertSee('src="https://geo.example.com/docs/build/assets/app-', false);
     }
 }

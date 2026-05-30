@@ -101,12 +101,12 @@ class TitleAiGenerationService
         $styleDescription = $styleMap[$style] ?? '专业严谨的';
         $keywordsText = implode('、', $keywords);
 
-        $systemPrompt = "你是一个专业的内容标题生成专家。请根据提供的关键词生成{$styleDescription}文章标题。";
+        $systemPrompt = '你是面向商业内容增长、GEO/SEO 检索和 AI 答案引擎引用场景的标题编辑。只输出可入库标题，不输出思考过程、解释或无关文本。';
         $userPrompt = "请基于以下关键词生成 {$count} 个{$styleDescription}文章标题：\n\n关键词：{$keywordsText}\n\n";
         if ($customPrompt !== '') {
             $userPrompt .= "额外要求：{$customPrompt}\n\n";
         }
-        $userPrompt .= "要求：\n1. 每个标题独占一行\n2. 标题要有吸引力和可读性\n3. 适合搜索引擎优化\n4. 不要添加序号或其他标记\n5. 直接输出标题内容";
+        $userPrompt .= "要求：\n1. 优先返回 JSON：{\"titles\":[\"标题1\",\"标题2\"]}\n2. 标题要清晰、可信、可点击，适合搜索引擎和 AI 答案引用\n3. 标题组合尽量覆盖定义解释、对比选型、实施步骤、适用场景、风险边界、FAQ 等 GEO 意图\n4. 每个标题只聚焦一个明确搜索意图，避免同质化、空泛词和纯营销口号\n5. 不要标题党，不虚构数据、年份、价格、排名或绝对化承诺\n6. 不要添加思考过程、解释、Markdown 代码块或其他标记\n7. 每个标题尽量 16-32 个中文字符，并自然包含关键词或其同义表达";
 
         try {
             $response = agent($systemPrompt)->prompt(
@@ -140,10 +140,23 @@ class TitleAiGenerationService
      */
     private function parseGeneratedTitles(string $content): array
     {
+        $content = OpenAiRuntimeProvider::normalizeGeneratedText($content);
+        foreach ($this->jsonCandidates($content) as $candidate) {
+            $decoded = json_decode($candidate, true);
+            if (! is_array($decoded)) {
+                continue;
+            }
+
+            $titles = $this->titlesFromDecodedJson($decoded);
+            if ($titles !== []) {
+                return $titles;
+            }
+        }
+
+        $content = preg_replace('/```(?:json|markdown|md|text)?\s*|\s*```/iu', '', $content) ?? $content;
         $titles = [];
         foreach (preg_split('/\R/u', $content) ?: [] as $line) {
-            $title = preg_replace('/^\d+[\.\)\-、\s]*/u', '', trim($line));
-            $title = trim((string) $title);
+            $title = $this->normalizeTitleLine((string) $line);
             if ($title === '') {
                 continue;
             }
@@ -151,6 +164,72 @@ class TitleAiGenerationService
         }
 
         return array_values(array_unique($titles));
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function jsonCandidates(string $content): array
+    {
+        $content = trim($content);
+        if ($content === '') {
+            return [];
+        }
+
+        $candidates = [$content];
+        if (preg_match('/```(?:json)?\s*(.*?)```/isu', $content, $matches) === 1) {
+            $candidates[] = trim((string) ($matches[1] ?? ''));
+        }
+
+        foreach ([['{', '}'], ['[', ']']] as [$open, $close]) {
+            $start = strpos($content, $open);
+            $end = strrpos($content, $close);
+            if ($start !== false && $end !== false && $end > $start) {
+                $candidates[] = substr($content, $start, $end - $start + 1);
+            }
+        }
+
+        return array_values(array_unique(array_filter($candidates, static fn (string $candidate): bool => trim($candidate) !== '')));
+    }
+
+    /**
+     * @param  array<mixed>  $decoded
+     * @return list<string>
+     */
+    private function titlesFromDecodedJson(array $decoded): array
+    {
+        $items = $decoded['titles'] ?? $decoded['data'] ?? $decoded;
+        if (! is_array($items)) {
+            return [];
+        }
+
+        $titles = [];
+        foreach ($items as $item) {
+            if (is_array($item)) {
+                $item = $item['title'] ?? $item['name'] ?? '';
+            }
+
+            $title = $this->normalizeTitleLine((string) $item);
+            if ($title !== '') {
+                $titles[] = $title;
+            }
+        }
+
+        return array_values(array_unique($titles));
+    }
+
+    private function normalizeTitleLine(string $line): string
+    {
+        $title = trim($line);
+        $title = preg_replace('/^\s*[-*•]?\s*\d+[\.\)\-、\s]*/u', '', $title) ?? $title;
+        $title = preg_replace('/^(?:标题|title)\s*[\d一二三四五六七八九十]*\s*[:：]\s*/iu', '', $title) ?? $title;
+        $title = trim($title, " \t\n\r\0\x0B\"'“”‘’，,。");
+
+        if ($title === '' || preg_match('/^(?:titles?|解释|说明|以下是)/iu', $title) === 1) {
+            return '';
+        }
+
+        return $title;
     }
 
     /**
@@ -173,9 +252,9 @@ class TitleAiGenerationService
                 '{keyword}行业发展趋势报告',
             ],
             'attractive' => [
-                '你绝对不知道的{keyword}秘密',
-                '揭秘{keyword}背后的故事',
-                '{keyword}让人意想不到的用途',
+                '{keyword}为什么成为企业关注的核心问题',
+                '{keyword}有哪些容易被忽视的选择标准',
+                '{keyword}如何影响业务增长和运营效率',
             ],
             'seo' => [
                 '{keyword}完整指南：从入门到精通',
@@ -183,9 +262,9 @@ class TitleAiGenerationService
                 '如何选择最适合的{keyword}方案',
             ],
             'creative' => [
-                '重新定义{keyword}的可能性',
-                '如果{keyword}会说话，它会告诉你什么？',
-                '当{keyword}遇上创新思维',
+                '从业务场景重新理解{keyword}',
+                '{keyword}的下一步机会在哪里？',
+                '{keyword}如何连接用户需求与业务结果',
             ],
             'question' => [
                 '{keyword}真的有用吗？',

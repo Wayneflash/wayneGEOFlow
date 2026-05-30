@@ -96,6 +96,9 @@ class AdminTasksPageTest extends TestCase
             ->assertSee('data-task-form-shell', false)
             ->assertSee('xl:grid-cols-12', false)
             ->assertSee('lg:grid-cols-3', false)
+            ->assertSee('showFormError', false)
+            ->assertSee('AdminUtils.showToast', false)
+            ->assertDontSee('alert(', false)
             ->assertDontSee('max-w-4xl mx-auto', false);
 
         $this->actingAs($admin, 'admin')
@@ -270,6 +273,27 @@ class AdminTasksPageTest extends TestCase
             ->assertSee('id="batch-btn-'.(int) $pausedTask->id.'"', false)
             ->assertSee('data-batch-action="start"', false)
             ->assertSee('text-green-600 hover:text-green-800 hover:bg-green-50', false);
+    }
+
+    public function test_task_realtime_auth_endpoint_is_same_origin_relative(): void
+    {
+        config(['app.url' => 'https://configured.example']);
+
+        $admin = Admin::query()->create([
+            'username' => 'tasks_realtime_auth_admin',
+            'password' => 'secret-123',
+            'email' => 'tasks-realtime-auth@example.com',
+            'display_name' => 'Tasks Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+
+        $response = $this->actingAs($admin, 'admin')
+            ->get(route('admin.tasks.index'));
+
+        $response->assertOk()
+            ->assertSee("authEndpoint: '\\/broadcasting\\/auth'", false)
+            ->assertDontSee('https://configured.example/broadcasting/auth', false);
     }
 
     public function test_task_list_shows_distribution_failure_summary(): void

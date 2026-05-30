@@ -1554,6 +1554,83 @@ class AdminDistributionPageTest extends TestCase
         Queue::assertPushed(ProcessArticleDistributionJob::class);
     }
 
+    public function test_synced_article_edit_is_enqueued_as_remote_update(): void
+    {
+        Queue::fake();
+
+        $fixtures = $this->taskFixtures();
+        $channel = DistributionChannel::query()->create([
+            'name' => 'Synced Target',
+            'domain' => 'example.com',
+            'endpoint_url' => 'https://example.com',
+            'status' => 'active',
+        ]);
+        $task = Task::query()->create([
+            'name' => 'Synced Task',
+            'title_library_id' => $fixtures['title_library']->id,
+            'prompt_id' => $fixtures['prompt']->id,
+            'ai_model_id' => $fixtures['ai_model']->id,
+            'status' => 'active',
+            'schedule_enabled' => 1,
+            'publish_interval' => 3600,
+            'draft_limit' => 5,
+            'article_limit' => 10,
+        ]);
+        $task->distributionChannels()->sync([(int) $channel->id]);
+        $article = Article::query()->create([
+            'title' => 'Synced Article',
+            'slug' => 'synced-article-edit',
+            'excerpt' => 'Old excerpt',
+            'content' => 'Old content',
+            'category_id' => $fixtures['category']->id,
+            'author_id' => $fixtures['author']->id,
+            'task_id' => (int) $task->id,
+            'status' => 'published',
+            'review_status' => 'approved',
+            'published_at' => now(),
+        ]);
+        ArticleDistribution::query()->create([
+            'article_id' => (int) $article->id,
+            'distribution_channel_id' => (int) $channel->id,
+            'action' => 'publish',
+            'status' => 'synced',
+            'remote_id' => '123',
+            'remote_url' => 'https://example.com/synced-article-edit',
+            'remote_meta' => ['wordpress_post_id' => 123],
+            'idempotency_key' => 'article-'.$article->id.'-channel-'.$channel->id.'-publish-v1',
+        ]);
+
+        $this->actingAs($this->admin(), 'admin')
+            ->put(route('admin.articles.update', ['articleId' => (int) $article->id]), [
+                'title' => 'Synced Article',
+                'excerpt' => 'New excerpt',
+                'content' => 'New content',
+                'keywords' => '',
+                'meta_description' => '',
+                'category_id' => (string) $fixtures['category']->id,
+                'author_id' => (string) $fixtures['author']->id,
+                'status' => 'published',
+                'review_status' => 'approved',
+            ])
+            ->assertRedirect(route('admin.articles.edit', ['articleId' => (int) $article->id]));
+
+        $this->assertDatabaseHas('article_distributions', [
+            'article_id' => (int) $article->id,
+            'distribution_channel_id' => (int) $channel->id,
+            'action' => 'update',
+            'status' => 'queued',
+            'idempotency_key' => 'article-'.$article->id.'-channel-'.$channel->id.'-update-v1',
+        ]);
+        $updateDistribution = ArticleDistribution::query()
+            ->where('article_id', (int) $article->id)
+            ->where('distribution_channel_id', (int) $channel->id)
+            ->where('action', 'update')
+            ->firstOrFail();
+        $this->assertSame('123', (string) $updateDistribution->remote_id);
+        $this->assertSame(123, (int) ($updateDistribution->remote_meta['wordpress_post_id'] ?? 0));
+        Queue::assertPushed(ProcessArticleDistributionJob::class);
+    }
+
     public function test_distribution_scope_controls_remote_queue_visibility(): void
     {
         Queue::fake();

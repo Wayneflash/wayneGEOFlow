@@ -16,7 +16,7 @@ final class ArticleHtmlPresenter
      */
     public static function markdownToHtml(string $markdown): string
     {
-        $markdown = self::normalizeMarkdownImages(trim($markdown));
+        $markdown = self::removeThematicBreaks(self::normalizeMarkdownImages(trim($markdown)));
         if ($markdown === '') {
             return '';
         }
@@ -87,6 +87,11 @@ final class ArticleHtmlPresenter
             },
             $markdown
         ) ?? $markdown;
+    }
+
+    private static function removeThematicBreaks(string $markdown): string
+    {
+        return preg_replace('/^\s{0,3}(?:-{3,}|\*{3,}|_{3,})\s*$/mu', '', $markdown) ?? $markdown;
     }
 
     private static function decorateRenderedHtml(string $html): string

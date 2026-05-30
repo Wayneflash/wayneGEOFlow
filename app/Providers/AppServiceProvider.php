@@ -23,6 +23,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        $this->app->singleton(AdminUpdateMetadataService::class);
+        $this->app->singleton(AdminWelcomeModalService::class);
         $this->app->singleton(JobQueueService::class);
         $this->app->singleton(HorizonMetricsAdapter::class);
         $this->app->singleton(TaskMonitoringQueryService::class);
@@ -47,7 +49,9 @@ class AppServiceProvider extends ServiceProvider
             );
             $view->with(
                 'adminUpdateNotificationPayload',
-                $admin instanceof Admin ? app(AdminUpdateMetadataService::class)->buildNotificationPayload() : null
+                $admin instanceof Admin && app(AdminUpdateMetadataService::class)->isEnabled()
+                    ? app(AdminUpdateMetadataService::class)->buildNotificationPayload()
+                    : null
             );
         });
     }

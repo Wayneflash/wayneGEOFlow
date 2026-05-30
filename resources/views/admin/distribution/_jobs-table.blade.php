@@ -123,6 +123,9 @@
                         button.classList.remove('opacity-50', 'cursor-not-allowed');
                         button.textContent = @js(__('admin.distribution.button.delete_remote_article'));
                     }
+                    if (window.AdminUtils && typeof window.AdminUtils.showToast === 'function') {
+                        window.AdminUtils.showToast(error?.message || @js(__('admin.distribution.message.remote_article_delete_failed', ['message' => ''])), 'error');
+                    }
                     console.error(error);
                 }
             });

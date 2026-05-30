@@ -13,21 +13,21 @@
         ? ($updatePayload['summary_en'] ?? '')
         : ($updatePayload['summary_zh'] ?? ''));
     $changelogLinks = is_array($updateLinks['changelog'] ?? null) ? $updateLinks['changelog'] : [];
-    $notificationChangelogUrl = (string) ($changelogLinks[$localeForChangelog] ?? $changelogLinks['zh-CN'] ?? 'https://github.com/yaojingang/GEOFlow/blob/main/docs/CHANGELOG.md');
-    $notificationGithubUrl = (string) ($updateLinks['github'] ?? 'https://github.com/yaojingang/GEOFlow');
+    $notificationChangelogUrl = (string) ($changelogLinks[$localeForChangelog] ?? $changelogLinks['zh-CN'] ?? '');
+    $notificationGithubUrl = (string) ($updateLinks['github'] ?? '');
     $notificationStatus = (string) ($updateState['status'] ?? 'disabled');
     $menu = [
-        'dashboard' => ['route' => 'admin.dashboard', 'name' => __('admin.nav.dashboard')],
-        'analytics' => ['route' => 'admin.analytics', 'name' => __('admin.nav.analytics')],
-        'tasks' => ['route' => 'admin.tasks.index', 'name' => __('admin.nav.tasks')],
-        'distribution' => ['route' => 'admin.distribution.index', 'name' => __('admin.nav.distribution')],
-        'articles' => ['route' => 'admin.articles.index', 'name' => __('admin.nav.articles')],
-        'materials' => ['route' => 'admin.materials.index', 'name' => __('admin.nav.materials')],
-        'ai_config' => ['route' => 'admin.ai.configurator', 'name' => __('admin.nav.ai_config')],
-        'site_settings' => ['route' => 'admin.site-settings.index', 'name' => __('admin.nav.site_settings')],
+        'dashboard' => ['route' => 'admin.dashboard', 'name' => __('admin.nav.dashboard'), 'icon' => 'layout-dashboard'],
+        'analytics' => ['route' => 'admin.analytics', 'name' => __('admin.nav.analytics'), 'icon' => 'chart-no-axes-combined'],
+        'tasks' => ['route' => 'admin.tasks.index', 'name' => __('admin.nav.tasks'), 'icon' => 'workflow'],
+        'distribution' => ['route' => 'admin.distribution.index', 'name' => __('admin.nav.distribution'), 'icon' => 'send'],
+        'articles' => ['route' => 'admin.articles.index', 'name' => __('admin.nav.articles'), 'icon' => 'file-text'],
+        'materials' => ['route' => 'admin.materials.index', 'name' => __('admin.nav.materials'), 'icon' => 'database'],
+        'ai_config' => ['route' => 'admin.ai.configurator', 'name' => __('admin.nav.ai_config'), 'icon' => 'bot'],
+        'site_settings' => ['route' => 'admin.site-settings.index', 'name' => __('admin.nav.site_settings'), 'icon' => 'settings'],
     ];
     if ($isSuperAdmin) {
-        $menu['admin_users'] = ['route' => 'admin.admin-users.index', 'name' => __('admin.nav.admin_users')];
+        $menu['admin_users'] = ['route' => 'admin.admin-users.index', 'name' => __('admin.nav.admin_users'), 'icon' => 'shield-user'];
     }
     $subMap = [
         'admin.analytics' => 'analytics',
@@ -104,15 +104,21 @@
         $resolvedActive = $subMap[$routeName];
     }
 @endphp
-<nav class="bg-white shadow-sm border-b">
+<nav class="sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 shadow-sm backdrop-blur">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="flex h-16 items-center gap-3 lg:gap-4 min-w-0">
-            <a href="{{ route('admin.dashboard') }}" class="shrink-0 text-lg sm:text-xl font-semibold text-gray-900">{{ $adminBrandName }}</a>
+            <a href="{{ route('admin.dashboard') }}" class="group flex shrink-0 items-center gap-3">
+                <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-950 text-white shadow-sm">
+                    <i data-lucide="sparkles" class="h-4 w-4"></i>
+                </span>
+                <span class="hidden text-base font-semibold tracking-tight text-slate-950 sm:block">{{ $adminBrandName }}</span>
+            </a>
             <nav class="hidden md:flex flex-1 min-w-0 items-center">
-                <div class="flex w-full min-w-0 items-center gap-3 lg:gap-5 overflow-x-auto overscroll-x-contain py-2 -my-2 [scrollbar-width:thin]">
+                <div class="flex w-full min-w-0 items-center gap-1 overflow-x-auto overscroll-x-contain rounded-full bg-slate-100/80 p-1 [scrollbar-width:none]">
                     @foreach ($menu as $key => $item)
                         <a href="{{ route($item['route']) }}"
-                           class="@if($resolvedActive === $key) text-blue-600 font-medium @else text-gray-500 hover:text-gray-700 @endif shrink-0 whitespace-nowrap text-[15px] transition-colors duration-200">
+                           class="@if($resolvedActive === $key) bg-white text-blue-700 shadow-sm ring-1 ring-slate-200 @else text-slate-600 hover:bg-white/70 hover:text-slate-950 @endif inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-2 text-sm font-medium transition">
+                            <i data-lucide="{{ $item['icon'] ?? 'circle' }}" class="h-4 w-4"></i>
                             {{ $item['name'] }}
                         </a>
                     @endforeach
@@ -120,7 +126,7 @@
             </nav>
             <div class="flex shrink-0 items-center gap-2 sm:gap-3 ml-auto">
                 <div class="relative">
-                    <button onclick="toggleAdminNotifications()" class="relative rounded-full p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors duration-200" type="button" aria-label="{{ __('admin.header.notifications.label') }}" title="{{ __('admin.header.notifications.label') }}">
+                    <button onclick="toggleAdminNotifications()" class="relative rounded-full border border-slate-200 bg-white p-2 text-slate-500 shadow-sm hover:bg-slate-50 hover:text-slate-700 transition" type="button" aria-label="{{ __('admin.header.notifications.label') }}" title="{{ __('admin.header.notifications.label') }}">
                         <i data-lucide="bell" class="w-5 h-5"></i>
                         @if($hasVersionUpdate)
                             <span data-update-indicator class="absolute right-1.5 top-1.5 h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white"></span>
@@ -167,14 +173,20 @@
                                 @endif
                             </div>
 
-                            <div class="mt-4 flex flex-wrap gap-2">
-                                <a href="{{ $notificationChangelogUrl }}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center rounded-lg bg-blue-600 px-3 py-2 text-xs font-medium text-white hover:bg-blue-700">
-                                    {{ __('admin.header.notifications.view_changelog') }}
-                                </a>
-                                <a href="{{ $notificationGithubUrl }}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50">
-                                    {{ __('admin.header.notifications.open_github') }}
-                                </a>
-                            </div>
+                            @if($notificationChangelogUrl !== '' || $notificationGithubUrl !== '')
+                                <div class="mt-4 flex flex-wrap gap-2">
+                                    @if($notificationChangelogUrl !== '')
+                                        <a href="{{ $notificationChangelogUrl }}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center rounded-lg bg-blue-600 px-3 py-2 text-xs font-medium text-white hover:bg-blue-700">
+                                            {{ __('admin.header.notifications.view_changelog') }}
+                                        </a>
+                                    @endif
+                                    @if($notificationGithubUrl !== '')
+                                        <a href="{{ $notificationGithubUrl }}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50">
+                                            {{ __('admin.header.notifications.open_github') }}
+                                        </a>
+                                    @endif
+                                </div>
+                            @endif
                         </div>
                     </div>
                 </div>
@@ -193,14 +205,14 @@
                     </select>
                 </div>
                 <div class="relative">
-                    <button onclick="toggleUserMenu()" class="flex items-center space-x-1 text-sm text-gray-600 hover:text-gray-900 transition-colors duration-200" type="button">
-                        <div class="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                            <i data-lucide="user" class="w-4 h-4 text-blue-600"></i>
+                    <button onclick="toggleUserMenu()" class="flex items-center gap-1 rounded-full border border-slate-200 bg-white p-1 pr-2 text-sm text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950 transition" type="button">
+                        <div class="w-8 h-8 bg-blue-50 rounded-full flex items-center justify-center">
+                            <i data-lucide="user" class="w-4 h-4 text-blue-700"></i>
                         </div>
                         <i data-lucide="chevron-down" class="w-4 h-4"></i>
                     </button>
 
-                    <div id="user-menu" class="hidden absolute right-0 mt-2 w-56 bg-white rounded-md shadow-lg py-1 z-50">
+                    <div id="user-menu" class="hidden absolute right-0 mt-3 w-60 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-xl z-50">
                         <div class="px-4 py-2 border-b border-gray-100">
                             <div class="text-sm text-gray-700">{{ __('admin.header.welcome', ['name' => $currentAdmin->username ?? '']) }}</div>
                             <div class="text-xs text-gray-400">{{ $adminRoleLabel }}</div>
@@ -242,10 +254,11 @@
     </div>
 
     <div id="mobile-menu" class="hidden md:hidden">
-        <div class="px-2 pt-2 pb-3 space-y-1 sm:px-3 bg-gray-50 border-t">
+        <div class="grid gap-1 border-t border-slate-200 bg-white px-3 py-3 shadow-lg">
             @foreach ($menu as $key => $item)
                 <a href="{{ route($item['route']) }}"
-                   class="@if($resolvedActive === $key) bg-blue-100 text-blue-600 @else text-gray-600 hover:bg-gray-100 @endif block px-3 py-2 rounded-md text-base font-medium transition-colors duration-200">
+                   class="@if($resolvedActive === $key) bg-blue-50 text-blue-700 @else text-slate-600 hover:bg-slate-50 @endif flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition">
+                    <i data-lucide="{{ $item['icon'] ?? 'circle' }}" class="h-4 w-4"></i>
                     {{ $item['name'] }}
                 </a>
             @endforeach
@@ -253,7 +266,7 @@
     </div>
 </nav>
 <div class="md:hidden fixed top-4 right-4 z-50">
-    <button onclick="toggleMobileMenu()" class="bg-white p-2 rounded-md shadow-md" type="button">
+    <button onclick="toggleMobileMenu()" class="rounded-xl border border-slate-200 bg-white p-2 shadow-md" type="button">
         <i data-lucide="menu" class="w-5 h-5 text-gray-600"></i>
     </button>
 </div>

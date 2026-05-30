@@ -15,7 +15,7 @@ class ProcessArticleDistributionJob implements ShouldQueue
 
     public int $tries = 1;
 
-    public int $timeout = 60;
+    public int $timeout = 180;
 
     public function __construct(private readonly int $distributionId) {}
 

@@ -344,9 +344,13 @@ final class UrlImportProcessingService
     {
         $response = Http::timeout(20)
             ->connectTimeout(8)
+            ->withOptions([
+                'verify' => (bool) config('geoflow.url_import_verify_ssl', true),
+            ])
             ->withHeaders([
                 'User-Agent' => 'GEOFlow URL Importer/1.0',
                 'Accept' => 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language' => 'zh-CN,zh;q=0.9,en;q=0.8',
             ])
             ->get($url);
 
@@ -711,7 +715,8 @@ final class UrlImportProcessingService
 你是 GEOFlow 的网页正文清洗器。只输出 JSON，不要输出 Markdown 代码块。
 字段固定为：clean_title, clean_summary, clean_text, core_business, entities, facts, noise_removed。
 目标：从页面 JSON 中去掉导航、菜单、广告、版权、按钮、登录、推荐流、重复模板文案，只保留页面主体内容和可被知识库引用的事实，并识别页面背后的真实核心业务。
-core_business 必须描述页面主体对应的行业、产品/服务、目标客户、商业场景、价值主张和可验证边界。
+core_business 必须描述页面主体对应的行业、产品/服务、目标客户、商业场景、价值主张、实体关系和可验证边界。
+facts 必须尽量写成“实体 - 属性/能力/场景 - 证据/来源边界”的短句，便于后续 GEO 文章生成和向量检索。
 不能虚构页面没有的信息。
 PROMPT;
     }
@@ -748,8 +753,8 @@ PROMPT;
             ."\n\n输出要求：\n"
             ."1. clean_text 只保留主体正文，不要保留“查看详情、返回首页、登录、注册、更多、相关阅读”等模板噪声。\n"
             ."2. clean_summary 120-240 字，概括真实主体内容。\n"
-            ."3. core_business 输出对象，包含 industry、products_services、target_audience、commercial_scenarios、value_proposition、evidence_limits。\n"
-            ."4. facts 输出页面明确出现或可直接归纳的事实短句，优先服务/产品/能力/客户/场景/数据。\n"
+            ."3. core_business 输出对象，包含 industry、products_services、target_audience、commercial_scenarios、value_proposition、entity_relations、evidence_limits。\n"
+            ."4. facts 输出页面明确出现或可直接归纳的事实短句，优先服务/产品/能力/客户/场景/数据；每条尽量包含实体、属性/能力、适用场景或来源边界。\n"
             .'5. entities 输出品牌、产品、服务、行业、目标用户、地名、人名等实体。';
     }
 
@@ -760,7 +765,7 @@ PROMPT;
 字段固定为：keywords。
 keywords 最多 10 个，必须是短关键词或短语。中文关键词优先 2-5 个字，英文关键词优先 1-3 个单词。
 只允许输出基于知识库反推出来的核心业务词根、产品/服务词、行业词、需求场景词、问题词、解决方案词。
-关键词必须具备商业价值或内容选题价值，能支撑后续生成 GEO 文章。
+关键词必须具备商业价值或内容选题价值，能支撑后续生成 GEO 文章，并能与用户问题、实体、场景或解决方案建立稳定语义关联。
 禁止输出：AI、GEO、URL、来源、页面描述、引擎、官网、首页、公司名、人名、导航词、按钮词、广告口号、整段摘要、长句和重复词。
 不能虚构页面没有的信息。
 PROMPT;
@@ -792,8 +797,9 @@ PROMPT;
 你是 GEOFlow 的 GEO 标题库构建器。只输出 JSON，不要输出 Markdown 代码块。
 字段固定为：titles。
 titles 最多 50 个，必须基于页面真实信息、知识库和 10 个核心业务词生成，适合后续生成真实可信的 GEO 内容。
-标题角度要多样：是什么、为什么、怎么做、选型、对比、指南、清单、常见问题、场景拆解、趋势判断、2026 趋势或商业价值。
+标题角度要多样：是什么、为什么、怎么做、选型、对比、指南、清单、常见问题、场景拆解、趋势判断（仅在资料支持时带年份）或商业价值。
 每个标题都必须围绕某个核心业务词或业务场景展开，面向 AI 搜索/GEO 的问答、推荐、比较、选型、采购、实施和风险判断。
+优先覆盖 AI 答案引擎常引用的题型：定义型、判断型、步骤型、对比型、适用场景型、风险边界型、FAQ 型。
 不要机械复读网页标题，不要虚构“第一、最好、领先”等无来源支撑的绝对化表述。
 PROMPT;
     }
@@ -823,7 +829,8 @@ PROMPT;
 你是 GEOFlow 的知识库构建器。只输出 JSON，不要输出 Markdown 代码块。
 字段固定为：summary, library_name, knowledge_markdown。
 knowledge_markdown 必须围绕“核心业务”构建，是真实可追溯、结构化、原子化的知识库内容，保留来源 URL，只沉淀页面明确出现或可由页面内容直接归纳的信息。
-必须优先抽取：核心业务、产品/服务、目标用户、业务场景、能力/优势、可验证事实、使用边界、适合支撑的 GEO 内容方向。
+必须优先抽取：核心业务、产品/服务、目标用户、业务场景、能力/优势、实体关系、可验证事实、使用边界、适合支撑的 GEO 内容方向。
+知识库要服务后续 RAG 与 GEO 写作：用短标题、短段落、列表和“实体 - 属性 - 证据/边界”的表达方式，让每个知识块都能被单独检索和引用。
 不能虚构事实、案例、客户、排名、数据、背书。信息不足时明确标注“页面未明确说明”。
 PROMPT;
     }
@@ -848,7 +855,7 @@ PROMPT;
                 'facts' => $cleaned['facts'] ?? [],
                 'clean_text' => Str::limit((string) ($cleaned['text'] ?? ''), 10000, ''),
             ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT)
-            ."\n\n建议结构：来源、核心业务摘要、原子化事实、产品/服务与能力、目标用户与场景、可引用事实、GEO 内容建议、使用边界。";
+            ."\n\n建议结构：来源、核心业务摘要、实体关系、原子化事实、产品/服务与能力、目标用户与场景、可引用事实、GEO 内容建议、使用边界。";
     }
 
     private function builtInGeoCollectionPrompt(): string
@@ -869,6 +876,7 @@ PROMPT;
 知识库：
 - 先沉淀事实，再生成观点。
 - 保留来源 URL、页面标题、页面摘要、明确出现的品牌/产品/服务/能力/场景。
+- 尽量用“实体 - 属性 - 证据/边界”沉淀原子事实，方便后续 RAG 命中和 AI 答案引用。
 - 对不确定信息要标注边界，不能伪造客户案例、数据、第三方评价或排名。
 PROMPT;
     }
@@ -1135,7 +1143,7 @@ PROMPT;
             $candidates[] = $keyword.'完整指南：从概念到应用';
             $candidates[] = $keyword.'为什么重要？业务场景与价值拆解';
             $candidates[] = $keyword.'怎么做？适合 AI 搜索的内容建设方法';
-            $candidates[] = '2026 年'.$keyword.'趋势与选型建议';
+            $candidates[] = $keyword.'趋势与选型建议：机会、边界与适用场景';
         }
 
         return array_slice(array_values(array_unique(array_filter($candidates))), 0, 50);

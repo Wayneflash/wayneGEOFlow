@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\ProcessUrlImportJob;
 use App\Models\KeywordLibrary;
 use App\Models\KnowledgeBase;
 use App\Models\TitleLibrary;
@@ -123,9 +124,16 @@ class UrlImportController extends Controller
                     'started_at' => $job->started_at ?: now(),
                 ]);
 
-                if (! $this->spawnUrlImportWorker((int) $job->id)) {
-                    $job = $this->urlImportProcessingService->process($job->refresh());
-                }
+                ProcessUrlImportJob::dispatch((int) $job->id)
+                    ->onQueue('geoflow')
+                    ->afterCommit();
+
+                UrlImportJobLog::query()->create([
+                    'job_id' => $job->id,
+                    'step' => $job->current_step ?: 'queued',
+                    'level' => 'info',
+                    'message' => 'URL import job queued for background processing.',
+                ]);
             }
         }
 
@@ -209,32 +217,6 @@ class UrlImportController extends Controller
         $decoded = json_decode($value, true);
 
         return is_array($decoded) ? $decoded : [];
-    }
-
-    private function spawnUrlImportWorker(int $jobId): bool
-    {
-        if (! function_exists('exec')) {
-            return false;
-        }
-
-        $phpBinary = PHP_BINARY ?: 'php';
-        if (str_contains(basename($phpBinary), 'php-fpm')) {
-            $phpBinary = 'php';
-        }
-
-        $command = sprintf(
-            '%s %s geoflow:process-url-import %d > %s 2>&1 & echo $!',
-            escapeshellarg($phpBinary),
-            escapeshellarg(base_path('artisan')),
-            $jobId,
-            escapeshellarg(storage_path('logs/url-import-worker-'.$jobId.'.log'))
-        );
-
-        $output = [];
-        $exitCode = 0;
-        exec($command, $output, $exitCode);
-
-        return $exitCode === 0;
     }
 
     /**

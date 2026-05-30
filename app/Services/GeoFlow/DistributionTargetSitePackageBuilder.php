@@ -611,6 +611,11 @@ function markdownToHtml(string $markdown, string $title = ''): string
             continue;
         }
 
+        if (preg_match('/^\s{0,3}(?:-{3,}|\*{3,}|_{3,})\s*$/u', $trimmed) === 1) {
+            $flushParagraph();
+            continue;
+        }
+
         if (str_starts_with($trimmed, '```')) {
             $flushParagraph();
             $code = [];

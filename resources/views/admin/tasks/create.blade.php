@@ -40,6 +40,22 @@
                     </div>
                 </div>
             @else
+            <div class="mb-6 rounded-2xl border border-slate-200 bg-white px-6 py-5 shadow-sm">
+                <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                        <div class="inline-flex items-center rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 ring-1 ring-blue-100">
+                            任务会按标题库逐篇生成文章
+                        </div>
+                        <p class="mt-3 max-w-3xl text-sm leading-6 text-slate-600">
+                            必填项只需要先选标题库、正文提示词和 AI 模型；图片、分发、分类、循环发布属于增强项，可以后续在任务设置里调整。
+                        </p>
+                    </div>
+                    <a href="{{ route('admin.articles.index') }}" class="inline-flex w-fit items-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
+                        <i data-lucide="file-text" class="mr-2 h-4 w-4"></i>
+                        查看已生成文章
+                    </a>
+                </div>
+            </div>
             <form method="POST" action="{{ $isEdit ? route('admin.tasks.update', ['taskId' => $taskId]) : route('admin.tasks.store') }}" class="grid grid-cols-1 gap-6 xl:grid-cols-12">
                 @csrf
                 @if ($isEdit)
@@ -388,7 +404,7 @@
                     <a href="{{ route('admin.tasks.index') }}" class="px-6 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
                         {{ __('admin.button.cancel') }}
                     </a>
-                    <button type="submit" class="px-6 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700">
+                    <button type="submit" data-loading-label="{{ __('admin.message.processing') }}" class="px-6 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700">
                         {{ $isEdit ? __('admin.task_edit.button.save_changes') : __('admin.button.create_task') }}
                     </button>
                 </div>
@@ -494,6 +510,17 @@
                 });
             }
 
+            function showFormError(message, element) {
+                if (window.AdminUtils && typeof window.AdminUtils.showToast === 'function') {
+                    window.AdminUtils.showToast(message, 'error');
+                }
+
+                if (element && typeof element.focus === 'function') {
+                    element.focus({ preventScroll: true });
+                    element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            }
+
             imageLibrarySelect.addEventListener('change', toggleImageCountByLibrary);
             needReviewCheckbox.addEventListener('change', togglePublishInterval);
             articleLimitInput.addEventListener('input', syncDraftLimitMax);
@@ -501,33 +528,38 @@
             publishScopeRadios.forEach((radio) => radio.addEventListener('change', syncDistributionChannelsByScope));
 
             form.addEventListener('submit', function (event) {
-                if (!document.getElementById('task_name').value.trim()) {
-                    alert(@json(__('admin.task_create.error.name_required')));
+                const taskNameInput = document.getElementById('task_name');
+                const titleLibrarySelect = document.getElementById('title_library_id');
+                const promptSelect = document.getElementById('prompt_id');
+                const aiModelSelect = document.getElementById('ai_model_id');
+
+                if (!taskNameInput.value.trim()) {
                     event.preventDefault();
+                    showFormError(@json(__('admin.task_create.error.name_required')), taskNameInput);
                     return;
                 }
 
-                if (!document.getElementById('title_library_id').value) {
-                    alert(@json(__('admin.task_create.error.title_library_required')));
+                if (!titleLibrarySelect.value) {
                     event.preventDefault();
+                    showFormError(@json(__('admin.task_create.error.title_library_required')), titleLibrarySelect);
                     return;
                 }
 
-                if (!document.getElementById('prompt_id').value) {
-                    alert(@json(__('admin.task_create.error.prompt_required')));
+                if (!promptSelect.value) {
                     event.preventDefault();
+                    showFormError(@json(__('admin.task_create.error.prompt_required')), promptSelect);
                     return;
                 }
 
-                if (!document.getElementById('ai_model_id').value) {
-                    alert(@json(__('admin.task_create.error.ai_model_required')));
+                if (!aiModelSelect.value) {
                     event.preventDefault();
+                    showFormError(@json(__('admin.task_create.error.ai_model_required')), aiModelSelect);
                     return;
                 }
 
                 if (Number(draftLimitInput.value || 0) > Number(articleLimitInput.value || 0)) {
-                    alert(@json(__('admin.task_create.error.draft_limit_too_large')));
                     event.preventDefault();
+                    showFormError(@json(__('admin.task_create.error.draft_limit_too_large')), draftLimitInput);
                     return;
                 }
 

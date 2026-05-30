@@ -86,7 +86,7 @@ return array_replace_recursive($base, [
     ],
     'footer' => [
         'version' => 'Версия :version',
-        'author' => 'Автор: Yao Jingang',
+        'author' => '',
         'author_x_profile' => 'Профиль автора в X',
         'project_github_link' => 'GitHub проекта',
         'changelog_link' => 'История изменений',

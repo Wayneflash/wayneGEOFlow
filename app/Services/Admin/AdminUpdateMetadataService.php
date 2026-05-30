@@ -96,12 +96,12 @@ class AdminUpdateMetadataService
         return [
             'state' => $state,
             'links' => [
-                'github' => 'https://github.com/yaojingang/GEOFlow',
+                'github' => (string) ($payload['github_url'] ?? ''),
                 'changelog' => [
-                    'zh-CN' => (string) ($payload['changelog_url_zh'] ?? 'https://github.com/yaojingang/GEOFlow/blob/main/docs/CHANGELOG.md'),
-                    'en' => (string) ($payload['changelog_url_en'] ?? 'https://github.com/yaojingang/GEOFlow/blob/main/docs/CHANGELOG_en.md'),
+                    'zh-CN' => (string) ($payload['changelog_url_zh'] ?? ''),
+                    'en' => (string) ($payload['changelog_url_en'] ?? ''),
                 ],
-                'release' => (string) ($payload['release_url'] ?? 'https://github.com/yaojingang/GEOFlow'),
+                'release' => (string) ($payload['release_url'] ?? ''),
             ],
         ];
     }

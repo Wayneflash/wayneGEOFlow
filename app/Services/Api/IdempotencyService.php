@@ -46,6 +46,28 @@ class IdempotencyService
         return hash('sha256', self::encodeJson($normalized));
     }
 
+    private static function requestHashFor(Request $request): string
+    {
+        $routeParameters = $request->route()?->parameters() ?? [];
+        $normalizedParameters = [];
+        foreach ($routeParameters as $key => $value) {
+            if (is_object($value) && method_exists($value, 'getKey')) {
+                $normalizedParameters[$key] = (string) $value->getKey();
+
+                continue;
+            }
+
+            $normalizedParameters[$key] = is_scalar($value) || $value === null
+                ? $value
+                : self::normalizePayload((array) $value);
+        }
+
+        return self::requestHash([
+            'body' => $request->all(),
+            'route_parameters' => $normalizedParameters,
+        ]);
+    }
+
     /**
      * 读取已缓存的幂等响应；若同键不同请求内容则抛出冲突异常。
      *
@@ -115,11 +137,11 @@ class IdempotencyService
     public static function maybeReplayJson(Request $request, string $routeKey): ?JsonResponse
     {
         $key = $request->header('X-Idempotency-Key');
-        if (! is_string($key) || $key === '' || ! in_array($request->method(), ['POST', 'PATCH'], true)) {
+        if (! is_string($key) || $key === '' || ! in_array($request->method(), ['POST', 'PATCH', 'DELETE'], true)) {
             return null;
         }
 
-        $hash = self::requestHash($request->all());
+        $hash = self::requestHashFor($request);
         $replay = self::loadReplay($key, $routeKey, $hash);
         if ($replay === null) {
             return null;
@@ -136,11 +158,11 @@ class IdempotencyService
     public static function remember(Request $request, string $routeKey, array $envelope, int $status): void
     {
         $key = $request->header('X-Idempotency-Key');
-        if (! is_string($key) || $key === '' || ! in_array($request->method(), ['POST', 'PATCH'], true)) {
+        if (! is_string($key) || $key === '' || ! in_array($request->method(), ['POST', 'PATCH', 'DELETE'], true)) {
             return;
         }
 
-        $hash = self::requestHash($request->all());
+        $hash = self::requestHashFor($request);
         self::store($key, $routeKey, $hash, $envelope, $status);
     }
 

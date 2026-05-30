@@ -195,6 +195,7 @@ class AiModelController extends Controller
 
             $request = Http::acceptJson()
                 ->asJson()
+                ->connectTimeout(10)
                 ->timeout(45);
 
             $request = $isGemini
@@ -701,6 +702,7 @@ class AiModelController extends Controller
     ): JsonResponse {
         return response()->json([
             'success' => $success,
+            'status' => $success ? 'success' : 'failed',
             'message' => $message,
             'meta' => [
                 'model_type' => $modelType,
@@ -708,7 +710,7 @@ class AiModelController extends Controller
                 'duration_ms' => (int) round((microtime(true) - $startedAt) * 1000),
                 'endpoint' => $endpoint,
             ],
-        ], $success ? 200 : 422);
+        ]);
     }
 
     private function previewResponseBody(string $body): string

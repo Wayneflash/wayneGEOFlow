@@ -22,7 +22,6 @@ class AdminWelcomeModalService
     {
         $welcomeState = $this->resolveWelcomeState();
         $shouldAutoOpen = $this->prepareAutoOpen($admin, $welcomeState);
-        $admin->refresh();
 
         $copy = ($welcomeState['mode'] ?? 'intro') === 'update'
             ? $this->buildUpdateCopy($welcomeState)
@@ -36,12 +35,9 @@ class AdminWelcomeModalService
                 'dismissUrl' => route('admin.welcome.dismiss', [], false),
                 'csrfToken' => csrf_token(),
                 'links' => [
-                    'x' => 'https://x.com/yaojingang',
-                    'github' => 'https://github.com/yaojingang/GEOFlow',
-                    'changelog' => [
-                        'zh-CN' => 'https://github.com/yaojingang/GEOFlow/blob/main/docs/CHANGELOG.md',
-                        'en' => 'https://github.com/yaojingang/GEOFlow/blob/main/docs/CHANGELOG_en.md',
-                    ],
+                    'x' => '',
+                    'github' => '',
+                    'changelog' => [],
                 ],
             ],
         ];

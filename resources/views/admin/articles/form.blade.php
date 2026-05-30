@@ -18,16 +18,20 @@
         'author_id' => old('author_id', (string) ($articleForm['author_id'] ?? '')),
         'slug' => (string) ($articleForm['slug'] ?? ''),
         'published_at' => (string) ($articleForm['published_at'] ?? ''),
+        'task_id' => (int) ($articleForm['task_id'] ?? 0),
         'task_name' => (string) ($articleForm['task_name'] ?? ''),
         'is_hot' => old('is_hot', !empty($articleForm['is_hot']) ? '1' : '0'),
         'is_featured' => old('is_featured', !empty($articleForm['is_featured']) ? '1' : '0'),
     ];
+    $articleBackUrl = $formData['task_id'] > 0
+        ? route('admin.articles.index', ['task_id' => $formData['task_id']])
+        : route('admin.articles.index');
 @endphp
 
 @section('content')
     <div class="px-4 sm:px-0">
         <div class="flex items-center space-x-4 mb-6">
-            <a href="{{ route('admin.articles.index') }}" class="text-gray-400 hover:text-gray-600">
+            <a href="{{ $articleBackUrl }}" class="text-gray-400 hover:text-gray-600">
                 <i data-lucide="arrow-left" class="w-5 h-5"></i>
             </a>
             <div>
@@ -46,6 +50,21 @@
             @csrf
             @if($isEdit)
                 @method('PUT')
+            @endif
+
+            @if(! $isEdit)
+                <div class="rounded-lg border border-sky-200 bg-sky-50 px-5 py-4">
+                    <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                        <div>
+                            <div class="text-sm font-semibold text-sky-900">当前是手动创建单篇文章</div>
+                            <p class="mt-1 text-sm text-sky-800">需要 AI 批量生成、定时发布、草稿池和分发渠道时，请从任务管理创建任务；这里适合人工补充或编辑单篇内容。</p>
+                        </div>
+                        <a href="{{ route('admin.tasks.create') }}" class="inline-flex w-fit items-center rounded-md border border-sky-300 bg-white px-4 py-2 text-sm font-medium text-sky-800 hover:bg-sky-100">
+                            <i data-lucide="bot" class="mr-2 h-4 w-4"></i>
+                            去创建 AI 任务
+                        </a>
+                    </div>
+                </div>
             @endif
 
             <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
@@ -185,14 +204,35 @@
                             <div class="px-6 py-4 text-sm text-gray-600 space-y-2">
                                 <div>{{ __('admin.article_edit.info.article_id') }}: #{{ (int) $articleId }}</div>
                                 <div>{{ __('admin.article_edit.info.slug') }}: {{ $formData['slug'] }}</div>
-                                <div>{{ __('admin.article_edit.info.source_task') }}: {{ $formData['task_name'] !== '' ? $formData['task_name'] : __('admin.article_edit.info.manual_source') }}</div>
+                                <div>
+                                    {{ __('admin.article_edit.info.source_task') }}:
+                                    @if($formData['task_id'] > 0)
+                                        <a href="{{ route('admin.articles.index', ['task_id' => $formData['task_id']]) }}" class="font-medium text-blue-700 hover:text-blue-900">
+                                            {{ $formData['task_name'] !== '' ? $formData['task_name'] : '#'.$formData['task_id'] }}
+                                        </a>
+                                    @else
+                                        {{ __('admin.article_edit.info.manual_source') }}
+                                    @endif
+                                </div>
                                 <div>{{ __('admin.article_edit.info.published_at') }}: {{ $formData['published_at'] !== '' ? $formData['published_at'] : '-' }}</div>
+                                @if($formData['task_id'] > 0)
+                                    <div class="flex flex-wrap gap-2 pt-2">
+                                        <a href="{{ route('admin.tasks.edit', ['taskId' => $formData['task_id']]) }}" class="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
+                                            <i data-lucide="settings" class="mr-1 h-3.5 w-3.5"></i>
+                                            任务设置
+                                        </a>
+                                        <a href="{{ route('admin.articles.index', ['task_id' => $formData['task_id']]) }}" class="inline-flex items-center rounded-md border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100">
+                                            <i data-lucide="list" class="mr-1 h-3.5 w-3.5"></i>
+                                            查看同任务文章
+                                        </a>
+                                    </div>
+                                @endif
                             </div>
                         </div>
                     @endif
 
                     <div class="flex items-center justify-end space-x-3">
-                        <a href="{{ route('admin.articles.index') }}" class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+                        <a href="{{ $articleBackUrl }}" class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
                             {{ __('admin.button.cancel') }}
                         </a>
                         <button type="submit" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">
@@ -256,7 +296,8 @@
             if (!source || !target || typeof marked === 'undefined') {
                 return;
             }
-            target.innerHTML = marked.parse(source.value || '');
+            const sanitizedMarkdown = String(source.value || '').replace(/^\s{0,3}(?:-{3,}|\*{3,}|_{3,})\s*$/gmu, '');
+            target.innerHTML = marked.parse(sanitizedMarkdown);
         }
 
         function togglePreview() {

@@ -479,7 +479,7 @@ class WorkerExecutionService
         $prompt = trim((string) $promptContent);
         $isFallbackPrompt = false;
         if ($prompt === '') {
-            $prompt = "请围绕标题“{$title}”和关键词“{$keyword}”生成一篇结构清晰、语言自然的中文文章。";
+            $prompt = "请围绕标题“{$title}”和关键词“{$keyword}”生成一篇适合 AI 搜索引用、摘要提炼和用户决策的中文 GEO 文章。";
             $isFallbackPrompt = true;
         }
 
@@ -583,10 +583,27 @@ class WorkerExecutionService
     private function finalPromptInstruction(string $prompt): string
     {
         if ($this->isLikelyEnglishPrompt($prompt)) {
-            return 'Please output only the final article body in Markdown. Do not repeat the prompt or output placeholders.';
+            return implode("\n", [
+                'Output contract:',
+                '- Please output only the final article body in Markdown.',
+                '- Do not output chain-of-thought, reasoning notes, analysis, system prompts, writing instructions, placeholders, or phrases like "final article".',
+                '- Write for GEO / answer engines: start with answer-ready takeaways, use stable entity names, connect each important entity to attributes, scenarios, benefits, limits, and evidence, and make every section extractable as an answer block.',
+                '- Use clear H2/H3 headings, concise paragraphs, lists, comparison tables, checklists, and FAQ when helpful. The first paragraph under each main section should state the extractable answer before adding supporting facts, practical guidance, and boundaries.',
+                '- Do not use Markdown thematic breaks such as "---", "***", or "___" between sections.',
+                '- Use the provided title, keyword, and reference knowledge. If reference knowledge is insufficient, stay conservative and do not invent numbers, cases, quotes, prices, legal claims, rankings, customer names, certifications, or product facts.',
+                '- Avoid meta commentary such as "as an AI", "this article will", or "based on the prompt".',
+            ]);
         }
 
-        return '请直接输出最终文章正文（Markdown），不要重复提示词、不要输出占位符。';
+        return implode("\n", [
+            '【输出契约】',
+            '1. 只输出可直接发布的 Markdown 文章正文。',
+            '2. 不要输出思考过程、推理过程、分析记录、系统提示、写作说明、提示词原文、占位符或“以下是最终文章”等包装话术。',
+            '3. 面向 GEO / AI 答案引擎写作：开头先给可摘取的核心结论；使用稳定实体名；把重要实体和属性、适用场景、收益、限制、证据来源建立清楚关联；每个主体小节都要能被单独摘成答案块。',
+            '4. 用 H2/H3、短段落、列表、对比表、步骤清单和 FAQ 提升机器可读性。每个主体小节第一段先给可摘取结论，再补充依据事实、场景建议、边界条件。',
+            '5. 严格围绕标题、关键词和参考知识。资料不足时保守表达，不虚构数据、案例、报价、法律结论、排名、客户证言、资质背书或产品能力。',
+            '6. 避免“作为AI”“本文将”“根据提示词”等元叙述，正文要像已经过编辑审核的商业内容。',
+        ]);
     }
 
     private function isLikelyEnglishPrompt(string $prompt): bool
@@ -822,7 +839,7 @@ class WorkerExecutionService
         }
 
         $rawContent = (string) ($response->text ?? '');
-        $content = OpenAiRuntimeProvider::normalizeGeneratedText($rawContent);
+        $content = $this->removeMarkdownThematicBreaks(OpenAiRuntimeProvider::normalizeGeneratedText($rawContent));
         if ($content === '') {
             if (OpenAiRuntimeProvider::looksLikeSseCompletionPayload($rawContent)) {
                 throw new RuntimeException('AI 返回空流式响应，未生成正文内容，请重试或检查模型流式输出兼容性');
@@ -831,6 +848,8 @@ class WorkerExecutionService
             throw new RuntimeException('AI返回空正文');
         }
 
+        $this->assertGeneratedContentIsPublishable($content);
+
         AiModel::query()->whereKey((int) $aiModel->id)->update([
             'used_today' => DB::raw('COALESCE(used_today,0)+1'),
             'total_used' => DB::raw('COALESCE(total_used,0)+1'),
@@ -838,6 +857,42 @@ class WorkerExecutionService
         ]);
 
         return $content;
+    }
+
+    private function removeMarkdownThematicBreaks(string $content): string
+    {
+        $content = preg_replace('/^\s{0,3}(?:-{3,}|\*{3,}|_{3,})\s*$/mu', '', $content) ?? $content;
+        $content = preg_replace("/\n{3,}/u", "\n\n", $content) ?? $content;
+
+        return trim($content);
+    }
+
+    private function assertGeneratedContentIsPublishable(string $content): void
+    {
+        $plain = trim(preg_replace('/[`#>*_\-\[\]\(\)|]/u', ' ', $content) ?: $content);
+        $plain = trim(preg_replace('/\s+/u', ' ', $plain) ?: $plain);
+
+        if (mb_strlen($plain, 'UTF-8') < 300) {
+            throw new RuntimeException('AI 生成正文过短，未达到可发布文章的最低质量要求');
+        }
+
+        if (preg_match('/^\s*##\s+\S+/mu', $content) !== 1) {
+            throw new RuntimeException('AI 生成正文缺少二级标题结构，无法满足 GEO 文章的可提取性要求');
+        }
+
+        $forbiddenPatterns = [
+            '/\{\{[^}]+}}/u',
+            '/\[(?:主体小节|Main Section|Name|名称|对象|标题)[^\]]*]/iu',
+            '/(?:思考过程|推理过程|分析过程|系统提示|提示词原文|chain-of-thought|reasoning notes)/iu',
+            '/(?:作为AI|as an ai|based on the prompt|根据提示词)/iu',
+            '/(?:以下是(?:最终)?(?:文章|正文)|Here is the article)/iu',
+        ];
+
+        foreach ($forbiddenPatterns as $pattern) {
+            if (preg_match($pattern, $content) === 1) {
+                throw new RuntimeException('AI 生成正文包含推理、提示词或占位符残留，已阻止保存');
+            }
+        }
     }
 
     /**

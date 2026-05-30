@@ -59,6 +59,27 @@ class OpenAiRuntimeProviderTest extends TestCase
         $this->assertSame('第一段，第二段', OpenAiRuntimeProvider::normalizeGeneratedText($content));
     }
 
+    public function test_it_removes_reasoning_blocks_from_generated_text(): void
+    {
+        $content = "<think>先分析用户需求，这些内容不应该入库。</think>\n以下是最终文章：\n# 标题\n\n这是可发布正文。";
+
+        $this->assertSame("# 标题\n\n这是可发布正文。", OpenAiRuntimeProvider::normalizeGeneratedText($content));
+    }
+
+    public function test_it_removes_leading_plain_reasoning_before_final_article(): void
+    {
+        $content = "思考过程：\n用户需要一篇商业文章，这些推理不应该保存。\n\n最终文章：\n# 标题\n\n这是可发布正文。";
+
+        $this->assertSame("# 标题\n\n这是可发布正文。", OpenAiRuntimeProvider::normalizeGeneratedText($content));
+    }
+
+    public function test_it_unwraps_full_markdown_fence_from_generated_text(): void
+    {
+        $content = "```markdown\n# 标题\n\n正文内容。\n```";
+
+        $this->assertSame("# 标题\n\n正文内容。", OpenAiRuntimeProvider::normalizeGeneratedText($content));
+    }
+
     public function test_it_drops_empty_usage_only_sse_chunks(): void
     {
         $content = implode("\n\n", [

@@ -26,44 +26,56 @@
 
 @section('content')
     <div class="px-4 sm:px-0">
-        <div class="mb-8 flex items-center justify-between">
-            <div>
-                <h1 class="text-2xl font-bold text-gray-900">{{ $pageTitle }}</h1>
-                <p class="mt-1 text-sm text-gray-600">{{ $isTrashView ? __('admin.articles.trash.subtitle') : __('admin.articles.page_subtitle') }}</p>
-            </div>
-            <div class="flex flex-wrap gap-2 justify-end">
+        <div class="mb-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div class="flex flex-col gap-5 px-6 py-6 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                    <div class="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-100">
+                        内容资产库
+                    </div>
+                    <h1 class="mt-3 text-2xl font-semibold tracking-tight text-slate-950">{{ $pageTitle }}</h1>
+                    <p class="mt-2 max-w-3xl text-sm leading-6 text-slate-600">{{ $isTrashView ? __('admin.articles.trash.subtitle') : __('admin.articles.page_subtitle') }}</p>
+                </div>
+                <div class="flex flex-wrap gap-2 justify-end">
                 @if($isTrashView)
-                    <a href="{{ $articlesIndexUrl }}" class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+                    <a href="{{ $articlesIndexUrl }}" class="inline-flex items-center rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
                         <i data-lucide="arrow-left" class="w-4 h-4 mr-2"></i>
                         {{ __('admin.articles.trash.back') }}
                     </a>
-                    <button type="button" onclick="submitEmptyTrash()" class="inline-flex items-center px-4 py-2 border border-red-200 text-sm font-medium rounded-md text-red-700 bg-white hover:bg-red-50">
+                    <button type="button" onclick="submitEmptyTrash()" class="inline-flex items-center rounded-lg border border-red-200 bg-white px-4 py-2.5 text-sm font-semibold text-red-700 shadow-sm hover:bg-red-50">
                         <i data-lucide="trash-2" class="w-4 h-4 mr-2"></i>
                         {{ __('admin.articles.trash.empty') }}
                     </button>
                 @else
-                    <a href="{{ route('admin.articles.create') }}" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">
-                        <i data-lucide="plus" class="w-4 h-4 mr-2"></i>
+                    <a href="{{ route('admin.articles.create') }}" class="inline-flex items-center rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
+                        <i data-lucide="file-plus" class="w-4 h-4 mr-2"></i>
                         {{ __('admin.button.create_article') }}
                     </a>
-                    <a href="{{ $categoryManageUrl }}" class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
-                        <i data-lucide="folder" class="w-4 h-4 mr-2"></i>
-                        {{ __('admin.button.category_manage') }}
+                    <a href="{{ route('admin.tasks.create') }}" class="inline-flex items-center rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700">
+                        <i data-lucide="bot" class="w-4 h-4 mr-2"></i>
+                        AI 批量生成
                     </a>
-                    <a href="{{ $reviewCenterUrl }}" class="inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50">
+                    <a href="{{ $reviewCenterUrl }}" class="inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
                         <i data-lucide="eye" class="w-4 h-4 mr-1"></i>
                         {{ __('admin.button.review_center') }}
                     </a>
                 @endif
-                <a href="{{ $isTrashView ? $articlesIndexUrl : $trashUrl }}" class="inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50">
+                <a href="{{ $isTrashView ? $articlesIndexUrl : $trashUrl }}" class="inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
                     <i data-lucide="trash-2" class="w-4 h-4 mr-1"></i>
                     {{ $isTrashView ? __('admin.articles.page_title') : __('admin.button.trash') }}
                 </a>
-                <button type="button" onclick="toggleBatchActions()" class="inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50">
+                <button type="button" onclick="toggleBatchActions()" class="inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
                     <i data-lucide="check-square" class="w-4 h-4 mr-1"></i>
                     {{ __('admin.button.bulk_actions') }}
                 </button>
+                </div>
             </div>
+            @if(!$isTrashView)
+                <div class="grid border-t border-slate-100 bg-slate-50/70 px-6 py-4 text-sm text-slate-600 md:grid-cols-3">
+                    <div class="flex items-center gap-2 py-1"><span class="flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-xs font-semibold text-white">AI</span> 从任务批量生成文章</div>
+                    <div class="flex items-center gap-2 py-1"><span class="flex h-6 w-6 items-center justify-center rounded-full bg-slate-900 text-xs font-semibold text-white">审</span> 筛选、审核、编辑正文</div>
+                    <div class="flex items-center gap-2 py-1"><span class="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-600 text-xs font-semibold text-white">发</span> 发布到本地站点或分发渠道</div>
+                </div>
+            @endif
         </div>
 
         @if($isTrashView)
@@ -151,10 +163,16 @@
                             <i data-lucide="filter" class="h-4 w-4"></i>
                             <span>{{ __('admin.articles.filters.current_task', ['task' => $selectedTaskName !== '' ? $selectedTaskName : '#'.$selectedTaskId]) }}</span>
                         </div>
-                        <a href="{{ $clearTaskFilterUrl }}" class="inline-flex items-center font-medium text-blue-700 hover:text-blue-900">
-                            <i data-lucide="x" class="mr-1 h-4 w-4"></i>
-                            {{ __('admin.articles.filters.clear_task') }}
-                        </a>
+                        <div class="flex flex-wrap items-center gap-2">
+                            <a href="{{ route('admin.tasks.edit', ['taskId' => $selectedTaskId]) }}" class="inline-flex items-center rounded-md border border-blue-200 bg-white px-3 py-1.5 font-medium text-blue-700 hover:bg-blue-100">
+                                <i data-lucide="settings" class="mr-1 h-4 w-4"></i>
+                                任务设置
+                            </a>
+                            <a href="{{ $clearTaskFilterUrl }}" class="inline-flex items-center rounded-md px-3 py-1.5 font-medium text-blue-700 hover:text-blue-900">
+                                <i data-lucide="x" class="mr-1 h-4 w-4"></i>
+                                {{ __('admin.articles.filters.clear_task') }}
+                            </a>
+                        </div>
                     </div>
                 @endif
                 <form method="GET" class="space-y-4">
@@ -271,10 +289,16 @@
                             {{ __('admin.articles.trash.back') }}
                         </a>
                     @else
-                        <a href="{{ route('admin.tasks.create') }}" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">
-                            <i data-lucide="plus" class="w-4 h-4 mr-2"></i>
-                            {{ __('admin.button.generate_articles') }}
-                        </a>
+                        <div class="flex flex-wrap items-center justify-center gap-3">
+                            <a href="{{ route('admin.tasks.create') }}" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">
+                                <i data-lucide="bot" class="w-4 h-4 mr-2"></i>
+                                {{ __('admin.button.generate_articles') }}
+                            </a>
+                            <a href="{{ route('admin.articles.create') }}" class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+                                <i data-lucide="file-plus" class="w-4 h-4 mr-2"></i>
+                                手动写单篇文章
+                            </a>
+                        </div>
                     @endif
                 </div>
             @else

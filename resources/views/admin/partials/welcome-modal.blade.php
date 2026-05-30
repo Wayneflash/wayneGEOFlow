@@ -186,12 +186,22 @@
                 subtitleNode.textContent = letter.subtitle || '';
                 contentNode.innerHTML = blocks.map((block) => blockHtml(block)).join('');
                 linksLabelNode.textContent = meta.links_label || '';
-                linkXNode.textContent = meta.author_link || '';
-                linkXNode.href = state.links?.x || '#';
-                linkGithubNode.textContent = meta.github_link || '';
-                linkGithubNode.href = state.links?.github || '#';
-                linkChangelogNode.textContent = meta.changelog_link || '';
-                linkChangelogNode.href = state.links?.changelog?.[locale] || state.links?.changelog?.['zh-CN'] || '#';
+                const setOptionalLink = (node, label, href) => {
+                    if (!node) return;
+                    if (!label || !href) {
+                        node.classList.add('hidden');
+                        node.removeAttribute('href');
+                        node.textContent = '';
+                        return;
+                    }
+                    node.classList.remove('hidden');
+                    node.textContent = label;
+                    node.href = href;
+                };
+                setOptionalLink(linkXNode, meta.author_link || '', state.links?.x || '');
+                setOptionalLink(linkGithubNode, meta.github_link || '', state.links?.github || '');
+                setOptionalLink(linkChangelogNode, meta.changelog_link || '', state.links?.changelog?.[locale] || state.links?.changelog?.['zh-CN'] || '');
+                linksLabelNode.classList.toggle('hidden', [linkXNode, linkGithubNode, linkChangelogNode].every((node) => node?.classList.contains('hidden')));
                 switchButton.textContent = meta.switch_label || (locale === 'zh-CN' ? 'English' : '中文');
                 closeButtons.forEach((button) => {
                     button.textContent = meta.close || 'Close';

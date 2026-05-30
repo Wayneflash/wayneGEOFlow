@@ -75,7 +75,14 @@ class AdminAuthController extends Controller
             'username' => (string) $admin->username,
         ]);
 
-        return redirect()->intended(route('admin.dashboard'));
+        $intendedUrl = (string) $request->session()->pull('url.intended', '');
+        $adminBasePath = '/'.trim((string) config('geoflow.admin_base_path', '/geo_admin'), '/');
+        $intendedPath = $intendedUrl !== '' ? '/'.ltrim((string) parse_url($intendedUrl, PHP_URL_PATH), '/') : '';
+        if ($intendedPath !== '' && str_starts_with($intendedPath, $adminBasePath.'/') && $intendedPath !== $adminBasePath.'/login') {
+            return redirect()->to($intendedUrl);
+        }
+
+        return redirect()->route('admin.dashboard');
     }
 
     public function logout(Request $request): RedirectResponse

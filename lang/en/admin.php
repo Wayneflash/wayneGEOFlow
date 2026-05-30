@@ -129,7 +129,7 @@ return [
     'footer' => [
         'copyright' => '© 2026 GEOFlow',
         'version' => 'Version :version',
-        'author' => 'Author: Yao Jingang',
+        'author' => '',
         'author_x_profile' => 'Author X Profile',
         'project_github_link' => 'Project GitHub',
         'changelog_link' => 'Changelog',

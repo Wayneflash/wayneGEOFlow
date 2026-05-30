@@ -39,6 +39,25 @@ MD);
         $this->assertStringContainsString('type="checkbox"', $html);
     }
 
+    public function test_article_markdown_drops_ai_section_dividers(): void
+    {
+        $html = ArticleHtmlPresenter::markdownToHtml(<<<'MD'
+## 第一部分
+
+这是第一段。
+
+---
+
+## 第二部分
+
+这是第二段。
+MD);
+
+        $this->assertStringContainsString('<h2>第一部分</h2>', $html);
+        $this->assertStringContainsString('<h2>第二部分</h2>', $html);
+        $this->assertStringNotContainsString('<hr', $html);
+    }
+
     public function test_published_article_page_outputs_normalized_image_url(): void
     {
         $category = Category::query()->create([
@@ -160,11 +179,12 @@ MD);
     {
         $this->get(route('site.home'))
             ->assertOk()
-            ->assertSee('js/tailwindcss.play-cdn.js', false)
+            ->assertSee('/build/assets/app-', false)
             ->assertSee('js/lucide.min.js', false)
             ->assertSee('themes/toutiao-news-20260426/theme.css', false)
             ->assertSee('themes/toutiao-news-20260426/theme.js', false)
             ->assertSee('application/ld+json', false)
+            ->assertDontSee('js/tailwindcss.play-cdn.js', false)
             ->assertDontSee('cdn.tailwindcss.com', false)
             ->assertDontSee('unpkg.com/lucide', false)
             ->assertDontSee('<style>', false)

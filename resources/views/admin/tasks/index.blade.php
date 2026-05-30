@@ -57,20 +57,31 @@
 
 @section('content')
     <div class="px-4 sm:px-0">
-        <div class="mb-8 flex items-center justify-between">
-            <div>
-                <h1 class="text-2xl font-bold text-gray-900">{{ __('admin.tasks.page_title') }}</h1>
-                <p class="mt-1 text-sm text-gray-600">{{ __('admin.tasks.page_subtitle') }}</p>
+        <div class="mb-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div class="flex flex-col gap-5 px-6 py-6 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                    <div class="inline-flex items-center rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 ring-1 ring-blue-100">
+                        AI 内容生产线
+                    </div>
+                    <h1 class="mt-3 text-2xl font-semibold tracking-tight text-slate-950">{{ __('admin.tasks.page_title') }}</h1>
+                    <p class="mt-2 max-w-3xl text-sm leading-6 text-slate-600">{{ __('admin.tasks.page_subtitle') }}</p>
+                </div>
+                <div class="flex flex-wrap gap-3">
+                    <a href="{{ route('admin.tasks.create') }}" class="inline-flex items-center rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700">
+                        <i data-lucide="plus" class="w-4 h-4 mr-2"></i>
+                        {{ __('admin.button.create_task') }}
+                    </a>
+                    <button onclick="executeAllActiveTasks()" class="inline-flex items-center rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
+                        <i data-lucide="play" class="w-4 h-4 mr-2"></i>
+                        {{ __('admin.button.run_all_tasks') }}
+                    </button>
+                </div>
             </div>
-            <div class="flex space-x-3">
-                <a href="{{ route('admin.tasks.create') }}" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">
-                    <i data-lucide="plus" class="w-4 h-4 mr-2"></i>
-                    {{ __('admin.button.create_task') }}
-                </a>
-                <button onclick="executeAllActiveTasks()" class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
-                    <i data-lucide="play" class="w-4 h-4 mr-2"></i>
-                    {{ __('admin.button.run_all_tasks') }}
-                </button>
+            <div class="grid border-t border-slate-100 bg-slate-50/70 px-6 py-4 text-sm text-slate-600 md:grid-cols-4">
+                <div class="flex items-center gap-2 py-1"><span class="flex h-6 w-6 items-center justify-center rounded-full bg-slate-900 text-xs font-semibold text-white">1</span> 配标题库与知识库</div>
+                <div class="flex items-center gap-2 py-1"><span class="flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-xs font-semibold text-white">2</span> 创建 AI 生成任务</div>
+                <div class="flex items-center gap-2 py-1"><span class="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-600 text-xs font-semibold text-white">3</span> 审核产出文章</div>
+                <div class="flex items-center gap-2 py-1"><span class="flex h-6 w-6 items-center justify-center rounded-full bg-violet-600 text-xs font-semibold text-white">4</span> 发布与分发</div>
             </div>
         </div>
 
@@ -80,9 +91,10 @@
             </div>
         @endif
 
-        <div class="bg-white shadow rounded-lg">
-            <div class="px-6 py-4 border-b border-gray-200">
-                <h3 class="text-lg font-medium text-gray-900">{{ __('admin.tasks.list_title') }}</h3>
+        <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div class="flex items-center justify-between gap-3 border-b border-slate-200 px-6 py-4">
+                <h3 class="text-base font-semibold text-slate-950">{{ __('admin.tasks.list_title') }}</h3>
+                <span class="text-xs text-slate-500">点击任务名或产出数可查看对应文章</span>
             </div>
 
             @if (empty($tasks))
@@ -118,8 +130,20 @@
                             @endphp
                             <tr class="hover:bg-gray-50">
                                 <td class="px-5 py-4 align-top">
-                                    <div class="text-sm font-medium leading-6 text-gray-900 break-words">{{ $task['name'] ?? '' }}</div>
+                                    <a href="{{ route('admin.articles.index', ['task_id' => (int) $task['id']]) }}" class="text-sm font-medium leading-6 text-gray-900 hover:text-blue-700 break-words">
+                                        {{ $task['name'] ?? '' }}
+                                    </a>
                                     <div class="mt-1 text-sm text-gray-500 break-words">{{ __('admin.tasks.label.title_library') }}: {{ $task['title_library_name'] ?? '' }}</div>
+                                    <div class="mt-2 flex flex-wrap gap-2">
+                                        <a href="{{ route('admin.articles.index', ['task_id' => (int) $task['id']]) }}" class="inline-flex items-center rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100">
+                                            <i data-lucide="file-text" class="mr-1 h-3.5 w-3.5"></i>
+                                            查看产出文章
+                                        </a>
+                                        <a href="{{ route('admin.tasks.edit', ['taskId' => (int) $task['id']]) }}" class="inline-flex items-center rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50">
+                                            <i data-lucide="settings" class="mr-1 h-3.5 w-3.5"></i>
+                                            任务配置
+                                        </a>
+                                    </div>
                                     @if ($hasVisibleFailure)
                                         <div class="mt-2 rounded-md border px-3 py-2 text-xs {{ $failureClasses['card'] }}">
                                             <span class="inline-flex items-center rounded-full border px-2 py-0.5 font-medium {{ $failureClasses['chip'] }}">{{ $failureInfo['label'] }}</span>
@@ -167,7 +191,9 @@
                                             }
                                         }
                                     @endphp
-                                    <div id="task-created-{{ (int) $task['id'] }}">{{ __('admin.tasks.label.created_of_limit', ['created' => (int) ($task['created_count'] ?? $task['total_articles'] ?? 0), 'limit' => $articleLimit]) }}</div>
+                                    <a href="{{ route('admin.articles.index', ['task_id' => (int) $task['id']]) }}" id="task-created-{{ (int) $task['id'] }}" class="font-medium text-blue-700 hover:text-blue-900">
+                                        {{ __('admin.tasks.label.created_of_limit', ['created' => (int) ($task['created_count'] ?? $task['total_articles'] ?? 0), 'limit' => $articleLimit]) }}
+                                    </a>
                                     <div id="task-published-{{ (int) $task['id'] }}">{{ __('admin.tasks.label.published_articles', ['count' => (int) ($task['published_articles'] ?? 0)]) }}</div>
                                     <div id="task-drafts-{{ (int) $task['id'] }}">{{ __('admin.tasks.label.draft_articles', ['count' => (int) ($task['draft_articles'] ?? 0)]) }}</div>
                                     <div class="mt-2 h-1.5 w-28 overflow-hidden rounded-full bg-gray-200">
@@ -650,7 +676,7 @@ function initTaskRealtime() {
         wssPort: TASK_REALTIME.port || 443,
         forceTLS: TASK_REALTIME.scheme === 'https',
         enabledTransports: ['ws', 'wss'],
-        authEndpoint: @js(url('/broadcasting/auth')),
+        authEndpoint: @js('/broadcasting/auth'),
         auth: {
             headers: {
                 'X-CSRF-TOKEN': @js(csrf_token()),

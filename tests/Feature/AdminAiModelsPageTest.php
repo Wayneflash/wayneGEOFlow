@@ -48,7 +48,10 @@ class AdminAiModelsPageTest extends TestCase
             ->get(route('admin.ai-models.index'));
 
         $response->assertOk()
-            ->assertSee(__('admin.ai_models.test'));
+            ->assertSee(__('admin.ai_models.test'))
+            ->assertSee('MODEL_TEST_TIMEOUT_MS', false)
+            ->assertSee('parseModelTestResponse', false)
+            ->assertSee('document.querySelector(\'meta[name="csrf-token"]\')', false);
     }
 
     public function test_admin_can_test_embedding_model_connection(): void
@@ -240,8 +243,9 @@ class AdminAiModelsPageTest extends TestCase
             ->postJson(route('admin.ai-models.test', ['modelId' => (int) $model->id]));
 
         $response
-            ->assertStatus(422)
+            ->assertOk()
             ->assertJsonPath('success', false)
+            ->assertJsonPath('status', 'failed')
             ->assertJsonPath('meta.http_status', 401);
     }
 

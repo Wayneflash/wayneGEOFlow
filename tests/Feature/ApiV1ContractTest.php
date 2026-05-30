@@ -4,12 +4,19 @@ namespace Tests\Feature;
 
 use App\Models\Admin;
 use App\Models\AiModel;
+use App\Models\Article;
+use App\Models\ArticleDistribution;
+use App\Models\Author;
+use App\Models\Category;
+use App\Models\DistributionChannel;
 use App\Models\Keyword;
 use App\Models\KeywordLibrary;
 use App\Models\Prompt;
 use App\Models\Task;
 use App\Models\TitleLibrary;
+use App\Jobs\ProcessArticleDistributionJob;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
 
 /**
@@ -248,6 +255,62 @@ class ApiV1ContractTest extends TestCase
         $this->assertDatabaseMissing('tasks', ['id' => $task->id]);
     }
 
+    public function test_task_delete_api_replays_idempotent_response(): void
+    {
+        $admin = $this->createActiveAdmin('u8b', 'p');
+        $bearer = $this->createBearerToken($admin, ['tasks:write']);
+        $task = Task::query()->create([
+            'name' => 'API idempotent delete task',
+            'status' => 'paused',
+        ]);
+        $headers = [
+            'Authorization' => 'Bearer '.$bearer['plain'],
+            'X-Idempotency-Key' => 'delete-task-'.$task->id,
+        ];
+
+        $first = $this->withHeaders($headers)
+            ->deleteJson("/api/v1/tasks/{$task->id}");
+
+        $first->assertOk()
+            ->assertJsonPath('data.deleted', true)
+            ->assertJsonPath('data.id', $task->id);
+
+        $second = $this->withHeaders($headers)
+            ->deleteJson("/api/v1/tasks/{$task->id}");
+
+        $second->assertOk()
+            ->assertExactJson($first->json());
+    }
+
+    public function test_task_delete_api_rejects_same_idempotency_key_for_different_task(): void
+    {
+        $admin = $this->createActiveAdmin('u8c', 'p');
+        $bearer = $this->createBearerToken($admin, ['tasks:write']);
+        $firstTask = Task::query()->create([
+            'name' => 'API idempotent delete first task',
+            'status' => 'paused',
+        ]);
+        $secondTask = Task::query()->create([
+            'name' => 'API idempotent delete second task',
+            'status' => 'paused',
+        ]);
+        $headers = [
+            'Authorization' => 'Bearer '.$bearer['plain'],
+            'X-Idempotency-Key' => 'delete-task-shared-key',
+        ];
+
+        $this->withHeaders($headers)
+            ->deleteJson("/api/v1/tasks/{$firstTask->id}")
+            ->assertOk();
+
+        $this->withHeaders($headers)
+            ->deleteJson("/api/v1/tasks/{$secondTask->id}")
+            ->assertStatus(409)
+            ->assertJsonPath('error.code', 'idempotency_conflict');
+
+        $this->assertDatabaseHas('tasks', ['id' => $secondTask->id]);
+    }
+
     public function test_task_create_accepts_omitted_optional_material_fields(): void
     {
         $admin = $this->createActiveAdmin('u9', 'p');
@@ -296,5 +359,128 @@ class ApiV1ContractTest extends TestCase
             'knowledge_base_id' => null,
             'fixed_category_id' => null,
         ]);
+    }
+
+    public function test_article_publish_api_enqueues_distribution(): void
+    {
+        Queue::fake();
+
+        $admin = $this->createActiveAdmin('u10', 'p');
+        $bearer = $this->createBearerToken($admin, ['articles:publish']);
+        $category = Category::query()->create([
+            'name' => 'API Distribution Category',
+            'slug' => 'api-distribution-category',
+        ]);
+        $author = Author::query()->create([
+            'name' => 'API Distribution Author',
+        ]);
+        $channel = DistributionChannel::query()->create([
+            'name' => 'API Distribution Target',
+            'domain' => 'target.example.com',
+            'endpoint_url' => 'https://target.example.com',
+            'status' => 'active',
+        ]);
+        $task = Task::query()->create([
+            'name' => 'API Distribution Task',
+            'status' => 'active',
+            'schedule_enabled' => 1,
+            'publish_scope' => 'local_and_distribution',
+            'publish_interval' => 3600,
+            'draft_limit' => 5,
+            'article_limit' => 10,
+        ]);
+        $task->distributionChannels()->sync([(int) $channel->id]);
+        $article = Article::query()->create([
+            'title' => 'API Distribution Article',
+            'slug' => 'api-distribution-article',
+            'excerpt' => 'Excerpt',
+            'content' => 'Content',
+            'category_id' => $category->id,
+            'author_id' => $author->id,
+            'task_id' => $task->id,
+            'status' => 'draft',
+            'review_status' => 'approved',
+        ]);
+
+        $this->withHeader('Authorization', 'Bearer '.$bearer['plain'])
+            ->postJson("/api/v1/articles/{$article->id}/publish")
+            ->assertOk()
+            ->assertJsonPath('data.status', 'published');
+
+        $this->assertDatabaseHas('article_distributions', [
+            'article_id' => (int) $article->id,
+            'distribution_channel_id' => (int) $channel->id,
+            'action' => 'publish',
+            'status' => 'queued',
+        ]);
+        Queue::assertPushed(ProcessArticleDistributionJob::class);
+    }
+
+    public function test_article_update_api_enqueues_remote_update_for_synced_article(): void
+    {
+        Queue::fake();
+
+        $admin = $this->createActiveAdmin('u11', 'p');
+        $bearer = $this->createBearerToken($admin, ['articles:write']);
+        $category = Category::query()->create([
+            'name' => 'API Update Category',
+            'slug' => 'api-update-category',
+        ]);
+        $author = Author::query()->create([
+            'name' => 'API Update Author',
+        ]);
+        $channel = DistributionChannel::query()->create([
+            'name' => 'API Update Target',
+            'domain' => 'target.example.com',
+            'endpoint_url' => 'https://target.example.com',
+            'status' => 'active',
+        ]);
+        $task = Task::query()->create([
+            'name' => 'API Update Task',
+            'status' => 'active',
+            'schedule_enabled' => 1,
+            'publish_scope' => 'local_and_distribution',
+            'publish_interval' => 3600,
+            'draft_limit' => 5,
+            'article_limit' => 10,
+        ]);
+        $task->distributionChannels()->sync([(int) $channel->id]);
+        $article = Article::query()->create([
+            'title' => 'API Synced Article',
+            'slug' => 'api-synced-article',
+            'excerpt' => 'Excerpt',
+            'content' => 'Old content',
+            'category_id' => $category->id,
+            'author_id' => $author->id,
+            'task_id' => $task->id,
+            'status' => 'published',
+            'review_status' => 'approved',
+            'published_at' => now(),
+        ]);
+        ArticleDistribution::query()->create([
+            'article_id' => (int) $article->id,
+            'distribution_channel_id' => (int) $channel->id,
+            'action' => 'publish',
+            'status' => 'synced',
+            'remote_id' => '456',
+            'remote_meta' => ['wordpress_post_id' => 456],
+            'idempotency_key' => 'article-'.$article->id.'-channel-'.$channel->id.'-publish-v1',
+        ]);
+
+        $this->withHeader('Authorization', 'Bearer '.$bearer['plain'])
+            ->patchJson("/api/v1/articles/{$article->id}", [
+                'content' => 'New content',
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.content', 'New content');
+
+        $updateDistribution = ArticleDistribution::query()
+            ->where('article_id', (int) $article->id)
+            ->where('distribution_channel_id', (int) $channel->id)
+            ->where('action', 'update')
+            ->firstOrFail();
+        $this->assertSame('queued', (string) $updateDistribution->status);
+        $this->assertSame('456', (string) $updateDistribution->remote_id);
+        Queue::assertPushed(ProcessArticleDistributionJob::class);
     }
 }

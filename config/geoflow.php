@@ -7,9 +7,8 @@
  */
 $adminBasePath = trim((string) env('ADMIN_BASE_PATH', 'geo_admin'), '/');
 $adminBasePath = $adminBasePath !== '' ? $adminBasePath : 'geo_admin';
-$defaultUpdateMetadataUrl = 'https://raw.githubusercontent.com/yaojingang/GEOFlow/main/version.json';
+$defaultUpdateMetadataUrl = '';
 $updateMetadataUrl = trim((string) env('GEOFLOW_UPDATE_METADATA_URL', $defaultUpdateMetadataUrl));
-$updateMetadataUrl = $updateMetadataUrl !== '' ? $updateMetadataUrl : $defaultUpdateMetadataUrl;
 
 return [
 
@@ -49,6 +48,8 @@ return [
     'title_ai_keyword_sample_limit' => max(1, min(100, (int) env('GEOFLOW_TITLE_AI_KEYWORD_SAMPLE_LIMIT', 10))),
     // URL 智能采集 SSRF 防护保持默认严格；仅在明确受控的透明代理/Docker/VPN DNS 环境中开启。
     'url_import_allow_mixed_dns' => filter_var(env('URL_IMPORT_ALLOW_MIXED_DNS', false), FILTER_VALIDATE_BOOLEAN),
+    // URL 智能采集是否严格校验 SSL 证书。生产默认建议开启；本地采集部分证书链不完整的网站时可关闭。
+    'url_import_verify_ssl' => filter_var(env('GEOFLOW_URL_IMPORT_VERIFY_SSL', env('APP_ENV', 'production') !== 'local'), FILTER_VALIDATE_BOOLEAN),
     // 后端出站 HTTP 代理；Docker 内访问宿主机代理通常使用 http://host.docker.internal:端口。
     'outbound_http_proxy' => trim((string) env('GEOFLOW_HTTP_PROXY', '')),
     'outbound_https_proxy' => trim((string) env('GEOFLOW_HTTPS_PROXY', env('GEOFLOW_HTTP_PROXY', ''))),

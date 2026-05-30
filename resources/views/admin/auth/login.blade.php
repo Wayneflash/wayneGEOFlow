@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ __('admin.login.title') }} — {{ $adminSiteName }}</title>
-    <script src="{{ asset('js/tailwindcss.play-cdn.js') }}"></script>
+    @vite(['resources/css/app.css', 'resources/js/app.js'])
     <script src="{{ asset('js/lucide.min.js') }}"></script>
     <style>
         body {

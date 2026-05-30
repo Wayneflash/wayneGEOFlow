@@ -26,6 +26,8 @@ class AdminAiPromptsPageTest extends TestCase
             ->assertOk()
             ->assertSee('GEO营销学·信任型正文生成')
             ->assertSee('GEO榜单型正文生成')
+            ->assertSee('GEO答案引擎·实体事实型正文生成')
+            ->assertSee('GEO答案引擎·决策对比型正文生成')
             ->assertSee('GEO Marketing · Trust-Based Article Generation (English)')
             ->assertSee('GEO Ranking-Style Article Generation (English)');
     }

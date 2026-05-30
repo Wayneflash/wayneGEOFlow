@@ -71,18 +71,34 @@ class DistributionOrchestrator
             $payloadHash = hash('sha256', json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '');
 
             foreach ($channels as $channel) {
+                $previousDistribution = $action === 'update'
+                    ? ArticleDistribution::query()
+                        ->where('article_id', (int) $articleModel->id)
+                        ->where('distribution_channel_id', (int) $channel->id)
+                        ->where('action', '!=', 'delete')
+                        ->where('status', 'synced')
+                        ->latest('id')
+                        ->first()
+                    : null;
+                $distributionValues = [
+                    'status' => 'queued',
+                    'next_retry_at' => now(),
+                    'payload_hash' => $payloadHash,
+                    'idempotency_key' => $this->idempotencyKey((int) $articleModel->id, (int) $channel->id, $action),
+                ];
+                if ($previousDistribution) {
+                    $distributionValues['remote_id'] = $previousDistribution->remote_id;
+                    $distributionValues['remote_url'] = $previousDistribution->remote_url;
+                    $distributionValues['remote_meta'] = $previousDistribution->remote_meta;
+                }
+
                 $distribution = ArticleDistribution::query()->updateOrCreate(
                     [
                         'article_id' => (int) $articleModel->id,
                         'distribution_channel_id' => (int) $channel->id,
                         'action' => $action,
                     ],
-                    [
-                        'status' => 'queued',
-                        'next_retry_at' => now(),
-                        'payload_hash' => $payloadHash,
-                        'idempotency_key' => $this->idempotencyKey((int) $articleModel->id, (int) $channel->id, $action),
-                    ]
+                    $distributionValues
                 );
 
                 $this->log('info', '文章已进入分发队列', $channel->id, $distribution->id, $articleModel->id, [

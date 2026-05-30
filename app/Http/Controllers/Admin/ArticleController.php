@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Article;
+use App\Models\ArticleDistribution;
 use App\Models\Author;
 use App\Models\Category;
 use App\Models\Task;
@@ -234,7 +235,7 @@ class ArticleController extends Controller
                 'is_hot' => (bool) ($payload['is_hot'] ?? false),
                 'is_featured' => (bool) ($payload['is_featured'] ?? false),
             ]);
-            if ($workflowState['status'] === 'published') {
+            if (in_array($workflowState['status'], ['published', 'private'], true)) {
                 $this->distributionOrchestrator->enqueueForArticle($article);
             }
         } catch (Throwable $e) {
@@ -274,6 +275,7 @@ class ArticleController extends Controller
                 'author_id' => (string) $article->author_id,
                 'slug' => (string) $article->slug,
                 'published_at' => $article->published_at?->format('Y-m-d H:i:s'),
+                'task_id' => (int) ($article->task_id ?? 0),
                 'task_name' => (string) ($article->task->name ?? ''),
                 'is_hot' => (bool) ($article->is_hot ?? false),
                 'is_featured' => (bool) ($article->is_featured ?? false),
@@ -314,8 +316,8 @@ class ArticleController extends Controller
                 'is_hot' => (bool) ($payload['is_hot'] ?? false),
                 'is_featured' => (bool) ($payload['is_featured'] ?? false),
             ])->save();
-            if ($workflowState['status'] === 'published') {
-                $this->distributionOrchestrator->enqueueForArticle($article);
+            if (in_array($workflowState['status'], ['published', 'private'], true)) {
+                $this->distributionOrchestrator->enqueueForArticle($article, $this->distributionActionForArticle($article));
             }
         } catch (Throwable $e) {
             return back()->withInput()->withErrors(__('admin.article_edit.error.update_exception', ['message' => $e->getMessage()]));
@@ -629,8 +631,8 @@ class ArticleController extends Controller
                 'published_at' => $workflowState['published_at'],
             ]);
 
-            if ($workflowState['status'] === 'published') {
-                $this->distributionOrchestrator->enqueueForArticle((int) $article->id);
+            if (in_array($workflowState['status'], ['published', 'private'], true)) {
+                $this->distributionOrchestrator->enqueueForArticle((int) $article->id, $this->distributionActionForArticle($article));
             }
         }
 
@@ -672,8 +674,8 @@ class ArticleController extends Controller
                 'published_at' => $workflowState['published_at'],
             ]);
 
-            if ($workflowState['status'] === 'published') {
-                $this->distributionOrchestrator->enqueueForArticle((int) $article->id);
+            if (in_array($workflowState['status'], ['published', 'private'], true)) {
+                $this->distributionOrchestrator->enqueueForArticle((int) $article->id, $this->distributionActionForArticle($article));
             }
         }
 
@@ -691,6 +693,17 @@ class ArticleController extends Controller
         }
 
         return back()->with('message', __('admin.articles.message.batch_delete_success', ['count' => count($articleIds)]));
+    }
+
+    private function distributionActionForArticle(Article $article): string
+    {
+        return ArticleDistribution::query()
+            ->where('article_id', (int) $article->id)
+            ->where('action', '!=', 'delete')
+            ->where('status', 'synced')
+            ->exists()
+            ? 'update'
+            : 'publish';
     }
 
     /**

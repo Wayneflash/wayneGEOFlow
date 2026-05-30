@@ -5,6 +5,7 @@ namespace Tests\Unit;
 use App\Services\GeoFlow\UrlImportProcessingService;
 use App\Support\GeoFlow\ApiKeyCrypto;
 use InvalidArgumentException;
+use ReflectionMethod;
 use Tests\TestCase;
 
 class UrlImportProcessingServiceTest extends TestCase
@@ -82,5 +83,17 @@ class UrlImportProcessingServiceTest extends TestCase
         $result = $this->service->normalizeInputUrl('http://www.example.com');
 
         $this->assertSame('http://www.example.com', $result['url']);
+    }
+
+    public function test_fallback_titles_do_not_invent_years(): void
+    {
+        $method = new ReflectionMethod($this->service, 'generateTitles');
+        $method->setAccessible(true);
+
+        $titles = $method->invoke($this->service, 'AI CRM', ['智能客服', '销售管理']);
+
+        foreach ($titles as $title) {
+            $this->assertStringNotContainsString('2026 年', $title);
+        }
     }
 }
