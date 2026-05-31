@@ -16,6 +16,7 @@ use App\Services\GeoFlow\DistributionOrchestrator;
 use App\Services\GeoFlow\TaskLifecycleService;
 use App\Services\GeoFlow\TaskMonitoringQueryService;
 use App\Support\AdminWeb;
+use App\Support\GeoFlow\PromptGuide;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -437,7 +438,11 @@ class TaskController extends Controller
             ->where('type', 'content')
             ->orderByDesc('id')
             ->get()
-            ->map(static fn (Prompt $row): array => ['id' => (int) $row->id, 'name' => (string) $row->name])
+            ->map(static fn (Prompt $row): array => [
+                'id' => (int) $row->id,
+                'name' => (string) $row->name,
+                'description' => PromptGuide::description((string) $row->name),
+            ])
             ->all();
 
         $aiModels = AiModel::query()

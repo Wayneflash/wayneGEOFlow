@@ -120,9 +120,34 @@
     @endphp
 
     <div class="px-4 sm:px-0">
-        <div class="mb-8">
-            <h1 class="text-3xl font-bold text-gray-900">{{ __('admin.dashboard.navigation.heading') }}</h1>
-            <p class="mt-1 text-sm text-gray-600">{{ __('admin.dashboard.navigation.subtitle') }}</p>
+        <div class="mb-8 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div class="flex flex-col gap-5 px-6 py-6 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                    <div class="inline-flex items-center rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 ring-1 ring-blue-100">
+                        深联云GEO 控制台
+                    </div>
+                    <h1 class="mt-3 text-3xl font-bold text-slate-950">{{ __('admin.dashboard.navigation.heading') }}</h1>
+                    <p class="mt-2 max-w-3xl text-sm leading-6 text-slate-600">{{ __('admin.dashboard.navigation.subtitle') }}</p>
+                </div>
+                <div class="grid grid-cols-2 gap-3 text-sm sm:min-w-[28rem] sm:grid-cols-4">
+                    <a href="{{ route('admin.ai-models.index') }}" class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 hover:bg-white">
+                        <div class="font-semibold text-slate-950">模型</div>
+                        <div class="mt-1 text-xs text-slate-500">先配置</div>
+                    </a>
+                    <a href="{{ route('admin.url-import') }}" class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 hover:bg-white">
+                        <div class="font-semibold text-slate-950">采集</div>
+                        <div class="mt-1 text-xs text-slate-500">沉淀素材</div>
+                    </a>
+                    <a href="{{ route('admin.tasks.create') }}" class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 hover:bg-white">
+                        <div class="font-semibold text-slate-950">任务</div>
+                        <div class="mt-1 text-xs text-slate-500">批量生成</div>
+                    </a>
+                    <a href="{{ route('admin.articles.index') }}" class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 hover:bg-white">
+                        <div class="font-semibold text-slate-950">文章</div>
+                        <div class="mt-1 text-xs text-slate-500">审核发布</div>
+                    </a>
+                </div>
+            </div>
         </div>
 
         <section class="mb-8 overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-gray-200">

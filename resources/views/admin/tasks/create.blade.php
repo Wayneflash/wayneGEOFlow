@@ -109,9 +109,10 @@
                                 <select name="prompt_id" id="prompt_id" required class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
                                     <option value="">{{ $t('task_create.option.select_prompt') }}</option>
                                     @foreach ($formOptions['prompts'] as $prompt)
-                                        <option value="{{ $prompt['id'] }}" @selected((string) old('prompt_id', (string) ($taskForm['prompt_id'] ?? '')) === (string) $prompt['id'])>{{ $prompt['name'] }}</option>
+                                        <option value="{{ $prompt['id'] }}" data-description="{{ $prompt['description'] }}" @selected((string) old('prompt_id', (string) ($taskForm['prompt_id'] ?? '')) === (string) $prompt['id'])>{{ $prompt['name'] }}</option>
                                     @endforeach
                                 </select>
+                                <p id="prompt-help" class="mt-2 min-h-[1.25rem] text-sm text-blue-700"></p>
                             </div>
                             <div>
                                 <label for="ai_model_id" class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.ai_model') }} *</label>
@@ -434,6 +435,8 @@
             const categoryModeRadios = document.querySelectorAll('input[name="category_mode"]');
             const publishScopeRadios = document.querySelectorAll('[data-publish-scope-option]');
             const distributionChannelInputs = document.querySelectorAll('[data-distribution-channel-input]');
+            const promptSelect = document.getElementById('prompt_id');
+            const promptHelp = document.getElementById('prompt-help');
             const form = document.querySelector('form');
 
             if (!form) {
@@ -510,6 +513,15 @@
                 });
             }
 
+            function syncPromptHelp() {
+                if (!promptSelect || !promptHelp) {
+                    return;
+                }
+
+                const option = promptSelect.options[promptSelect.selectedIndex];
+                promptHelp.textContent = option ? (option.dataset.description || '') : '';
+            }
+
             function showFormError(message, element) {
                 if (window.AdminUtils && typeof window.AdminUtils.showToast === 'function') {
                     window.AdminUtils.showToast(message, 'error');
@@ -526,6 +538,7 @@
             articleLimitInput.addEventListener('input', syncDraftLimitMax);
             categoryModeRadios.forEach((radio) => radio.addEventListener('change', handleCategoryModeChange));
             publishScopeRadios.forEach((radio) => radio.addEventListener('change', syncDistributionChannelsByScope));
+            promptSelect?.addEventListener('change', syncPromptHelp);
 
             form.addEventListener('submit', function (event) {
                 const taskNameInput = document.getElementById('task_name');
@@ -573,6 +586,7 @@
             handleCategoryModeChange();
             syncDraftLimitMax();
             syncDistributionChannelsByScope();
+            syncPromptHelp();
         });
     </script>
 @endpush

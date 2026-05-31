@@ -26,6 +26,8 @@ class WorkerExecutionServicePromptTest extends TestCase
         $this->assertStringContainsString('不虚构数据、案例、报价、法律结论', $prompt);
         $this->assertStringContainsString('实体和属性、适用场景、收益、限制、证据来源', $prompt);
         $this->assertStringContainsString('每个主体小节第一段先给可摘取结论', $prompt);
+        $this->assertStringContainsString('不要使用 Markdown 引用块', $prompt);
+        $this->assertStringContainsString('不要给标题或段落添加竖线装饰', $prompt);
     }
 
     public function test_prompt_with_variables_keeps_precise_rendering_without_extra_context(): void
@@ -60,6 +62,7 @@ class WorkerExecutionServicePromptTest extends TestCase
         $this->assertStringContainsString('Do not output chain-of-thought, reasoning notes, analysis', $prompt);
         $this->assertStringContainsString('stable entity names', $prompt);
         $this->assertStringContainsString('first paragraph under each main section should state the extractable answer', $prompt);
+        $this->assertStringContainsString('Do not use Markdown blockquotes', $prompt);
     }
 
     public function test_unknown_template_blocks_are_preserved_for_future_extensions(): void
@@ -119,5 +122,20 @@ class WorkerExecutionServicePromptTest extends TestCase
         $method->invoke($service, $content);
 
         $this->assertTrue(true);
+    }
+
+    public function test_generated_content_cleanup_unwraps_markdown_blockquotes(): void
+    {
+        $service = app(WorkerExecutionService::class);
+        $method = new ReflectionMethod($service, 'removeMarkdownBlockquotes');
+        $method->setAccessible(true);
+
+        $content = "> ## 核心摘要\n>\n> 这是一段不应该带竖线装饰的正文。\n\n## 正常小节";
+
+        $cleaned = (string) $method->invoke($service, $content);
+
+        $this->assertStringNotContainsString('>', $cleaned);
+        $this->assertStringContainsString('## 核心摘要', $cleaned);
+        $this->assertStringContainsString('这是一段不应该带竖线装饰的正文。', $cleaned);
     }
 }

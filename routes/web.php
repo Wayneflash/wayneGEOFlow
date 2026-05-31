@@ -119,6 +119,7 @@ Route::prefix($adminPrefix)->name('admin.')->middleware(['admin.locale'])->group
             Route::post('create', [ArticleController::class, 'store'])->name('store');
             Route::post('{articleId}/restore', [ArticleController::class, 'restore'])->name('restore')->whereNumber('articleId');
             Route::post('{articleId}/force-delete', [ArticleController::class, 'forceDelete'])->name('force-delete')->whereNumber('articleId');
+            Route::get('{articleId}/preview', [ArticleController::class, 'preview'])->name('preview')->whereNumber('articleId');
             Route::get('{articleId}/edit', [ArticleController::class, 'edit'])->name('edit');
             Route::put('{articleId}', [ArticleController::class, 'update'])->name('update');
         });

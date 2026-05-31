@@ -76,7 +76,7 @@ class AdminArticlesPageTest extends TestCase
             'slug' => 'tech',
         ]);
         $author = Author::query()->create([
-            'name' => 'GEOFlow',
+            'name' => '深联云GEO',
         ]);
 
         $this->actingAs($admin, 'admin')
@@ -116,7 +116,7 @@ class AdminArticlesPageTest extends TestCase
             'slug' => 'tech',
         ]);
         $author = Author::query()->create([
-            'name' => 'GEOFlow',
+            'name' => '深联云GEO',
         ]);
         Article::query()->create([
             'title' => '后台标签展示文章',
@@ -154,7 +154,7 @@ class AdminArticlesPageTest extends TestCase
             'slug' => 'distribution-category',
         ]);
         $author = Author::query()->create([
-            'name' => 'GEOFlow',
+            'name' => '深联云GEO',
         ]);
         $channel = DistributionChannel::query()->create([
             'name' => '目标站点',
@@ -187,7 +187,49 @@ class AdminArticlesPageTest extends TestCase
             ->assertSee(__('admin.distribution.article_status.synced'));
     }
 
-    public function test_admin_brand_stays_geoflow_when_public_site_name_changes(): void
+    public function test_article_list_hides_id_column_and_links_to_preview_page(): void
+    {
+        $admin = Admin::query()->create([
+            'username' => 'articles_preview_admin',
+            'password' => 'secret-123',
+            'email' => 'articles-preview@example.com',
+            'display_name' => 'Articles Preview Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+        $category = Category::query()->create([
+            'name' => '预览分类',
+            'slug' => 'preview-category',
+        ]);
+        $author = Author::query()->create([
+            'name' => '深联云GEO',
+        ]);
+        $article = Article::query()->create([
+            'title' => '预览测试文章',
+            'slug' => 'preview-test-article',
+            'excerpt' => '摘要',
+            'content' => "## 核心摘要\n\n这是一段用于预览页面的正文。",
+            'category_id' => $category->id,
+            'author_id' => $author->id,
+            'status' => 'draft',
+            'review_status' => 'pending',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.articles.index'))
+            ->assertOk()
+            ->assertDontSee(__('admin.articles.column.id'))
+            ->assertSee(route('admin.articles.preview', ['articleId' => (int) $article->id]), false);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.articles.preview', ['articleId' => (int) $article->id]))
+            ->assertOk()
+            ->assertSee('文章预览')
+            ->assertSee('预览测试文章')
+            ->assertSee('article-preview-content', false);
+    }
+
+    public function test_admin_brand_stays_shenlian_geo_when_public_site_name_changes(): void
     {
         $admin = Admin::query()->create([
             'username' => 'admin_brand_admin',
@@ -206,7 +248,7 @@ class AdminArticlesPageTest extends TestCase
         $this->actingAs($admin, 'admin')
             ->get(route('admin.dashboard'))
             ->assertOk()
-            ->assertSee('GEOFlow')
+            ->assertSee('深联云GEO')
             ->assertDontSee('Public Frontend Name');
     }
 }

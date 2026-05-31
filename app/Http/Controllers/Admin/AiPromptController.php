@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Prompt;
 use App\Models\Task;
 use App\Support\AdminWeb;
+use App\Support\GeoFlow\PromptGuide;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -107,6 +108,7 @@ class AiPromptController extends Controller
      *   id:int,
      *   name:string,
      *   content:string,
+     *   description:string,
      *   task_count:int,
      *   created_at:?string
      * }>
@@ -124,6 +126,7 @@ class AiPromptController extends Controller
                     'id' => (int) $prompt->id,
                     'name' => (string) $prompt->name,
                     'content' => (string) $prompt->content,
+                    'description' => PromptGuide::description((string) $prompt->name),
                     'task_count' => (int) ($prompt->tasks_count ?? 0),
                     'created_at' => optional($prompt->created_at)?->format('Y-m-d H:i'),
                 ];

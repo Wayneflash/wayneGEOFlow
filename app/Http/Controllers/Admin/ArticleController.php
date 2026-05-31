@@ -11,6 +11,7 @@ use App\Models\Task;
 use App\Services\GeoFlow\DistributionOrchestrator;
 use App\Support\AdminWeb;
 use App\Support\GeoFlow\ArticleWorkflow;
+use App\Support\Site\ArticleHtmlPresenter;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -189,6 +190,27 @@ class ArticleController extends Controller
         $article->forceDelete();
 
         return back()->with('message', __('admin.articles.trash.message.delete_success', ['count' => 1]));
+    }
+
+    /**
+     * 独立文章预览页：给浏览器插件或人工同步使用，尽量接近飞书文档的纯文档阅读/复制体验。
+     */
+    public function preview(int $articleId): View
+    {
+        $article = Article::query()
+            ->with(['author:id,name', 'category:id,name'])
+            ->whereKey($articleId)
+            ->firstOrFail();
+
+        $body = ArticleHtmlPresenter::stripLeadingTitleHeading((string) $article->content, (string) $article->title);
+        $body = preg_replace('/^\s{0,3}>\s?/mu', '', $body) ?? $body;
+
+        return view('admin.articles.preview', [
+            'article' => $article,
+            'contentHtml' => ArticleHtmlPresenter::markdownToHtml($body),
+            'pageTitle' => (string) $article->title,
+            'publishedAt' => $article->published_at ?? $article->created_at,
+        ]);
     }
 
     /**

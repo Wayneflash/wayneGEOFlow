@@ -43,10 +43,10 @@ class WorkerExecutionServiceAuthorFallbackTest extends TestCase
 
         $picked = $this->pickAuthor($task);
 
-        $this->assertSame('GEOFlow', $picked->name);
+        $this->assertSame('深联云GEO', $picked->name);
         $this->assertDatabaseHas('authors', [
             'id' => $picked->id,
-            'name' => 'GEOFlow',
+            'name' => '深联云GEO',
         ]);
     }
 

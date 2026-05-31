@@ -91,8 +91,8 @@
             </div>
         @endif
 
-        <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <div class="flex items-center justify-between gap-3 border-b border-slate-200 px-6 py-4">
+        <div class="admin-panel">
+            <div class="admin-panel-header">
                 <h3 class="text-base font-semibold text-slate-950">{{ __('admin.tasks.list_title') }}</h3>
                 <span class="text-xs text-slate-500">点击任务名或产出数可查看对应文章</span>
             </div>
@@ -109,19 +109,20 @@
                 </div>
             @else
                 <div class="overflow-x-auto">
-                    <table class="w-full min-w-[1110px] table-fixed divide-y divide-gray-200">
-                        <thead class="bg-gray-50">
+                    <table class="admin-table min-w-[1160px] table-fixed">
+                        <thead>
                         <tr>
-                            <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ __('admin.tasks.column.name') }}</th>
-                            <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ __('admin.tasks.column.created_at') }}</th>
-                            <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ __('admin.tasks.column.model') }}</th>
-                            <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ __('admin.tasks.column.article_stats') }}</th>
-                            <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ __('admin.tasks.column.loop_count') }}</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ __('admin.tasks.column.status') }}</th>
-                            <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ __('admin.tasks.column.actions') }}</th>
+                            <th class="w-16">序号</th>
+                            <th>{{ __('admin.tasks.column.name') }}</th>
+                            <th class="w-40">{{ __('admin.tasks.column.created_at') }}</th>
+                            <th class="w-48">{{ __('admin.tasks.column.model') }}</th>
+                            <th class="w-48">{{ __('admin.tasks.column.article_stats') }}</th>
+                            <th class="w-36">{{ __('admin.tasks.column.loop_count') }}</th>
+                            <th class="w-32">{{ __('admin.tasks.column.status') }}</th>
+                            <th class="w-32">{{ __('admin.tasks.column.actions') }}</th>
                         </tr>
                         </thead>
-                        <tbody class="bg-white divide-y divide-gray-200">
+                        <tbody class="divide-y divide-slate-200 bg-white">
                         @foreach ($tasks as $task)
                             @php
                                 $failureInfo = $describeTaskFailure($task['batch_error_message'] ?? '');
@@ -129,7 +130,8 @@
                                 $hasVisibleFailure = !empty($task['batch_error_message']) && in_array($task['batch_status'], ['failed', 'cancelled'], true);
                             @endphp
                             <tr class="hover:bg-gray-50">
-                                <td class="px-5 py-4 align-top">
+                                <td class="whitespace-nowrap font-mono text-slate-500">{{ $loop->iteration }}</td>
+                                <td>
                                     <a href="{{ route('admin.articles.index', ['task_id' => (int) $task['id']]) }}" class="text-sm font-medium leading-6 text-gray-900 hover:text-blue-700 break-words">
                                         {{ $task['name'] ?? '' }}
                                     </a>
@@ -153,8 +155,8 @@
                                         </div>
                                     @endif
                                 </td>
-                                <td class="px-5 py-4 align-top whitespace-nowrap text-sm text-gray-500">{{ !empty($task['created_at']) ? \Illuminate\Support\Carbon::parse($task['created_at'])->format('Y-m-d H:i') : '' }}</td>
-                                <td class="px-5 py-4 align-top text-sm text-gray-500">
+                                <td class="whitespace-nowrap text-slate-500">{{ !empty($task['created_at']) ? \Illuminate\Support\Carbon::parse($task['created_at'])->format('Y-m-d H:i') : '' }}</td>
+                                <td class="text-slate-500">
                                     <div class="break-words leading-6">{{ $task['ai_model_name'] ?? '' }}</div>
                                     <div class="mt-1">
                                         <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {{ (($task['model_selection_mode'] ?? 'fixed') === 'smart_failover') ? 'bg-violet-100 text-violet-800' : 'bg-slate-100 text-slate-700' }}">
@@ -162,7 +164,7 @@
                                         </span>
                                     </div>
                                 </td>
-                                <td class="px-5 py-4 align-top whitespace-nowrap text-sm text-gray-500">
+                                <td class="whitespace-nowrap text-slate-500">
                                     @php
                                         $articleLimit = max(1, (int) ($task['article_limit'] ?? $task['draft_limit'] ?? 10));
                                         $createdForProgress = min($articleLimit, (int) ($task['created_count'] ?? $task['total_articles'] ?? 0));
@@ -208,13 +210,13 @@
                                         </div>
                                     @endif
                                 </td>
-                                <td class="px-5 py-4 align-top whitespace-nowrap text-sm text-gray-500">
+                                <td class="whitespace-nowrap text-slate-500">
                                     <span id="task-loop-{{ (int) $task['id'] }}">{{ __('admin.tasks.label.loop_times', ['count' => (int) ($task['loop_count'] ?? 0)]) }}</span>
                                     <div id="task-publish-interval-{{ (int) $task['id'] }}" class="mt-1 text-xs text-gray-400">
                                         {{ __('admin.tasks.label.publish_interval_minutes', ['count' => max(1, (int) ceil(((int) ($task['publish_interval'] ?? 3600)) / 60))]) }}
                                     </div>
                                 </td>
-                                <td class="px-4 py-4 align-top">
+                                <td>
                                     <form method="POST" action="{{ route('admin.tasks.toggle-status', ['taskId' => (int) $task['id']]) }}" class="inline" id="status-form-{{ (int) $task['id'] }}">
                                         @csrf
                                         <input type="hidden" name="status" value="{{ $task['status'] }}">
@@ -226,7 +228,7 @@
                                         </label>
                                     </form>
                                 </td>
-                                <td class="px-3 py-4 align-top">
+                                <td>
                                     <div class="flex w-fit items-center gap-1.5">
                                         @if (($task['status'] ?? '') === 'active')
                                             <button onclick="stopBatchExecution({{ (int) $task['id'] }}, '{{ addslashes((string) ($task['name'] ?? '')) }}')" data-batch-action="stop" class="inline-flex items-center justify-center w-8 h-8 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-md transition-colors border border-red-200" title="{{ __('admin.tasks.action.stop_batch') }}" aria-label="{{ __('admin.tasks.action.stop_batch') }}" id="batch-btn-{{ (int) $task['id'] }}">

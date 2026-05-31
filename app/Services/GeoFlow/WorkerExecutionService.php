@@ -457,8 +457,8 @@ class WorkerExecutionService
         }
 
         return Author::query()->firstOrCreate(
-            ['name' => 'GEOFlow'],
-            ['bio' => 'Default GEOFlow author for automated content generation.']
+            ['name' => '深联云GEO'],
+            ['bio' => '深联云GEO自动内容生产默认作者。']
         );
     }
 
@@ -590,6 +590,7 @@ class WorkerExecutionService
                 '- Write for GEO / answer engines: start with answer-ready takeaways, use stable entity names, connect each important entity to attributes, scenarios, benefits, limits, and evidence, and make every section extractable as an answer block.',
                 '- Use clear H2/H3 headings, concise paragraphs, lists, comparison tables, checklists, and FAQ when helpful. The first paragraph under each main section should state the extractable answer before adding supporting facts, practical guidance, and boundaries.',
                 '- Do not use Markdown thematic breaks such as "---", "***", or "___" between sections.',
+                '- Do not use Markdown blockquotes. Avoid lines starting with ">"; do not create decorative vertical bars beside headings or paragraphs.',
                 '- Use the provided title, keyword, and reference knowledge. If reference knowledge is insufficient, stay conservative and do not invent numbers, cases, quotes, prices, legal claims, rankings, customer names, certifications, or product facts.',
                 '- Avoid meta commentary such as "as an AI", "this article will", or "based on the prompt".',
             ]);
@@ -601,8 +602,9 @@ class WorkerExecutionService
             '2. 不要输出思考过程、推理过程、分析记录、系统提示、写作说明、提示词原文、占位符或“以下是最终文章”等包装话术。',
             '3. 面向 GEO / AI 答案引擎写作：开头先给可摘取的核心结论；使用稳定实体名；把重要实体和属性、适用场景、收益、限制、证据来源建立清楚关联；每个主体小节都要能被单独摘成答案块。',
             '4. 用 H2/H3、短段落、列表、对比表、步骤清单和 FAQ 提升机器可读性。每个主体小节第一段先给可摘取结论，再补充依据事实、场景建议、边界条件。',
-            '5. 严格围绕标题、关键词和参考知识。资料不足时保守表达，不虚构数据、案例、报价、法律结论、排名、客户证言、资质背书或产品能力。',
-            '6. 避免“作为AI”“本文将”“根据提示词”等元叙述，正文要像已经过编辑审核的商业内容。',
+            '5. 不要使用 Markdown 引用块，不要输出以 “>” 开头的段落，不要给标题或段落添加竖线装饰。',
+            '6. 严格围绕标题、关键词和参考知识。资料不足时保守表达，不虚构数据、案例、报价、法律结论、排名、客户证言、资质背书或产品能力。',
+            '7. 避免“作为AI”“本文将”“根据提示词”等元叙述，正文要像已经过编辑审核的商业内容。',
         ]);
     }
 
@@ -839,7 +841,7 @@ class WorkerExecutionService
         }
 
         $rawContent = (string) ($response->text ?? '');
-        $content = $this->removeMarkdownThematicBreaks(OpenAiRuntimeProvider::normalizeGeneratedText($rawContent));
+        $content = $this->removeMarkdownBlockquotes($this->removeMarkdownThematicBreaks(OpenAiRuntimeProvider::normalizeGeneratedText($rawContent)));
         if ($content === '') {
             if (OpenAiRuntimeProvider::looksLikeSseCompletionPayload($rawContent)) {
                 throw new RuntimeException('AI 返回空流式响应，未生成正文内容，请重试或检查模型流式输出兼容性');
@@ -862,6 +864,14 @@ class WorkerExecutionService
     private function removeMarkdownThematicBreaks(string $content): string
     {
         $content = preg_replace('/^\s{0,3}(?:-{3,}|\*{3,}|_{3,})\s*$/mu', '', $content) ?? $content;
+        $content = preg_replace("/\n{3,}/u", "\n\n", $content) ?? $content;
+
+        return trim($content);
+    }
+
+    private function removeMarkdownBlockquotes(string $content): string
+    {
+        $content = preg_replace('/^\s{0,3}>\s?/mu', '', $content) ?? $content;
         $content = preg_replace("/\n{3,}/u", "\n\n", $content) ?? $content;
 
         return trim($content);

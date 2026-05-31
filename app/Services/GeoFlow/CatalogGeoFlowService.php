@@ -10,6 +10,7 @@ use App\Models\KeywordLibrary;
 use App\Models\KnowledgeBase;
 use App\Models\Prompt;
 use App\Models\TitleLibrary;
+use App\Support\GeoFlow\PromptGuide;
 
 class CatalogGeoFlowService
 {
@@ -40,7 +41,12 @@ class CatalogGeoFlowService
             ->where('type', 'content')
             ->orderBy('name')
             ->get(['id', 'name', 'type'])
-            ->map(fn (Prompt $p) => $p->getAttributes())
+            ->map(fn (Prompt $p) => [
+                'id' => (int) $p->id,
+                'name' => (string) $p->name,
+                'type' => (string) $p->type,
+                'description' => PromptGuide::description((string) $p->name),
+            ])
             ->all();
 
         $titleLibraries = TitleLibrary::query()

@@ -1,6 +1,7 @@
 @php
     $currentAdmin = auth('admin')->user();
     $adminBrandName = $adminBrandName ?? \App\Support\AdminWeb::siteName();
+    $adminBrandLogo = \App\Support\Site\SiteSettingsBag::get('site_logo');
     $isSuperAdmin = $currentAdmin && method_exists($currentAdmin, 'isSuperAdmin') && $currentAdmin->isSuperAdmin();
     $adminRoleLabel = $isSuperAdmin ? __('admin.header.super_admin') : __('admin.header.admin');
     $updateNotification = is_array($adminUpdateNotificationPayload ?? null) ? $adminUpdateNotificationPayload : [];
@@ -108,9 +109,15 @@
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="flex h-16 items-center gap-3 lg:gap-4 min-w-0">
             <a href="{{ route('admin.dashboard') }}" class="group flex shrink-0 items-center gap-3">
-                <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-950 text-white shadow-sm">
-                    <i data-lucide="sparkles" class="h-4 w-4"></i>
-                </span>
+                @if($adminBrandLogo !== '')
+                    <span class="flex h-9 w-9 items-center justify-center overflow-hidden">
+                        <img src="{{ $adminBrandLogo }}" alt="{{ $adminBrandName }}" class="h-9 w-9 object-contain">
+                    </span>
+                @else
+                    <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-950 text-white shadow-sm">
+                        <i data-lucide="sparkles" class="h-4 w-4"></i>
+                    </span>
+                @endif
                 <span class="hidden text-base font-semibold tracking-tight text-slate-950 sm:block">{{ $adminBrandName }}</span>
             </a>
             <nav class="hidden md:flex flex-1 min-w-0 items-center">

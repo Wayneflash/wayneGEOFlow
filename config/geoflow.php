@@ -1,7 +1,7 @@
 <?php
 
 /**
- * GEOFlow 业务相关配置（站点信息、后台路径、上传、缓存、会话与安全）。
+ * 深联云GEO 业务相关配置（站点信息、后台路径、上传、缓存、会话与安全）。
  *
  * 环境变量键名与默认值见各条目旁注释；修改后建议 `php artisan config:clear`。
  */
@@ -13,9 +13,9 @@ $updateMetadataUrl = trim((string) env('GEOFLOW_UPDATE_METADATA_URL', $defaultUp
 return [
 
     // 站点展示名称（页眉、标题等）
-    'site_name' => env('SITE_NAME', 'GEOFlow'),
+    'site_name' => env('SITE_NAME', '深联云GEO'),
     // 站点完整/副标题文案
-    'site_full_name' => env('SITE_FULL_NAME', 'GEOFlow'),
+    'site_full_name' => env('SITE_FULL_NAME', '深联云GEO智能内容系统'),
     // 站点根 URL，用于生成绝对链接（末尾无斜杠）
     'site_url' => rtrim((string) env('SITE_URL', 'http://localhost'), '/'),
     // SEO 描述
@@ -73,7 +73,7 @@ return [
     // 单文件上传最大字节数
     'max_upload_bytes' => (int) env('GEOFLOW_MAX_UPLOAD_BYTES', 2 * 1024 * 1024),
 
-    // 是否启用 GEOFlow 业务层缓存
+    // 是否启用深联云GEO业务层缓存
     'cache_enabled' => filter_var(env('GEOFLOW_CACHE_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
     // 业务缓存 TTL（秒）
     'cache_ttl_seconds' => (int) env('GEOFLOW_CACHE_TTL', 3600),

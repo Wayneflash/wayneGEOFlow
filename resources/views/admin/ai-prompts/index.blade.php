@@ -56,6 +56,9 @@
                                     <td class="px-6 py-4">
                                         <div>
                                             <div class="text-sm font-medium text-gray-900">{{ $prompt['name'] }}</div>
+                                            <div class="mt-1 text-xs leading-5 text-blue-700">
+                                                {{ $prompt['description'] }}
+                                            </div>
                                             <div class="text-sm text-gray-500 max-w-xs truncate">
                                                 {{ \Illuminate\Support\Str::limit($prompt['content'], 100) }}
                                             </div>
@@ -195,4 +198,3 @@
         });
     </script>
 @endpush
-

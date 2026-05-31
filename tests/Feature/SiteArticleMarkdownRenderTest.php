@@ -65,7 +65,7 @@ MD);
             'slug' => 'tech',
         ]);
         $author = Author::query()->create([
-            'name' => 'GEOFlow',
+            'name' => '深联云GEO',
         ]);
         $article = Article::query()->create([
             'title' => 'Markdown 渲染测试',
@@ -94,7 +94,7 @@ MD);
             'slug' => 'tech',
         ]);
         $author = Author::query()->create([
-            'name' => 'GEOFlow',
+            'name' => '深联云GEO',
         ]);
         Article::query()->create([
             'title' => '首页热门文章',
@@ -144,7 +144,7 @@ MD);
             'slug' => 'draft-category',
         ]);
         $author = Author::query()->create([
-            'name' => 'GEOFlow',
+            'name' => '深联云GEO',
         ]);
         Article::query()->create([
             'title' => '已发布文章',
@@ -195,7 +195,7 @@ MD);
     {
         SiteSetting::query()->updateOrCreate(
             ['setting_key' => 'site_name'],
-            ['setting_value' => 'GEOFlow Demo']
+            ['setting_value' => '深联云GEO Demo']
         );
         SiteSetting::query()->updateOrCreate(
             ['setting_key' => 'site_description'],
@@ -219,8 +219,8 @@ MD);
             ->assertSee('data-home-poster-carousel', false)
             ->assertSee('https://example.com/banner-one.jpg', false)
             ->assertSee('Banner One')
-            ->assertSee('GEOFlow Feed')
-            ->assertSee('GEOFlow Demo')
+            ->assertSee('深联云GEO Feed')
+            ->assertSee('深联云GEO Demo')
             ->assertSee('Demo homepage description');
     }
 }
