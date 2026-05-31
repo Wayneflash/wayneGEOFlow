@@ -37,12 +37,8 @@ RUN apt-get update \
         pdo_sqlite \
         pcntl \
         zip \
-    && curl -fsSL https://github.com/phpredis/phpredis/archive/refs/tags/6.2.0.tar.gz -o /tmp/phpredis.tar.gz \
-    && mkdir -p /usr/src/php/ext/redis \
-    && tar -xzf /tmp/phpredis.tar.gz -C /usr/src/php/ext/redis --strip-components=1 \
-    && docker-php-ext-install redis \
+    && pecl install redis \
     && docker-php-ext-enable redis \
-    && rm -f /tmp/phpredis.tar.gz \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
