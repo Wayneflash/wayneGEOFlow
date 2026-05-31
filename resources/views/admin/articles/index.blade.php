@@ -355,19 +355,35 @@
 
                 <div class="overflow-x-auto">
                     <table class="admin-table min-w-full table-fixed">
+                        <colgroup>
+                            @if($isTrashView)
+                                <col class="w-12">
+                                <col class="w-[50%]">
+                                <col class="w-[18%]">
+                                <col class="w-[14%]">
+                                <col class="w-[15%]">
+                            @else
+                                <col class="w-12">
+                                <col class="w-[42%]">
+                                <col class="w-[17%]">
+                                <col class="w-[14%]">
+                                <col class="w-[10%]">
+                                <col class="w-[14%]">
+                            @endif
+                        </colgroup>
                         <thead>
                         <tr>
                             <th class="batch-checkbox hidden px-6 py-3 text-left">
                                 <input type="checkbox" id="select-all" class="rounded border-gray-300 text-blue-600 shadow-sm">
                             </th>
-                            <th class="w-[5%]">序号</th>
-                            <th class="w-[41%]">{{ __('admin.articles.column.info') }}</th>
-                            <th class="w-[17%]">{{ __('admin.articles.column.task_author') }}</th>
+                            <th class="whitespace-nowrap">序号</th>
+                            <th>{{ __('admin.articles.column.info') }}</th>
+                            <th>{{ __('admin.articles.column.task_author') }}</th>
                             @if(!$isTrashView)
-                            <th class="w-[15%]">{{ __('admin.articles.column.workflow') }}</th>
+                            <th>{{ __('admin.articles.column.workflow') }}</th>
                             @endif
-                            <th class="w-[9%]">{{ $isTrashView ? __('admin.articles.trash.column.deleted_at') : __('admin.articles.column.created_at') }}</th>
-                            <th class="w-[13%]">{{ __('admin.articles.column.actions') }}</th>
+                            <th>{{ $isTrashView ? __('admin.articles.trash.column.deleted_at') : __('admin.articles.column.created_at') }}</th>
+                            <th>{{ __('admin.articles.column.actions') }}</th>
                         </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-200 bg-white">

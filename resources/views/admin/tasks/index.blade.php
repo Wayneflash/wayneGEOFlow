@@ -112,12 +112,11 @@
                     <table class="admin-table w-full table-fixed">
                         <colgroup>
                             <col class="w-[5%]">
-                            <col class="w-[35%]">
-                            <col class="w-[9%]">
+                            <col class="w-[20%]">
+                            <col class="w-[11%]">
                             <col class="w-[12%]">
-                            <col class="w-[19%]">
-                            <col class="w-[8%]">
-                            <col class="w-[19%]">
+                            <col class="w-[28%]">
+                            <col class="w-[24%]">
                         </colgroup>
                         <thead>
                         <tr>
@@ -126,7 +125,6 @@
                             <th>{{ __('admin.tasks.column.created_at') }}</th>
                             <th>{{ __('admin.tasks.column.model') }}</th>
                             <th>{{ __('admin.tasks.column.article_stats') }}</th>
-                            <th>{{ __('admin.tasks.column.status') }}</th>
                             <th>{{ __('admin.tasks.column.actions') }}</th>
                         </tr>
                         </thead>
@@ -144,16 +142,6 @@
                                         {{ $task['name'] ?? '' }}
                                     </a>
                                     <div class="mt-1 text-sm text-gray-500 break-words">{{ __('admin.tasks.label.title_library') }}: {{ $task['title_library_name'] ?? '' }}</div>
-                                    <div class="mt-2 flex flex-wrap gap-2">
-                                        <a href="{{ route('admin.articles.index', ['task_id' => (int) $task['id']]) }}" class="inline-flex items-center rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100">
-                                            <i data-lucide="file-text" class="mr-1 h-3.5 w-3.5"></i>
-                                            查看产出文章
-                                        </a>
-                                        <a href="{{ route('admin.tasks.edit', ['taskId' => (int) $task['id']]) }}" class="inline-flex items-center rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50">
-                                            <i data-lucide="settings" class="mr-1 h-3.5 w-3.5"></i>
-                                            任务配置
-                                        </a>
-                                    </div>
                                     @if ($hasVisibleFailure)
                                         <div class="mt-2 rounded-md border px-3 py-2 text-xs {{ $failureClasses['card'] }}">
                                             <span class="inline-flex items-center rounded-full border px-2 py-0.5 font-medium {{ $failureClasses['chip'] }}">{{ $failureInfo['label'] }}</span>
@@ -163,7 +151,13 @@
                                         </div>
                                     @endif
                                 </td>
-                                <td class="whitespace-nowrap text-slate-500">{{ !empty($task['created_at']) ? \Illuminate\Support\Carbon::parse($task['created_at'])->format('m-d H:i') : '' }}</td>
+                                <td class="text-slate-500">
+                                    @if (!empty($task['created_at']))
+                                        @php $taskCreatedAt = \Illuminate\Support\Carbon::parse($task['created_at']); @endphp
+                                        <div class="whitespace-nowrap">{{ $taskCreatedAt->format('Y-m-d') }}</div>
+                                        <div class="whitespace-nowrap text-xs text-slate-400">{{ $taskCreatedAt->format('H:i') }}</div>
+                                    @endif
+                                </td>
                                 <td class="min-w-0 text-slate-500">
                                     <div class="break-words leading-6">{{ $task['ai_model_name'] ?? '' }}</div>
                                     <div class="mt-1">
@@ -225,26 +219,16 @@
                                     @endif
                                 </td>
                                 <td class="min-w-0">
-                                    <form method="POST" action="{{ route('admin.tasks.toggle-status', ['taskId' => (int) $task['id']]) }}" class="inline" id="status-form-{{ (int) $task['id'] }}">
-                                        @csrf
-                                        <input type="hidden" name="status" value="{{ $task['status'] }}">
-                                        <label class="inline-flex items-center">
-                                            <input type="checkbox" @checked(($task['status'] ?? '') === 'active') onchange="handleStatusToggle({{ (int) $task['id'] }}, this)" class="rounded border-gray-300 text-blue-600 shadow-sm">
-                                            <span class="ml-2 text-sm {{ ($task['status'] ?? '') === 'active' ? 'text-green-600' : 'text-gray-500' }}">
-                                                {{ ($task['status'] ?? '') === 'active' ? __('admin.tasks.status.enabled') : __('admin.tasks.status.disabled') }}
-                                            </span>
-                                        </label>
-                                    </form>
-                                </td>
-                                <td class="min-w-0">
-                                    <div class="flex items-center gap-1.5">
+                                    <div class="flex flex-wrap items-center gap-1.5">
                                         @if (($task['status'] ?? '') === 'active')
-                                            <button onclick="stopBatchExecution({{ (int) $task['id'] }}, '{{ addslashes((string) ($task['name'] ?? '')) }}')" data-batch-action="stop" class="inline-flex items-center justify-center w-8 h-8 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-md transition-colors border border-red-200" title="{{ __('admin.tasks.action.stop_batch') }}" aria-label="{{ __('admin.tasks.action.stop_batch') }}" id="batch-btn-{{ (int) $task['id'] }}">
-                                                <i data-lucide="square" class="w-4 h-4"></i>
+                                            <button onclick="stopBatchExecution({{ (int) $task['id'] }}, '{{ addslashes((string) ($task['name'] ?? '')) }}')" data-batch-action="stop" class="inline-flex h-8 items-center justify-center rounded-md border border-red-200 px-2.5 text-xs font-medium text-red-600 transition-colors hover:bg-red-50 hover:text-red-800" title="{{ __('admin.tasks.action.stop_batch') }}" aria-label="{{ __('admin.tasks.action.stop_batch') }}" id="batch-btn-{{ (int) $task['id'] }}">
+                                                <i data-lucide="circle-stop" class="mr-1 h-3.5 w-3.5"></i>
+                                                停止
                                             </button>
                                         @else
-                                            <button onclick="startBatchExecution({{ (int) $task['id'] }}, '{{ addslashes((string) ($task['name'] ?? '')) }}')" data-batch-action="start" class="inline-flex items-center justify-center w-8 h-8 text-green-600 hover:text-green-800 hover:bg-green-50 rounded-md transition-colors border border-green-200" title="{{ __('admin.tasks.action.start_batch') }}" aria-label="{{ __('admin.tasks.action.start_batch') }}" id="batch-btn-{{ (int) $task['id'] }}">
-                                                <i data-lucide="play" class="w-4 h-4"></i>
+                                            <button onclick="startBatchExecution({{ (int) $task['id'] }}, '{{ addslashes((string) ($task['name'] ?? '')) }}')" data-batch-action="start" class="inline-flex h-8 items-center justify-center rounded-md border border-green-200 px-2.5 text-xs font-medium text-green-600 transition-colors hover:bg-green-50 hover:text-green-800" title="{{ __('admin.tasks.action.start_batch') }}" aria-label="{{ __('admin.tasks.action.start_batch') }}" id="batch-btn-{{ (int) $task['id'] }}">
+                                                <i data-lucide="circle-play" class="mr-1 h-3.5 w-3.5"></i>
+                                                运行
                                             </button>
                                         @endif
 
@@ -455,14 +439,14 @@ function renderIcons() { if (typeof lucide !== 'undefined') { lucide.createIcons
 
 function showNotification(type, message) { if (window.AdminUtils && typeof window.AdminUtils.showToast === 'function') { window.AdminUtils.showToast(message, type); return; } alert(message); }
 
-function setButtonLoading(btn, text, classes) { btn.disabled = true; btn.className = classes; btn.innerHTML = `<i data-lucide="loader-2" class="h-4 w-4 animate-spin"></i><span class="sr-only">${text}</span>`; renderIcons(); }
+function setButtonLoading(btn, text, classes) { btn.disabled = true; btn.className = classes; btn.innerHTML = `<i data-lucide="loader-2" class="mr-1 h-3.5 w-3.5 animate-spin"></i>${text}`; renderIcons(); }
 
 function updateBatchButton(btn, taskId, taskName, isActive) {
     if (!btn) return;
     btn.disabled = false;
     btn.dataset.batchAction = isActive ? 'stop' : 'start';
-    btn.className = isActive ? 'inline-flex items-center justify-center w-8 h-8 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-md transition-colors border border-red-200' : 'inline-flex items-center justify-center w-8 h-8 text-green-600 hover:text-green-800 hover:bg-green-50 rounded-md transition-colors border border-green-200';
-    btn.innerHTML = isActive ? '<i data-lucide="square" class="w-4 h-4"></i>' : '<i data-lucide="play" class="w-4 h-4"></i>';
+    btn.className = isActive ? 'inline-flex h-8 items-center justify-center rounded-md border border-red-200 px-2.5 text-xs font-medium text-red-600 transition-colors hover:bg-red-50 hover:text-red-800' : 'inline-flex h-8 items-center justify-center rounded-md border border-green-200 px-2.5 text-xs font-medium text-green-600 transition-colors hover:bg-green-50 hover:text-green-800';
+    btn.innerHTML = isActive ? '<i data-lucide="circle-stop" class="mr-1 h-3.5 w-3.5"></i>停止' : '<i data-lucide="circle-play" class="mr-1 h-3.5 w-3.5"></i>运行';
     btn.title = isActive ? TASK_I18N.stopBatch : TASK_I18N.startBatch;
     btn.setAttribute('aria-label', btn.title);
     btn.onclick = isActive ? () => stopBatchExecution(taskId, taskName) : () => startBatchExecution(taskId, taskName);
@@ -522,22 +506,7 @@ function updateTaskUI(task) {
     const btn = document.getElementById(`batch-btn-${task.id}`);
     const isActive = task.status === 'active';
     updateBatchButton(btn, task.id, task.name, isActive);
-    updateTaskStatusToggle(task.id, isActive);
     updateBatchStatus(task);
-}
-
-function updateTaskStatusToggle(taskId, isActive) {
-    const form = document.getElementById(`status-form-${taskId}`);
-    if (!form) return;
-    const hidden = form.querySelector('input[name="status"]');
-    const checkbox = form.querySelector('input[type="checkbox"]');
-    const label = form.querySelector('span');
-    if (hidden) hidden.value = isActive ? 'active' : 'paused';
-    if (checkbox) checkbox.checked = isActive;
-    if (label) {
-        label.textContent = isActive ? TASK_I18N.enabledStatus : TASK_I18N.disabledStatus;
-        label.className = `ml-2 text-sm ${isActive ? 'text-green-600' : 'text-gray-500'}`;
-    }
 }
 
 function updateTaskCounters(task) {
@@ -703,14 +672,14 @@ function initTaskRealtime() {
 function startBatchExecution(taskId, taskName) {
     if (!confirm(TASK_I18N.confirmStart.replace('__NAME__', taskName))) return;
     const btn = document.getElementById(`batch-btn-${taskId}`);
-    setButtonLoading(btn, TASK_I18N.starting, 'inline-flex items-center justify-center w-8 h-8 rounded-md border border-green-200 bg-green-50 text-green-600 cursor-wait');
+    setButtonLoading(btn, TASK_I18N.starting, 'inline-flex h-8 items-center justify-center rounded-md border border-green-200 bg-green-50 px-2.5 text-xs font-medium text-green-600 cursor-wait');
     fetch(TASK_BATCH_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': @js(csrf_token()) }, body: JSON.stringify({ task_id: taskId, action: 'start' }) }).then(response => response.json()).then(data => { if (!data.success) { showNotification('error', TASK_I18N.startFailed.replace('__MESSAGE__', data.message)); updateBatchButton(btn, taskId, taskName, false); return; } showNotification('success', TASK_I18N.taskQueued.replace('__NAME__', taskName)); updateBatchButton(btn, taskId, taskName, true); requestTaskSnapshot(); }).catch(error => { showNotification('error', TASK_I18N.requestFailed.replace('__MESSAGE__', error.message)); updateBatchButton(btn, taskId, taskName, false); });
 }
 
 function stopBatchExecution(taskId, taskName) {
     if (!confirm(TASK_I18N.confirmStop.replace('__NAME__', taskName))) return;
     const btn = document.getElementById(`batch-btn-${taskId}`);
-    setButtonLoading(btn, TASK_I18N.stopping, 'inline-flex items-center justify-center w-8 h-8 rounded-md border border-orange-200 bg-orange-50 text-orange-600 cursor-wait');
+    setButtonLoading(btn, TASK_I18N.stopping, 'inline-flex h-8 items-center justify-center rounded-md border border-orange-200 bg-orange-50 px-2.5 text-xs font-medium text-orange-600 cursor-wait');
     fetch(TASK_BATCH_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': @js(csrf_token()) }, body: JSON.stringify({ task_id: taskId, action: 'stop' }) }).then(response => response.json()).then(data => { if (!data.success) { showNotification('error', TASK_I18N.stopFailed.replace('__MESSAGE__', data.message)); updateBatchButton(btn, taskId, taskName, true); return; } showNotification('success', TASK_I18N.taskStopped.replace('__NAME__', taskName)); updateBatchButton(btn, taskId, taskName, false); requestTaskSnapshot(); }).catch(error => { showNotification('error', TASK_I18N.requestFailed.replace('__MESSAGE__', error.message)); updateBatchButton(btn, taskId, taskName, true); });
 }
 
@@ -725,18 +694,6 @@ function executeAllActiveTasks() {
             fetch(TASK_BATCH_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': @js(csrf_token()) }, body: JSON.stringify({ task_id: taskId, action: 'start' }) }).then(response => response.json()).then(data => { completed += 1; if (data.success) success += 1; if (completed === buttons.length) { showNotification('success', TASK_I18N.bulkSubmitted.replace('__SUCCESS__', success).replace('__TOTAL__', buttons.length)); requestTaskSnapshot(); } }).catch(() => { completed += 1; if (completed === buttons.length) { showNotification('warning', TASK_I18N.bulkSubmittedPartial.replace('__SUCCESS__', success).replace('__TOTAL__', buttons.length)); requestTaskSnapshot(); } });
         }, index * 150);
     });
-}
-
-function handleStatusToggle(taskId, checkbox) {
-    const form = checkbox.closest('form');
-    const currentStatus = form.querySelector('input[name="status"]').value;
-    const nextLabel = checkbox.checked ? TASK_I18N.activating : TASK_I18N.pausing;
-    const statusSpan = form.querySelector('label span');
-    if (!confirm(checkbox.checked ? TASK_I18N.confirmActivate : TASK_I18N.confirmPause)) { checkbox.checked = currentStatus === 'active'; return; }
-    checkbox.disabled = true;
-    statusSpan.textContent = nextLabel;
-    statusSpan.className = `ml-2 text-sm ${checkbox.checked ? 'text-blue-600' : 'text-orange-600'}`;
-    form.submit();
 }
 
 document.addEventListener('DOMContentLoaded', () => {

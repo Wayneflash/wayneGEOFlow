@@ -227,7 +227,7 @@
             <div class="hidden items-center rounded-lg border border-slate-200 bg-white px-2 py-1 shadow-sm md:flex">
                 <i data-lucide="languages" class="mr-1.5 h-4 w-4 text-slate-400"></i>
                 <select class="bg-transparent pr-1 text-sm font-medium text-slate-700 outline-none" aria-label="{{ __('admin.header.language') }}" onchange="if (this.value) window.location.href = this.value">
-                    @foreach (\App\Support\AdminWeb::supportedLocales() as $localeCode => $localeLabel)
+                    @foreach (['zh_CN' => '简体中文', 'en' => 'English'] as $localeCode => $localeLabel)
                         <option value="{{ route('admin.locale.switch', ['locale' => $localeCode]) }}" @selected(app()->getLocale() === $localeCode)>{{ $localeLabel }}</option>
                     @endforeach
                 </select>

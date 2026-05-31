@@ -27,7 +27,7 @@
 <body class="overflow-hidden">
 <div class="fixed right-4 top-4 z-50">
     <select onchange="window.location.href=this.value" class="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs text-gray-600 shadow-sm">
-        @foreach (\App\Support\AdminWeb::supportedLocales() as $localeCode => $localeLabel)
+        @foreach (['zh_CN' => '简体中文', 'en' => 'English'] as $localeCode => $localeLabel)
             <option value="{{ route('admin.locale.switch', ['locale' => $localeCode]) }}" @selected(app()->getLocale() === $localeCode)>
                 {{ $localeLabel }}
             </option>

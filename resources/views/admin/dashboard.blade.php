@@ -60,7 +60,7 @@
             ['label' => __('admin.dashboard.navigation.create_task_title'), 'href' => route('admin.tasks.create'), 'icon' => 'plus'],
             ['label' => __('admin.dashboard.navigation.articles_title'), 'href' => route('admin.articles.index'), 'icon' => 'file-text'],
             ['label' => __('admin.dashboard.navigation.analytics_title'), 'href' => route('admin.analytics'), 'icon' => 'chart-no-axes-combined'],
-            ['label' => __('admin.dashboard.navigation.prompt_config_title'), 'href' => route('admin.ai-prompts'), 'icon' => 'message-square-text'],
+            ['label' => __('admin.dashboard.navigation.prompt_config_title'), 'href' => route('admin.ai-prompts'), 'icon' => 'message-square-text', 'meta' => __('admin.dashboard.navigation.body_prompt_label').' / '.__('admin.dashboard.navigation.special_prompt_label')],
             ['label' => __('admin.dashboard.navigation.distribution_channels_title'), 'href' => route('admin.distribution.index'), 'icon' => 'radio-tower'],
             ['label' => __('admin.dashboard.navigation.distribution_jobs_title'), 'href' => route('admin.distribution.jobs'), 'icon' => 'list-checks'],
             ['label' => __('admin.dashboard.navigation.multi_site_title'), 'href' => route('admin.site-settings.index'), 'icon' => 'network'],
@@ -70,53 +70,79 @@
     <div class="space-y-6">
         <section class="overflow-hidden rounded-2xl border border-blue-100 bg-white shadow-sm">
             <div class="relative px-6 py-7 lg:px-8">
-                <div class="absolute inset-x-0 top-0 h-px bg-blue-200"></div>
+                <div class="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-blue-400 to-transparent opacity-60"></div>
+                <div class="flex items-center justify-between mb-6">
+                    <div class="flex items-center gap-3">
+                        <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 border border-blue-100">
+                            <i data-lucide="cpu" class="h-5 w-5 text-blue-500"></i>
+                        </div>
+                        <div>
+                            <div class="text-xs font-medium text-blue-500 uppercase tracking-widest">深联云GEO 控制台</div>
+                            <h2 class="text-xl font-bold text-slate-900 tracking-tight">深联云GEO 运营驾驶舱</h2>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-4">
+                        <div class="text-right">
+                            <div class="text-xs text-slate-400">{{ now()->format('Y-m-d H:i:s') }}</div>
+                            <div class="mt-0.5 text-xs text-slate-400">系统时间</div>
+                        </div>
+                        <span class="relative flex h-3 w-3">
+                            <span class="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping"></span>
+                            <span class="relative inline-flex h-3 w-3 rounded-full bg-emerald-500"></span>
+                        </span>
+                        <span class="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-600">SYSTEM ONLINE</span>
+                    </div>
+                </div>
                 <div class="grid gap-8 xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-center">
                     <div>
-                        <div class="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
-                            <i data-lucide="sparkles" class="h-3.5 w-3.5"></i>
-                            深联云GEO 控制台
-                        </div>
-                        <h2 class="mt-5 max-w-4xl text-3xl font-semibold tracking-tight text-slate-950 sm:text-4xl">深联云GEO 运营驾驶舱</h2>
-                        <p class="mt-3 max-w-3xl text-sm leading-6 text-slate-600">围绕“知识沉淀、内容生产、审核发布、AI 收录”建立可观测闭环，让团队一眼判断今天的 GEO 内容资产是否在稳定增长。</p>
+                        <p class="text-sm text-slate-500 max-w-2xl">围绕"知识沉淀、内容生产、审核发布、AI 收录"建立可观测闭环，让团队一眼判断今天的 GEO 内容资产是否在稳定增长。</p>
                         <div class="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                             @foreach ($signalCards as $card)
-                                <div class="rounded-xl border border-slate-200 bg-slate-50/70 p-4">
+                                <div class="group relative rounded-xl border border-slate-200 bg-slate-50/80 p-4 transition-all hover:border-blue-200 hover:bg-blue-50/50 hover:shadow-md hover:shadow-blue-500/5">
                                     <div class="flex items-center justify-between gap-3">
                                         <span class="text-xs font-medium text-slate-500">{{ $card['label'] }}</span>
                                         <span class="flex h-8 w-8 items-center justify-center rounded-lg {{ $card['tone'] }}">
                                             <i data-lucide="{{ $card['icon'] }}" class="h-4 w-4"></i>
                                         </span>
                                     </div>
-                                    <div class="mt-3 text-3xl font-semibold text-slate-950">{{ number_format((int) $card['value']) }}</div>
-                                    <div class="mt-1 text-xs text-slate-500">{{ $card['hint'] }}</div>
+                                    <div class="mt-3 text-3xl font-bold text-slate-900 tracking-tight">{{ number_format((int) $card['value']) }}</div>
+                                    <div class="mt-1 text-xs text-slate-400">{{ $card['hint'] }}</div>
                                 </div>
                             @endforeach
                         </div>
                     </div>
-                    <div class="rounded-2xl border border-blue-100 bg-blue-50/70 p-5">
-                        <div class="flex items-center justify-between">
+                    <div class="rounded-2xl border border-blue-100 bg-gradient-to-br from-blue-50 to-white p-5">
+                        <div class="flex items-center justify-between mb-4">
                             <div>
-                                <div class="text-sm font-semibold text-slate-950">生产系统评分</div>
-                                <div class="mt-1 text-xs text-slate-500">{{ now()->format('Y-m-d H:i') }}</div>
+                                <div class="text-sm font-bold text-slate-900">生产系统评分</div>
+                                <div class="mt-0.5 text-xs text-slate-400">综合健康度指数</div>
                             </div>
-                            <span class="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">ONLINE</span>
-                        </div>
-                        <div class="mt-6 flex items-end justify-between">
-                            <div class="text-6xl font-semibold tracking-tight text-blue-700">{{ $systemScore }}</div>
-                            <div class="pb-2 text-right text-xs leading-5 text-slate-500">
-                                <div>发布占比 {{ $publishedRate }}%</div>
-                                <div>队列成功 {{ number_format($queueSuccessRate, 1) }}%</div>
-                                <div>模型可用 {{ $modelCount }}</div>
+                            <div class="text-right">
+                                <div class="text-3xl font-bold text-blue-600">{{ $systemScore }}</div>
+                                <div class="text-xs text-slate-400">/ 100</div>
                             </div>
                         </div>
-                        <div class="mt-5 h-2 overflow-hidden rounded-full bg-white">
-                            <div class="h-full rounded-full bg-blue-600" style="width: {{ $systemScore }}%"></div>
+                        <div class="mb-4 h-3 overflow-hidden rounded-full bg-blue-100">
+                            <div class="h-full rounded-full bg-gradient-to-r from-blue-400 to-blue-600 transition-all duration-1000" style="width: {{ $systemScore }}%"></div>
                         </div>
-                        <div class="mt-5 grid grid-cols-3 gap-2 text-center text-xs text-slate-500">
-                            <div class="rounded-lg bg-white px-2 py-3"><span class="block text-lg font-semibold text-slate-950">{{ (int) ($todayStats['today_articles'] ?? 0) }}</span>今日新增</div>
-                            <div class="rounded-lg bg-white px-2 py-3"><span class="block text-lg font-semibold text-slate-950">{{ (int) ($taskHealth['pending_jobs'] ?? 0) }}</span>队列等待</div>
-                            <div class="rounded-lg bg-white px-2 py-3"><span class="block text-lg font-semibold text-slate-950">{{ (int) ($taskHealth['failed_jobs'] ?? 0) }}</span>失败任务</div>
+                        <div class="grid grid-cols-3 gap-2 text-center">
+                            <div class="rounded-lg bg-white border border-blue-100 px-2 py-3">
+                                <span class="block text-lg font-bold text-blue-600">{{ (int) ($todayStats['today_articles'] ?? 0) }}</span>
+                                <span class="text-xs text-slate-400">今日新增</span>
+                            </div>
+                            <div class="rounded-lg bg-white border border-blue-100 px-2 py-3">
+                                <span class="block text-lg font-bold text-amber-600">{{ (int) ($taskHealth['pending_jobs'] ?? 0) }}</span>
+                                <span class="text-xs text-slate-400">队列等待</span>
+                            </div>
+                            <div class="rounded-lg bg-white border border-blue-100 px-2 py-3">
+                                <span class="block text-lg font-bold text-red-500">{{ (int) ($taskHealth['failed_jobs'] ?? 0) }}</span>
+                                <span class="text-xs text-slate-400">失败任务</span>
+                            </div>
+                        </div>
+                        <div class="mt-4 pt-3 border-t border-blue-100/50 grid grid-cols-3 gap-2 text-center text-xs text-slate-400">
+                            <div>发布 {{ $publishedRate }}%</div>
+                            <div>队列 {{ number_format($queueSuccessRate, 1) }}%</div>
+                            <div>模型 {{ $modelCount }}</div>
                         </div>
                     </div>
                 </div>
@@ -131,27 +157,12 @@
                         <p class="mt-1 text-sm text-slate-500">最近 7 天新增文章，用来判断任务产能是否稳定。</p>
                     </div>
                     <div class="rounded-lg bg-blue-50 px-3 py-2 text-right">
-                        <div class="text-lg font-semibold text-blue-700">{{ (int) ($articleTrendChart['total_trend_count'] ?? 0) }}</div>
+                        <div class="text-lg font-bold text-blue-700">{{ (int) ($articleTrendChart['total_trend_count'] ?? 0) }}</div>
                         <div class="text-xs text-blue-500">7日新增</div>
                     </div>
                 </div>
-                <div class="mt-5 overflow-hidden rounded-xl bg-slate-50 p-4" data-dashboard-trend-shell>
+                <div class="mt-5 rounded-xl bg-slate-50 border border-slate-100 p-4" data-dashboard-trend-shell>
                     <div data-dashboard-trend-chart data-series='@json($articleTrendRows)' class="h-64 w-full" role="img" aria-label="content production trend chart"></div>
-                    <svg viewBox="0 0 {{ (int) ($articleTrendChart['chart_width'] ?? 600) }} {{ (int) (($articleTrendChart['chart_height'] ?? 148) + 24) }}" class="h-64 w-full" role="img" aria-label="文章趋势图">
-                        @foreach (($articleTrendChart['y_ticks'] ?? []) as $tickIndex => $tick)
-                            @php($y = (($articleTrendChart['chart_height'] ?? 148) / max(1, count($articleTrendChart['y_ticks'] ?? []) - 1)) * $tickIndex)
-                            <line x1="0" y1="{{ $y }}" x2="{{ (int) ($articleTrendChart['chart_width'] ?? 600) }}" y2="{{ $y }}" stroke="#e2e8f0" stroke-width="1" />
-                        @endforeach
-                        @if(($articleTrendChart['area_path'] ?? '') !== '')
-                            <path d="{{ $articleTrendChart['area_path'] }}" fill="#bae6fd" opacity="0.75"></path>
-                            <path d="{{ $articleTrendChart['line_path'] }}" fill="none" stroke="#2563eb" stroke-width="4" stroke-linecap="round"></path>
-                        @endif
-                        @foreach (($articleTrendChart['points'] ?? []) as $point)
-                            <circle cx="{{ $point['x'] }}" cy="{{ $point['y'] }}" r="5" fill="#ffffff" stroke="#2563eb" stroke-width="3">
-                                <title>{{ $point['date'] }}: {{ $point['count'] }}</title>
-                            </circle>
-                        @endforeach
-                    </svg>
                 </div>
             </div>
 
@@ -166,13 +177,13 @@
                 <div class="mt-5 space-y-4">
                     @foreach (($contentFunnel['stages'] ?? []) as $stage)
                         @php($width = max(5, round(((int) $stage['count'] / max(1, (int) ($contentFunnel['max'] ?? 1))) * 100)))
-                        <div class="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                        <div class="rounded-xl border border-slate-100 bg-gradient-to-r from-slate-50 to-white p-3">
                             <div class="mb-2 flex items-center justify-between text-sm">
                                 <span class="font-medium text-slate-700">{{ $stage['label'] }}</span>
-                                <span class="font-semibold text-slate-950">{{ (int) $stage['count'] }}</span>
+                                <span class="font-bold text-blue-600">{{ (int) $stage['count'] }}</span>
                             </div>
-                            <div class="h-2 rounded-full bg-white">
-                                <div class="h-2 rounded-full bg-blue-600" style="width: {{ $width }}%"></div>
+                            <div class="h-2.5 overflow-hidden rounded-full bg-slate-100">
+                                <div class="h-full rounded-full bg-gradient-to-r from-blue-500 to-blue-600 transition-all" style="width: {{ $width }}%"></div>
                             </div>
                         </div>
                     @endforeach
@@ -182,7 +193,7 @@
 
         <section class="grid gap-4 xl:grid-cols-3">
             @foreach ($healthCards as $card)
-                <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm hover:shadow-md transition-shadow">
                     <div class="flex items-start justify-between gap-4">
                         <div>
                             <h3 class="text-base font-semibold text-slate-950">{{ $card['label'] }}</h3>
@@ -193,132 +204,140 @@
                         </span>
                     </div>
                     <div class="mt-5 flex items-end justify-between">
-                        <div class="text-3xl font-semibold text-slate-950">{{ $card['value'] }}</div>
-                        <div class="text-xs font-medium text-slate-500">实时健康</div>
+                        <div class="text-3xl font-bold text-slate-950">{{ $card['value'] }}</div>
+                        <div class="text-xs font-medium text-slate-400">实时</div>
                     </div>
                     <div class="mt-4 h-2 overflow-hidden rounded-full bg-slate-100">
-                        <div class="h-full rounded-full {{ $card['tone'] }}" style="width: {{ min(100, max(0, (float) $card['bar'])) }}%"></div>
+                        <div class="h-full rounded-full {{ $card['tone'] }} transition-all" style="width: {{ min(100, max(0, (float) $card['bar'])) }}%"></div>
                     </div>
                 </div>
             @endforeach
         </section>
 
         <section class="grid min-w-0 gap-6 2xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-            <div class="min-w-0 rounded-2xl border border-slate-200 bg-white shadow-sm">
-                <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-                    <div>
-                        <h3 class="text-base font-semibold text-slate-950">采集与素材</h3>
-                        <p class="mt-1 text-sm text-slate-500">知识库、标题、关键词、图片共同支撑文章生成。</p>
+            <div class="min-w-0 rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-gradient-to-r from-indigo-50/40 to-white">
+                    <div class="flex items-center gap-3">
+                        <div class="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600">
+                            <i data-lucide="database" class="h-4 w-4"></i>
+                        </div>
+                        <div>
+                            <div class="text-sm font-bold text-slate-900">采集与素材</div>
+                            <div class="text-xs text-slate-400">知识库、标题、关键词、图片共同支撑文章生成</div>
+                        </div>
                     </div>
-                    <a href="{{ route('admin.materials.index') }}" class="text-sm font-semibold text-blue-600 hover:text-blue-700">素材库</a>
+                    <a href="{{ route('admin.materials.index') }}" class="text-sm font-semibold text-blue-600 hover:text-blue-700">素材库 →</a>
                 </div>
-                <div class="grid grid-cols-4 gap-px bg-slate-200 text-sm">
-                    <div class="bg-white p-4"><div class="text-slate-500">知识库</div><div class="mt-2 text-2xl font-semibold text-slate-950">{{ (int) ($materialHealth['knowledge_bases'] ?? 0) }}</div></div>
-                    <div class="bg-white p-4"><div class="text-slate-500">标题库</div><div class="mt-2 text-2xl font-semibold text-slate-950">{{ (int) ($materialHealth['title_libraries'] ?? 0) }}</div></div>
-                    <div class="bg-white p-4"><div class="text-slate-500">图库</div><div class="mt-2 text-2xl font-semibold text-slate-950">{{ (int) ($materialHealth['image_libraries'] ?? 0) }}</div></div>
-                    <div class="bg-white p-4"><div class="text-slate-500">向量片段</div><div class="mt-2 text-2xl font-semibold text-slate-950">{{ (int) ($materialHealth['vectorized_chunks'] ?? 0) }}</div></div>
+                <div class="grid grid-cols-4 gap-px bg-slate-100 text-sm">
+                    <div class="bg-white p-4 text-center"><div class="text-xs text-slate-400 mb-1">知识库</div><div class="text-2xl font-bold text-slate-900">{{ (int) ($materialHealth['knowledge_bases'] ?? 0) }}</div></div>
+                    <div class="bg-white p-4 text-center"><div class="text-xs text-slate-400 mb-1">标题库</div><div class="text-2xl font-bold text-slate-900">{{ (int) ($materialHealth['title_libraries'] ?? 0) }}</div></div>
+                    <div class="bg-white p-4 text-center"><div class="text-xs text-slate-400 mb-1">图库</div><div class="text-2xl font-bold text-slate-900">{{ (int) ($materialHealth['image_libraries'] ?? 0) }}</div></div>
+                    <div class="bg-white p-4 text-center"><div class="text-xs text-slate-400 mb-1">向量片段</div><div class="text-2xl font-bold text-slate-900">{{ (int) ($materialHealth['vectorized_chunks'] ?? 0) }}</div></div>
                 </div>
                 <div class="divide-y divide-slate-100">
                     @forelse ($recentImports as $job)
-                        <div class="flex items-center justify-between gap-4 px-5 py-4">
+                        <div class="flex items-center justify-between gap-4 px-5 py-4 hover:bg-slate-50/50 transition-colors">
                             <div class="min-w-0 flex-1">
-                                <div class="line-clamp-1 break-all text-sm font-medium text-slate-950">{{ $job->page_title ?: ($job->source_domain ?: 'URL 采集任务') }}</div>
-                                <div class="mt-1 text-xs text-slate-500">{{ $job->current_step ?: $job->status }}</div>
+                                <div class="line-clamp-1 break-all text-sm font-medium text-slate-800">{{ $job->page_title ?: ($job->source_domain ?: 'URL 采集任务') }}</div>
+                                <div class="mt-1 text-xs text-slate-400">{{ $job->current_step ?: $job->status }}</div>
                             </div>
-                            <span class="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">{{ (int) ($job->progress_percent ?? 0) }}%</span>
+                            <span class="shrink-0 rounded-full bg-indigo-50 border border-indigo-100 px-2.5 py-1 text-xs font-semibold text-indigo-600">{{ (int) ($job->progress_percent ?? 0) }}%</span>
                         </div>
                     @empty
-                        <div class="px-5 py-8 text-center text-sm text-slate-500">暂无采集记录</div>
+                        <div class="px-5 py-8 text-center text-sm text-slate-400">暂无采集记录</div>
                     @endforelse
                 </div>
             </div>
 
-            <div class="min-w-0 rounded-2xl border border-slate-200 bg-white shadow-sm">
-                <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-                    <div>
-                        <h3 class="text-base font-semibold text-slate-950">最近文章</h3>
-                        <p class="mt-1 text-sm text-slate-500">生成后建议先预览，再同步到外部平台。</p>
+            <div class="min-w-0 rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-gradient-to-r from-emerald-50/40 to-white">
+                    <div class="flex items-center gap-3">
+                        <div class="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-100 text-emerald-600">
+                            <i data-lucide="file-text" class="h-4 w-4"></i>
+                        </div>
+                        <div>
+                            <div class="text-sm font-bold text-slate-900">最近文章</div>
+                            <div class="text-xs text-slate-400">生成后建议先预览，再同步到外部平台</div>
+                        </div>
                     </div>
-                    <a href="{{ route('admin.articles.index') }}" class="text-sm font-semibold text-blue-600 hover:text-blue-700">文章列表</a>
+                    <a href="{{ route('admin.articles.index') }}" class="text-sm font-semibold text-blue-600 hover:text-blue-700">文章列表 →</a>
                 </div>
                 <div class="divide-y divide-slate-100">
                     @forelse ($latestArticles as $article)
-                        <div class="flex items-center justify-between gap-4 px-5 py-4">
+                        <div class="flex items-center justify-between gap-4 px-5 py-4 hover:bg-slate-50/50 transition-colors">
                             <div class="min-w-0 flex-1">
-                                <div class="line-clamp-1 break-all text-sm font-medium text-slate-950">{{ $article->title }}</div>
-                                <div class="mt-1 text-xs text-slate-500">{{ $article->category_name ?: '未分类' }} · {{ $article->created_at ? \Illuminate\Support\Carbon::parse($article->created_at)->format('m-d H:i') : '-' }}</div>
+                                <div class="line-clamp-1 break-all text-sm font-medium text-slate-800">{{ $article->title }}</div>
+                                <div class="mt-1 text-xs text-slate-400">{{ $article->category_name ?: '未分类' }} · {{ $article->created_at ? \Illuminate\Support\Carbon::parse($article->created_at)->format('m-d H:i') : '-' }}</div>
                             </div>
-                            <a href="{{ route('admin.articles.preview', ['articleId' => (int) $article->id]) }}" target="_blank" rel="noopener" class="admin-btn-secondary h-8 px-2 text-xs">
+                            <a href="{{ route('admin.articles.preview', ['articleId' => (int) $article->id]) }}" target="_blank" rel="noopener" class="admin-btn-secondary h-8 px-3 text-xs font-medium">
                                 <i data-lucide="eye" class="h-3.5 w-3.5"></i>
                                 预览
                             </a>
                         </div>
                     @empty
-                        <div class="px-5 py-8 text-center text-sm text-slate-500">暂无文章</div>
+                        <div class="px-5 py-8 text-center text-sm text-slate-400">暂无文章</div>
                     @endforelse
                 </div>
             </div>
         </section>
 
-        <details class="group rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <summary class="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4">
-                <span>
-                    <span class="block text-base font-semibold text-slate-950">{{ __('admin.dashboard.quick_start.title') }}</span>
-                    <span class="mt-1 block text-sm text-slate-500">{{ __('admin.dashboard.quick_start.subtitle') }}</span>
-                    <span class="hidden">建议工作流 URL 采集 {{ __('admin.dashboard.quick_start.api_title') }} {{ __('admin.dashboard.quick_start.material_title') }} {{ __('admin.dashboard.quick_start.task_title') }}</span>
-                </span>
-                <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600 transition group-open:rotate-180">
-                    <i data-lucide="chevron-down" class="h-4 w-4"></i>
-                </span>
-            </summary>
+        <section class="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+            <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-gradient-to-r from-blue-50/50 to-white">
+                <div class="flex items-center gap-3">
+                    <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-100 text-blue-600">
+                        <i data-lucide="rocket" class="h-4 w-4"></i>
+                    </div>
+                    <div>
+                        <div class="text-sm font-bold text-slate-900">{{ __('admin.dashboard.quick_start.title') }}</div>
+                        <div class="text-xs text-slate-400">{{ __('admin.dashboard.quick_start.subtitle') }}</div>
+                    </div>
+                </div>
+            </div>
             <div class="grid border-t border-slate-200 lg:grid-cols-2 xl:grid-cols-3">
                 @foreach ($guideSteps as $index => $step)
-                    <a href="{{ $step['href'] }}" class="group/step flex gap-4 border-b border-slate-200 px-5 py-5 transition hover:bg-slate-50 xl:[&:nth-child(3n)]:border-r-0 xl:border-r">
-                        <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600 group-hover/step:bg-blue-600 group-hover/step:text-white">
+                    <a href="{{ $step['href'] }}" class="group/step flex gap-4 border-b border-slate-100 px-5 py-5 transition hover:bg-blue-50/30 xl:[&:nth-child(3n)]:border-r-0 xl:border-r">
+                        <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-500 group-hover/step:bg-blue-600 group-hover/step:text-white transition-all">
                             <i data-lucide="{{ $step['icon'] }}" class="h-4 w-4"></i>
                         </span>
                         <span>
-                            <span class="block text-sm font-semibold text-slate-950">{{ $index + 1 }}. {{ $step['label'] }}</span>
-                            <span class="mt-1 block text-sm leading-6 text-slate-500">{{ $step['desc'] }}</span>
+                            <span class="block text-sm font-semibold text-slate-800">{{ $index + 1 }}. {{ $step['label'] }}</span>
+                            <span class="mt-1 block text-sm leading-5 text-slate-400">{{ $step['desc'] }}</span>
                         </span>
                     </a>
                 @endforeach
             </div>
-        </details>
+        </section>
 
-        <details class="group rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <summary class="flex cursor-pointer list-none items-center justify-between gap-4">
-                <span>
-                    <span class="block text-base font-semibold text-slate-950">{{ __('admin.dashboard.navigation.single_site_title') }} / {{ __('admin.dashboard.navigation.multi_site_title') }}</span>
-                    <span class="mt-1 block text-sm text-slate-500">{{ __('admin.dashboard.navigation.single_site_desc') }}</span>
-                </span>
-                <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600 transition group-open:rotate-180">
-                    <i data-lucide="chevron-down" class="h-4 w-4"></i>
-                </span>
-            </summary>
-            <div class="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <section class="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+            <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white">
+                <div class="flex items-center gap-3">
+                    <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+                        <i data-lucide="layout-grid" class="h-4 w-4"></i>
+                    </div>
+                    <div>
+                        <div class="text-sm font-bold text-slate-900">{{ __('admin.dashboard.navigation.single_site_title') }} / {{ __('admin.dashboard.navigation.multi_site_title') }}</div>
+                        <div class="text-xs text-slate-400">{{ __('admin.dashboard.navigation.single_site_desc') }}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="grid gap-3 p-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 @foreach ($workspaceLinks as $link)
-                    <a href="{{ $link['href'] }}" class="flex items-center gap-3 rounded-lg border border-slate-200 px-4 py-3 text-sm font-medium text-slate-700 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700">
+                    <a href="{{ $link['href'] }}" class="flex items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-600 transition hover:border-blue-300 hover:bg-blue-50 hover:text-blue-600 hover:shadow-sm">
                         <i data-lucide="{{ $link['icon'] }}" class="h-4 w-4"></i>
-                        {{ $link['label'] }}
+                        <span>
+                            <span class="block">{{ $link['label'] }}</span>
+                            @if (!empty($link['meta']))
+                                <span class="mt-1 block text-xs text-slate-500">{{ $link['meta'] }}</span>
+                            @endif
+                        </span>
                     </a>
                 @endforeach
-                <a href="{{ route('admin.ai-prompts') }}" class="hidden">{{ __('admin.dashboard.navigation.body_prompt_label') }}</a>
-                <a href="{{ route('admin.ai-special-prompts') }}" class="hidden">{{ __('admin.dashboard.navigation.special_prompt_label') }}</a>
-                @if (Route::has('admin.admin-users.index'))
-                    <a href="{{ route('admin.admin-users.index') }}" class="hidden">{{ __('admin.dashboard.navigation.admin_users_title') }}</a>
-                @endif
             </div>
-        </details>
+        </section>
     </div>
 @endsection
 
 @push('styles')
-    <style>
-        [data-dashboard-trend-shell] > svg {
-            display: none;
-        }
-    </style>
 @endpush
 
 @push('scripts')
@@ -339,17 +358,21 @@
                 const chart = echarts.init(element, null, { renderer: 'canvas' });
 
                 chart.setOption({
-                    animationDuration: 650,
-                    grid: { top: 18, right: 18, bottom: 28, left: 34 },
+                    animationDuration: 800,
+                    grid: { top: 18, right: 18, bottom: 28, left: 46 },
                     tooltip: {
                         trigger: 'axis',
                         backgroundColor: '#ffffff',
                         borderColor: '#bfdbfe',
                         borderWidth: 1,
                         textStyle: { color: '#1e3a8a', fontSize: 12 },
-                        padding: [10, 12],
+                        padding: [10, 14],
                         extraCssText: 'box-shadow: 0 12px 30px rgba(37, 99, 235, 0.14); border-radius: 10px;',
-                        valueFormatter: (value) => `${Number(value || 0)} 篇`,
+                        formatter: (params) => {
+                            const item = Array.isArray(params) ? params[0] : params;
+                            return `${item.axisValue}<br/>新增文章 ${Number(item.value || 0)} 篇`;
+                        },
+                        valueFormatter: (value) => `<span style="color:#2563eb;font-weight:600">${Number(value || 0)}</span> 篇`,
                     },
                     xAxis: {
                         type: 'category',
@@ -362,22 +385,22 @@
                     yAxis: {
                         type: 'value',
                         minInterval: 1,
-                        splitLine: { lineStyle: { color: '#e2e8f0' } },
+                        splitLine: { lineStyle: { color: '#e2e8f0', type: 'dashed' } },
                         axisLabel: { color: '#64748b', fontSize: 11 },
                     },
                     series: [{
-                        name: 'New articles',
+                        name: '新增文章',
                         type: 'line',
                         data: counts,
-                        smooth: true,
+                        smooth: 0.4,
                         symbol: 'circle',
-                        symbolSize: 9,
-                        lineStyle: { width: 4, color: '#2563eb' },
+                        symbolSize: 10,
+                        lineStyle: { width: 3, color: '#2563eb' },
                         itemStyle: { color: '#ffffff', borderColor: '#2563eb', borderWidth: 3 },
                         areaStyle: {
                             color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                                { offset: 0, color: 'rgba(37, 99, 235, 0.26)' },
-                                { offset: 1, color: 'rgba(14, 165, 233, 0.04)' },
+                                { offset: 0, color: 'rgba(37, 99, 235, 0.25)' },
+                                { offset: 1, color: 'rgba(37, 99, 235, 0.03)' },
                             ]),
                         },
                     }],
