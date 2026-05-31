@@ -354,20 +354,20 @@
                 </div>
 
                 <div class="overflow-x-auto">
-                    <table class="admin-table min-w-[1160px]">
+                    <table class="admin-table min-w-full table-fixed">
                         <thead>
                         <tr>
                             <th class="batch-checkbox hidden px-6 py-3 text-left">
                                 <input type="checkbox" id="select-all" class="rounded border-gray-300 text-blue-600 shadow-sm">
                             </th>
-                            <th class="w-20">序号</th>
-                            <th>{{ __('admin.articles.column.info') }}</th>
-                            <th class="w-48">{{ __('admin.articles.column.task_author') }}</th>
+                            <th class="w-[5%]">序号</th>
+                            <th class="w-[41%]">{{ __('admin.articles.column.info') }}</th>
+                            <th class="w-[17%]">{{ __('admin.articles.column.task_author') }}</th>
                             @if(!$isTrashView)
-                            <th class="w-44">{{ __('admin.articles.column.workflow') }}</th>
+                            <th class="w-[15%]">{{ __('admin.articles.column.workflow') }}</th>
                             @endif
-                            <th class="w-40">{{ $isTrashView ? __('admin.articles.trash.column.deleted_at') : __('admin.articles.column.created_at') }}</th>
-                            <th class="w-28">{{ __('admin.articles.column.actions') }}</th>
+                            <th class="w-[9%]">{{ $isTrashView ? __('admin.articles.trash.column.deleted_at') : __('admin.articles.column.created_at') }}</th>
+                            <th class="w-[13%]">{{ __('admin.articles.column.actions') }}</th>
                         </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-200 bg-white">
@@ -460,13 +460,13 @@
                                     @endif
                                 </td>
                                 @if(!$isTrashView)
-                                <td class="whitespace-nowrap">
-                                    <div class="flex flex-col gap-1">
-                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium {{ $statusClass }}">
-                                            {{ __('admin.articles.publish_prefix') }}: {{ __('admin.articles.status.'.(string) $article->status) }}
+                                <td>
+                                    <div class="flex max-w-40 flex-col gap-1">
+                                        <span class="inline-flex w-full items-center justify-center rounded px-2 py-0.5 text-xs font-medium {{ $statusClass }}" title="{{ __('admin.articles.publish_prefix') }}: {{ __('admin.articles.status.'.(string) $article->status) }}">
+                                            {{ __('admin.articles.status.'.(string) $article->status) }}
                                         </span>
-                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium {{ $reviewClass }}">
-                                            {{ __('admin.articles.review_prefix') }}: {{ __('admin.articles.review.'.(string) $article->review_status) }}
+                                        <span class="inline-flex w-full items-center justify-center rounded px-2 py-0.5 text-xs font-medium {{ $reviewClass }}" title="{{ __('admin.articles.review_prefix') }}: {{ __('admin.articles.review.'.(string) $article->review_status) }}">
+                                            {{ __('admin.articles.review.'.(string) $article->review_status) }}
                                         </span>
                                     </div>
                                 </td>
@@ -484,37 +484,37 @@
                                 </td>
                                 <td class="whitespace-nowrap font-medium">
                                     @if($isTrashView)
-                                        <div class="flex items-center space-x-2">
+                                        <div class="flex items-center gap-1.5">
                                             <form method="POST" action="{{ route('admin.articles.restore', ['articleId' => (int) $article->id]) }}" class="inline" onsubmit="return confirm(@json(__('admin.articles.trash.confirm_restore')))">
                                                 @csrf
-                                                <button type="submit" class="text-green-600 hover:text-green-800" title="{{ __('admin.articles.trash.action_restore') }}">
+                                                <button type="submit" class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-emerald-600 shadow-sm transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700" title="{{ __('admin.articles.trash.action_restore') }}">
                                                     <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
                                                 </button>
                                             </form>
                                             <form method="POST" action="{{ route('admin.articles.force-delete', ['articleId' => (int) $article->id]) }}" class="inline" onsubmit="return confirm(@json(__('admin.articles.trash.confirm_delete')))">
                                                 @csrf
-                                                <button type="submit" class="text-red-600 hover:text-red-800" title="{{ __('admin.articles.trash.action_force_delete') }}">
+                                                <button type="submit" class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-red-600 shadow-sm transition hover:border-red-200 hover:bg-red-50 hover:text-red-700" title="{{ __('admin.articles.trash.action_force_delete') }}">
                                                     <i data-lucide="trash-2" class="w-4 h-4"></i>
                                                 </button>
                                             </form>
                                         </div>
                                     @else
-                                        <div class="flex items-center space-x-2">
-                                            <a href="{{ route('admin.articles.edit', ['articleId' => (int) $article->id]) }}" class="text-green-600 hover:text-green-800" title="{{ __('admin.button.edit') }}">
+                                        <div class="flex items-center gap-1.5">
+                                            <a href="{{ route('admin.articles.edit', ['articleId' => (int) $article->id]) }}" class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700" title="{{ __('admin.button.edit') }}">
                                                 <i data-lucide="edit" class="w-4 h-4"></i>
                                             </a>
-                                            <a href="{{ route('admin.articles.preview', ['articleId' => (int) $article->id]) }}" target="_blank" rel="noopener" class="text-blue-600 hover:text-blue-800" title="预览">
+                                            <a href="{{ route('admin.articles.preview', ['articleId' => (int) $article->id]) }}" target="_blank" rel="noopener" class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-blue-600 shadow-sm transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700" title="预览">
                                                 <i data-lucide="eye" class="w-4 h-4"></i>
                                             </a>
                                             @if((string) $article->review_status === 'pending')
-                                                <button type="button" onclick="quickReview({{ (int) $article->id }}, 'approved')" class="text-green-600 hover:text-green-800" title="{{ __('admin.articles.action.approve') }}">
+                                                <button type="button" onclick="quickReview({{ (int) $article->id }}, 'approved')" class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-emerald-600 shadow-sm transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700" title="{{ __('admin.articles.action.approve') }}">
                                                     <i data-lucide="check" class="w-4 h-4"></i>
                                                 </button>
-                                                <button type="button" onclick="quickReview({{ (int) $article->id }}, 'rejected')" class="text-red-600 hover:text-red-800" title="{{ __('admin.articles.action.reject') }}">
+                                                <button type="button" onclick="quickReview({{ (int) $article->id }}, 'rejected')" class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-red-600 shadow-sm transition hover:border-red-200 hover:bg-red-50 hover:text-red-700" title="{{ __('admin.articles.action.reject') }}">
                                                     <i data-lucide="x" class="w-4 h-4"></i>
                                                 </button>
                                             @endif
-                                            <button type="button" onclick="deleteArticle({{ (int) $article->id }})" class="text-red-600 hover:text-red-800" title="{{ __('admin.button.delete') }}">
+                                            <button type="button" onclick="deleteArticle({{ (int) $article->id }})" class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-red-600 shadow-sm transition hover:border-red-200 hover:bg-red-50 hover:text-red-700" title="{{ __('admin.button.delete') }}">
                                                 <i data-lucide="trash-2" class="w-4 h-4"></i>
                                             </button>
                                         </div>

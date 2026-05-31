@@ -210,6 +210,66 @@ class AdminTasksPageTest extends TestCase
         ]);
     }
 
+    public function test_task_name_must_be_unique_when_creating_task(): void
+    {
+        $admin = Admin::query()->create([
+            'username' => 'tasks_unique_name_admin',
+            'password' => 'secret-123',
+            'email' => 'tasks-unique-name@example.com',
+            'display_name' => 'Tasks Unique Name Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+        $aiModel = AiModel::query()->create([
+            'name' => 'Unique Name Model',
+            'api_key' => app(ApiKeyCrypto::class)->encrypt('test-key'),
+            'model_id' => 'test-model',
+            'model_type' => 'chat',
+            'api_url' => 'https://api.example.com/v1',
+            'status' => 'active',
+        ]);
+        $prompt = Prompt::query()->create([
+            'name' => 'Unique Name Prompt',
+            'type' => 'content',
+            'content' => 'Write {{title}}',
+        ]);
+        $titleLibrary = TitleLibrary::query()->create([
+            'name' => 'Unique Name Title Library',
+        ]);
+        $category = Category::query()->create([
+            'name' => 'Unique Name Category',
+            'slug' => 'unique-name-category',
+        ]);
+
+        Task::query()->create([
+            'name' => 'Unique Task Name',
+            'status' => 'active',
+            'schedule_enabled' => 1,
+            'publish_interval' => 3600,
+            'draft_limit' => 5,
+            'article_limit' => 10,
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->from(route('admin.tasks.create'))
+            ->post(route('admin.tasks.store'), [
+                'task_name' => 'Unique Task Name',
+                'title_library_id' => $titleLibrary->id,
+                'prompt_id' => $prompt->id,
+                'ai_model_id' => $aiModel->id,
+                'fixed_category_id' => $category->id,
+                'status' => 'paused',
+                'publish_scope' => 'local_only',
+                'article_limit' => 3,
+                'draft_limit' => 2,
+                'publish_interval' => 60,
+                'category_mode' => 'fixed',
+                'model_selection_mode' => 'fixed',
+            ])
+            ->assertRedirect(route('admin.tasks.create'))
+            ->assertSessionHasErrors('task_name');
+    }
+
     public function test_task_article_action_links_to_filtered_article_list(): void
     {
         $admin = Admin::query()->create([

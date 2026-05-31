@@ -20,6 +20,7 @@ use App\Support\GeoFlow\PromptGuide;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 use Throwable;
 
@@ -230,7 +231,7 @@ class TaskController extends Controller
                 ->withErrors(__('admin.task_create.error.no_categories_configured'));
         }
 
-        $payload = $this->validateTaskForm($request);
+        $payload = $this->validateTaskForm($request, $taskId);
         $taskData = $this->buildTaskPayload($request, $payload);
 
         try {
@@ -539,10 +540,15 @@ class TaskController extends Controller
      *     model_selection_mode: string|null
      * }
      */
-    private function validateTaskForm(Request $request): array
+    private function validateTaskForm(Request $request, ?int $ignoreTaskId = null): array
     {
         return $request->validate([
-            'task_name' => ['required', 'string', 'max:200'],
+            'task_name' => [
+                'required',
+                'string',
+                'max:100',
+                Rule::unique('tasks', 'name')->ignore($ignoreTaskId),
+            ],
             'title_library_id' => ['required', 'integer', 'min:1'],
             'prompt_id' => ['required', 'integer', 'min:1'],
             'ai_model_id' => ['required', 'integer', 'min:1'],

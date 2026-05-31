@@ -10,7 +10,7 @@ class AdminDashboardQuickStartTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_dashboard_shows_scenario_navigation_without_data_widgets(): void
+    public function test_dashboard_shows_operating_cockpit_and_scenario_navigation(): void
     {
         $admin = Admin::query()->create([
             'username' => 'dashboard_quick_start_admin',
@@ -26,12 +26,19 @@ class AdminDashboardQuickStartTest extends TestCase
 
         $response
             ->assertOk()
+            ->assertSee('深联云GEO 控制台')
+            ->assertSee('深联云GEO 运营驾驶舱')
+            ->assertSee('内容生产趋势')
+            ->assertSee('生产漏斗')
+            ->assertSee('任务与队列')
+            ->assertSee('采集与素材')
+            ->assertSee('AI 配置健康度')
+            ->assertSee('最近文章')
+            ->assertSee(__('admin.dashboard.quick_start.title'))
             ->assertSee(__('admin.dashboard.navigation.single_site_title'))
             ->assertSee(__('admin.dashboard.navigation.multi_site_title'))
             ->assertSee(__('admin.dashboard.navigation.ai_config_title'))
             ->assertSee(__('admin.dashboard.navigation.materials_title'))
-            ->assertSee('配置素材库')
-            ->assertDontSee('建设素材库')
             ->assertSee(__('admin.dashboard.navigation.create_task_title'))
             ->assertSee(__('admin.dashboard.navigation.articles_title'))
             ->assertSee(__('admin.dashboard.navigation.prompt_config_title'))
@@ -40,56 +47,18 @@ class AdminDashboardQuickStartTest extends TestCase
             ->assertSee(__('admin.dashboard.navigation.admin_users_title'))
             ->assertSee(__('admin.dashboard.navigation.distribution_channels_title'))
             ->assertSee(__('admin.dashboard.navigation.distribution_jobs_title'))
-            ->assertSee('建议工作流')
-            ->assertSee('URL 采集')
-            ->assertSee(__('admin.dashboard.quick_start.title'))
-            ->assertSee(__('admin.dashboard.quick_start.api_title'))
-            ->assertSee(__('admin.dashboard.quick_start.material_title'))
-            ->assertSee(__('admin.dashboard.quick_start.task_title'))
-            ->assertDontSee(__('admin.dashboard.total_articles'))
-            ->assertDontSee(__('admin.dashboard.published'))
-            ->assertDontSee(__('admin.dashboard.ai_generated'))
-            ->assertDontSee(__('admin.dashboard.total_views'))
-            ->assertDontSee(__('admin.dashboard.active_tasks'))
-            ->assertDontSee(__('admin.dashboard.ai_models'))
-            ->assertDontSee(__('admin.dashboard.material_total'))
-            ->assertDontSee(__('admin.dashboard.pending_review'))
-            ->assertDontSee(__('admin.dashboard.todo_title'))
-            ->assertDontSee(__('admin.dashboard.analytics_card_title'))
-            ->assertDontSee(__('admin.dashboard.analytics_card_button'))
-            ->assertDontSee(__('admin.dashboard.category_distribution'))
-            ->assertDontSee(__('admin.dashboard.system_performance'))
-            ->assertDontSee(__('admin.dashboard.latest_articles'))
-            ->assertDontSee(__('admin.dashboard.task_health'))
-            ->assertDontSee(__('admin.dashboard.material_health'))
-            ->assertDontSee(__('admin.dashboard.ai_health'))
-            ->assertDontSee(__('admin.dashboard.popular_articles'))
-            ->assertDontSee(__('admin.dashboard.content_funnel'))
             ->assertSee(route('admin.ai-models.index'), false)
-            ->assertSee(route('admin.knowledge-bases.index'), false)
-            ->assertSee(route('admin.title-libraries.index'), false)
-            ->assertSee(route('admin.keyword-libraries.index'), false)
-            ->assertSee(route('admin.image-libraries.index'), false)
-            ->assertSee(route('admin.authors.index'), false)
+            ->assertSee(route('admin.materials.index'), false)
             ->assertSee(route('admin.tasks.create'), false)
             ->assertSee(route('admin.articles.index'), false)
-            ->assertSee(route('admin.site-settings.index'), false)
             ->assertSee(route('admin.analytics'), false)
             ->assertSee(route('admin.ai-prompts'), false)
             ->assertSee(route('admin.ai-special-prompts'), false)
             ->assertSee(route('admin.admin-users.index'), false)
             ->assertSee(route('admin.distribution.index'), false)
-            ->assertSee(route('admin.distribution.create'), false)
             ->assertSee(route('admin.distribution.jobs'), false)
             ->assertSee(route('admin.url-import'), false)
             ->assertDontSee('https://github.com/'.str_rot13('lnbwvatnat'), false);
-
-        $html = $response->getContent();
-        $this->assertSame(1, substr_count($html, route('admin.knowledge-bases.index')));
-        $this->assertSame(1, substr_count($html, route('admin.title-libraries.index')));
-        $this->assertSame(1, substr_count($html, route('admin.keyword-libraries.index')));
-        $this->assertSame(1, substr_count($html, route('admin.image-libraries.index')));
-        $this->assertSame(1, substr_count($html, route('admin.authors.index')));
     }
 
     public function test_welcome_modal_dismiss_url_is_relative_when_app_url_differs_from_origin(): void

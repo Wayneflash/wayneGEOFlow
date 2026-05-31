@@ -334,8 +334,13 @@
                                     ? __('admin.articles.status.'.$articleStatus)
                                     : ($articleStatus !== '' ? $articleStatus : __('admin.articles.status.draft'));
                             @endphp
-                            <tr>
-                                <td class="min-w-[18rem] px-6 py-4 text-sm font-medium text-gray-900">{{ $article->title }}</td>
+                            <tr class="hover:bg-slate-50">
+                                <td class="min-w-[18rem] px-6 py-4 text-sm font-medium text-gray-900">
+                                    <a href="{{ route('admin.articles.preview', ['articleId' => (int) $article->id]) }}" target="_blank" rel="noopener" class="inline-flex items-center gap-2 hover:text-blue-700">
+                                        <span>{{ $article->title }}</span>
+                                        <i data-lucide="arrow-up-right" class="h-3.5 w-3.5 text-slate-300"></i>
+                                    </a>
+                                </td>
                                 <td class="whitespace-nowrap px-6 py-4 text-sm text-gray-500">{{ $article->category_name ?? __('admin.dashboard.uncategorized') }}</td>
                                 <td class="whitespace-nowrap px-6 py-4 text-sm text-gray-700">{{ number_format((int) $article->view_count) }}</td>
                                 <td class="whitespace-nowrap px-6 py-4 text-sm text-gray-500">{{ $articleStatusLabel }}</td>

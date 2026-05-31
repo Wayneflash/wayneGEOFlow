@@ -108,18 +108,26 @@
                     </a>
                 </div>
             @else
-                <div class="overflow-x-auto">
-                    <table class="admin-table min-w-[1160px] table-fixed">
+                <div class="overflow-x-hidden">
+                    <table class="admin-table w-full table-fixed">
+                        <colgroup>
+                            <col class="w-12">
+                            <col class="w-[30%]">
+                            <col class="w-[9%]">
+                            <col class="w-[12%]">
+                            <col class="w-[19%]">
+                            <col class="w-[8%]">
+                            <col class="w-[19%]">
+                        </colgroup>
                         <thead>
                         <tr>
-                            <th class="w-16">序号</th>
+                            <th class="whitespace-nowrap">序号</th>
                             <th>{{ __('admin.tasks.column.name') }}</th>
-                            <th class="w-40">{{ __('admin.tasks.column.created_at') }}</th>
-                            <th class="w-48">{{ __('admin.tasks.column.model') }}</th>
-                            <th class="w-48">{{ __('admin.tasks.column.article_stats') }}</th>
-                            <th class="w-36">{{ __('admin.tasks.column.loop_count') }}</th>
-                            <th class="w-32">{{ __('admin.tasks.column.status') }}</th>
-                            <th class="w-32">{{ __('admin.tasks.column.actions') }}</th>
+                            <th>{{ __('admin.tasks.column.created_at') }}</th>
+                            <th>{{ __('admin.tasks.column.model') }}</th>
+                            <th>{{ __('admin.tasks.column.article_stats') }}</th>
+                            <th>{{ __('admin.tasks.column.status') }}</th>
+                            <th>{{ __('admin.tasks.column.actions') }}</th>
                         </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-200 bg-white">
@@ -131,7 +139,7 @@
                             @endphp
                             <tr class="hover:bg-gray-50">
                                 <td class="whitespace-nowrap font-mono text-slate-500">{{ $loop->iteration }}</td>
-                                <td>
+                                <td class="min-w-0">
                                     <a href="{{ route('admin.articles.index', ['task_id' => (int) $task['id']]) }}" class="text-sm font-medium leading-6 text-gray-900 hover:text-blue-700 break-words">
                                         {{ $task['name'] ?? '' }}
                                     </a>
@@ -155,8 +163,8 @@
                                         </div>
                                     @endif
                                 </td>
-                                <td class="whitespace-nowrap text-slate-500">{{ !empty($task['created_at']) ? \Illuminate\Support\Carbon::parse($task['created_at'])->format('Y-m-d H:i') : '' }}</td>
-                                <td class="text-slate-500">
+                                <td class="whitespace-nowrap text-slate-500">{{ !empty($task['created_at']) ? \Illuminate\Support\Carbon::parse($task['created_at'])->format('m-d H:i') : '' }}</td>
+                                <td class="min-w-0 text-slate-500">
                                     <div class="break-words leading-6">{{ $task['ai_model_name'] ?? '' }}</div>
                                     <div class="mt-1">
                                         <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {{ (($task['model_selection_mode'] ?? 'fixed') === 'smart_failover') ? 'bg-violet-100 text-violet-800' : 'bg-slate-100 text-slate-700' }}">
@@ -164,7 +172,7 @@
                                         </span>
                                     </div>
                                 </td>
-                                <td class="whitespace-nowrap text-slate-500">
+                                <td class="min-w-0 text-slate-500">
                                     @php
                                         $articleLimit = max(1, (int) ($task['article_limit'] ?? $task['draft_limit'] ?? 10));
                                         $createdForProgress = min($articleLimit, (int) ($task['created_count'] ?? $task['total_articles'] ?? 0));
@@ -198,7 +206,13 @@
                                     </a>
                                     <div id="task-published-{{ (int) $task['id'] }}">{{ __('admin.tasks.label.published_articles', ['count' => (int) ($task['published_articles'] ?? 0)]) }}</div>
                                     <div id="task-drafts-{{ (int) $task['id'] }}">{{ __('admin.tasks.label.draft_articles', ['count' => (int) ($task['draft_articles'] ?? 0)]) }}</div>
-                                    <div class="mt-2 h-1.5 w-28 overflow-hidden rounded-full bg-gray-200">
+                                    <div class="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-400">
+                                        <span id="task-loop-{{ (int) $task['id'] }}">{{ __('admin.tasks.label.loop_times', ['count' => (int) ($task['loop_count'] ?? 0)]) }}</span>
+                                        <span id="task-publish-interval-{{ (int) $task['id'] }}">
+                                            {{ __('admin.tasks.label.publish_interval_minutes', ['count' => max(1, (int) ceil(((int) ($task['publish_interval'] ?? 3600)) / 60))]) }}
+                                        </span>
+                                    </div>
+                                    <div class="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-gray-200">
                                         <div id="task-progress-{{ (int) $task['id'] }}" class="h-full rounded-full bg-blue-600" style="width: {{ $progressPercent }}%"></div>
                                     </div>
                                     @if($taskDistributionBadge !== null)
@@ -210,13 +224,7 @@
                                         </div>
                                     @endif
                                 </td>
-                                <td class="whitespace-nowrap text-slate-500">
-                                    <span id="task-loop-{{ (int) $task['id'] }}">{{ __('admin.tasks.label.loop_times', ['count' => (int) ($task['loop_count'] ?? 0)]) }}</span>
-                                    <div id="task-publish-interval-{{ (int) $task['id'] }}" class="mt-1 text-xs text-gray-400">
-                                        {{ __('admin.tasks.label.publish_interval_minutes', ['count' => max(1, (int) ceil(((int) ($task['publish_interval'] ?? 3600)) / 60))]) }}
-                                    </div>
-                                </td>
-                                <td>
+                                <td class="min-w-0">
                                     <form method="POST" action="{{ route('admin.tasks.toggle-status', ['taskId' => (int) $task['id']]) }}" class="inline" id="status-form-{{ (int) $task['id'] }}">
                                         @csrf
                                         <input type="hidden" name="status" value="{{ $task['status'] }}">
@@ -228,8 +236,8 @@
                                         </label>
                                     </form>
                                 </td>
-                                <td>
-                                    <div class="flex w-fit items-center gap-1.5">
+                                <td class="min-w-0">
+                                    <div class="flex items-center gap-1.5">
                                         @if (($task['status'] ?? '') === 'active')
                                             <button onclick="stopBatchExecution({{ (int) $task['id'] }}, '{{ addslashes((string) ($task['name'] ?? '')) }}')" data-batch-action="stop" class="inline-flex items-center justify-center w-8 h-8 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-md transition-colors border border-red-200" title="{{ __('admin.tasks.action.stop_batch') }}" aria-label="{{ __('admin.tasks.action.stop_batch') }}" id="batch-btn-{{ (int) $task['id'] }}">
                                                 <i data-lucide="square" class="w-4 h-4"></i>
@@ -255,7 +263,7 @@
                                             </button>
                                         </form>
                                     </div>
-                                    <div class="mt-2 max-w-[165px]" id="batch-status-{{ (int) $task['id'] }}"></div>
+                                    <div class="mt-2 max-w-full text-xs leading-5" id="batch-status-{{ (int) $task['id'] }}"></div>
                                 </td>
                             </tr>
                         @endforeach
@@ -497,9 +505,9 @@ function updateBatchStatus(task) {
             const nextPublishAt = formatTaskDateTime(task.next_publish_at || task.next_run_at || '');
             statusDiv.innerHTML = `<div class="flex flex-col gap-1 text-xs"><span class="inline-flex w-fit items-center rounded-full border px-2 py-1 bg-cyan-50 text-cyan-700 border-cyan-200">${escapeHtml(TASK_I18N.waitingPublish)}</span>${nextPublishAt ? `<div class="text-gray-500">${escapeHtml(TASK_I18N.nextRunAt.replace('__TIME__', nextPublishAt))}</div>` : ''}</div>`;
         } else if (task.batch_status === 'draft_pool_full') {
-            statusDiv.innerHTML = `<span class="text-xs text-orange-700 bg-orange-50 px-2 py-1 rounded-full border border-orange-200">${escapeHtml(TASK_I18N.draftPoolFull)}</span>`;
+            statusDiv.innerHTML = `<span class="inline-flex max-w-full items-center rounded-full border border-orange-200 bg-orange-50 px-2 py-1 text-xs text-orange-700">${escapeHtml(TASK_I18N.draftPoolFull)}</span>`;
         } else if (task.batch_status === 'limit_reached') {
-            statusDiv.innerHTML = `<span class="text-xs text-amber-700 bg-amber-50 px-2 py-1 rounded-full border border-amber-200">${escapeHtml(TASK_I18N.limitReached)}</span>`;
+            statusDiv.innerHTML = `<span class="inline-flex max-w-full items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-700">${escapeHtml(TASK_I18N.limitReached)}</span>`;
         } else { statusDiv.innerHTML = ''; }
         return;
     }

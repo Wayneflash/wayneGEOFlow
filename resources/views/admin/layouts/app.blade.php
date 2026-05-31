@@ -12,7 +12,7 @@
     <script src="{{ asset('js/lucide.min.js') }}"></script>
     @stack('styles')
 </head>
-<body class="min-h-screen bg-slate-100 text-slate-900 antialiased">
+<body class="min-h-screen overflow-x-hidden bg-slate-100 text-slate-900 antialiased">
 <div id="admin-page-progress" class="fixed left-0 top-0 z-[80] hidden h-0.5 w-full bg-blue-100">
     <div class="h-full w-1/3 rounded-r-full bg-blue-600 shadow-[0_0_12px_rgba(37,99,235,0.45)] transition-all duration-700" data-admin-progress-bar></div>
 </div>
@@ -22,7 +22,8 @@
     'pageTitle' => $pageTitle ?? '',
     'activeMenu' => $activeMenu ?? '',
 ])
-    <main class="mx-auto max-w-[88rem] px-4 py-6 sm:px-6 lg:px-8">
+    <main class="admin-shell-main">
+        <div class="mx-auto w-full max-w-[104rem]">
         @if (session('message'))
             <div class="admin-flash-alert mb-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 shadow-sm">
                 <span class="block sm:inline">{{ session('message') }}</span>
@@ -36,6 +37,7 @@
             </div>
         @endif
         @yield('content')
+        </div>
     </main>
 @include('admin.partials.footer')
 @include('admin.partials.welcome-modal')
