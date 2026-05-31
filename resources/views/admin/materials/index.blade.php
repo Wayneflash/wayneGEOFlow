@@ -1,19 +1,30 @@
 @extends('admin.layouts.app')
 
 @section('content')
-    <div class="px-4 sm:px-0">
-        <div class="mb-8 flex items-center justify-between">
+    <div class="px-4 sm:px-0" x-data="{ activeTab: 'overview' }">
+        <div class="mb-6 flex items-center justify-between">
             <div>
                 <h1 class="text-2xl font-bold text-gray-900">{{ __('admin.materials.heading') }}</h1>
                 <p class="mt-1 text-sm text-gray-600">{{ __('admin.materials.subtitle') }}</p>
             </div>
-            <a href="{{ route('admin.authors.index') }}" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">
-                <i data-lucide="users" class="w-4 h-4 mr-2"></i>
-                {{ __('admin.materials.author_manage') }}
-            </a>
+            <div class="flex items-center gap-3">
+                <div class="flex rounded-lg border border-gray-200 bg-gray-50 p-1">
+                    <button @click="activeTab = 'overview'" :class="activeTab === 'overview' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-600 hover:text-gray-900'" class="px-4 py-2 text-sm font-medium rounded-md transition-colors">
+                        <i data-lucide="grid" class="w-4 h-4 inline mr-1.5"></i>{{ __('admin.materials.tab.overview') }}
+                    </button>
+                    <button @click="activeTab = 'url-import'" :class="activeTab === 'url-import' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-600 hover:text-gray-900'" class="px-4 py-2 text-sm font-medium rounded-md transition-colors">
+                        <i data-lucide="globe" class="w-4 h-4 inline mr-1.5"></i>{{ __('admin.materials.tab.url_import') }}
+                    </button>
+                </div>
+                <a href="{{ route('admin.authors.index') }}" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">
+                    <i data-lucide="users" class="w-4 h-4 mr-2"></i>
+                    {{ __('admin.materials.author_manage') }}
+                </a>
+            </div>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <div x-show="activeTab === 'overview'">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
             <div class="bg-white shadow rounded-lg p-5">
                 <div class="flex items-center">
                     <i data-lucide="key" class="h-6 w-6 text-blue-600"></i>
@@ -165,8 +176,9 @@
                 </div>
             </div>
         </div>
+        </div>
 
-        <div class="bg-white shadow rounded-2xl mb-8 overflow-hidden">
+        <div x-show="activeTab === 'url-import'" class="bg-white shadow rounded-2xl mb-8 overflow-hidden">
             <div class="p-6 lg:p-8">
                 <div class="max-w-5xl">
                     <span class="inline-flex items-center rounded-full bg-cyan-50 px-3 py-1 text-sm font-medium text-cyan-700">
@@ -272,5 +284,9 @@
                 </div>
             </div>
         </div>
+        </div>
     </div>
+    <style>
+        [x-cloak] { display: none !important; }
+    </style>
 @endsection

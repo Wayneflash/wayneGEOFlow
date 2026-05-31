@@ -1039,6 +1039,10 @@ return [
         'manage_titles_short' => '管理标题',
         'manage_images_short' => '管理图片',
         'manage_knowledge_short' => '管理知识',
+        'tab' => [
+            'overview' => '素材总览',
+            'url_import' => '网址采集',
+        ],
         'url_import' => 'URL智能采集',
         'url_import_iterating' => '迭代中',
         'url_import_short' => '从网页一键生成素材，当前能力仍在迭代',

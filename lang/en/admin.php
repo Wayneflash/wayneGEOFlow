@@ -1039,6 +1039,10 @@ return [
         'manage_titles_short' => 'Manage titles',
         'manage_images_short' => 'Manage images',
         'manage_knowledge_short' => 'Manage knowledge',
+        'tab' => [
+            'overview' => 'Overview',
+            'url_import' => 'URL Import',
+        ],
         'url_import' => 'URL Smart Import',
         'url_import_iterating' => 'In Iteration',
         'url_import_short' => 'Generate materials from a web page with one click. Capability is still evolving.',

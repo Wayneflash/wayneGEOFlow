@@ -111,8 +111,8 @@
                 <div class="overflow-x-hidden">
                     <table class="admin-table w-full table-fixed">
                         <colgroup>
-                            <col class="w-12">
-                            <col class="w-[30%]">
+                            <col class="w-[5%]">
+                            <col class="w-[35%]">
                             <col class="w-[9%]">
                             <col class="w-[12%]">
                             <col class="w-[19%]">
