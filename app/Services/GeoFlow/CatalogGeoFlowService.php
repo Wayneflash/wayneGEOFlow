@@ -20,6 +20,7 @@ class CatalogGeoFlowService
     public function getCatalog(): array
     {
         $models = AiModel::query()
+            ->visibleToAdmin()
             ->where('status', 'active')
             ->where(function ($q) {
                 $q->whereNull('model_type')
@@ -38,6 +39,7 @@ class CatalogGeoFlowService
             ->all();
 
         $prompts = Prompt::query()
+            ->visibleToAdmin(includeGlobal: true)
             ->where('type', 'content')
             ->orderBy('name')
             ->get(['id', 'name', 'type'])
@@ -50,6 +52,7 @@ class CatalogGeoFlowService
             ->all();
 
         $titleLibraries = TitleLibrary::query()
+            ->visibleToAdmin()
             ->withCount(['titles as title_count'])
             ->orderBy('name')
             ->get(['id', 'name'])
@@ -61,6 +64,7 @@ class CatalogGeoFlowService
             ->all();
 
         $keywordLibraries = KeywordLibrary::query()
+            ->visibleToAdmin()
             ->withCount(['keywords as keyword_count'])
             ->orderBy('name')
             ->get(['id', 'name'])
@@ -72,6 +76,7 @@ class CatalogGeoFlowService
             ->all();
 
         $imageLibraries = ImageLibrary::query()
+            ->visibleToAdmin()
             ->withCount(['images as image_count'])
             ->orderBy('name')
             ->get(['id', 'name'])
@@ -83,18 +88,21 @@ class CatalogGeoFlowService
             ->all();
 
         $knowledgeBases = KnowledgeBase::query()
+            ->visibleToAdmin()
             ->orderBy('name')
             ->get(['id', 'name'])
             ->map(fn (KnowledgeBase $k) => $k->getAttributes())
             ->all();
 
         $authors = Author::query()
+            ->visibleToAdmin()
             ->orderBy('name')
             ->get(['id', 'name'])
             ->map(fn (Author $a) => $a->getAttributes())
             ->all();
 
         $categories = Category::query()
+            ->visibleToAdmin()
             ->orderBy('sort_order')
             ->orderBy('name')
             ->get(['id', 'name', 'slug'])

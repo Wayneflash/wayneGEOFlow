@@ -7,6 +7,7 @@ use App\Models\Article;
 use App\Models\Keyword;
 use App\Models\KeywordLibrary;
 use App\Support\AdminWeb;
+use App\Support\Tenancy\AdminTenant;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -41,7 +42,7 @@ class KeywordLibraryController extends Controller
      */
     public function detail(Request $request, int $libraryId): View|RedirectResponse
     {
-        $library = KeywordLibrary::query()->whereKey($libraryId)->firstOrFail();
+        $library = KeywordLibrary::query()->visibleToAdmin()->whereKey($libraryId)->firstOrFail();
 
         $search = trim((string) $request->query('search', ''));
         $keywords = $this->loadDetailKeywords($libraryId, $search);
@@ -63,7 +64,7 @@ class KeywordLibraryController extends Controller
      */
     public function storeKeyword(Request $request, int $libraryId): RedirectResponse
     {
-        $library = KeywordLibrary::query()->whereKey($libraryId)->firstOrFail();
+        $library = KeywordLibrary::query()->visibleToAdmin()->whereKey($libraryId)->firstOrFail();
 
         $payload = $request->validate([
             'keyword' => ['required', 'string', 'max:200'],
@@ -100,7 +101,7 @@ class KeywordLibraryController extends Controller
      */
     public function destroyKeywords(Request $request, int $libraryId): RedirectResponse
     {
-        $library = KeywordLibrary::query()->whereKey($libraryId)->firstOrFail();
+        $library = KeywordLibrary::query()->visibleToAdmin()->whereKey($libraryId)->firstOrFail();
 
         /** @var array<int, mixed> $rawIds */
         $rawIds = (array) $request->input('keyword_ids', []);
@@ -130,7 +131,7 @@ class KeywordLibraryController extends Controller
      */
     public function updateFromDetail(Request $request, int $libraryId): RedirectResponse
     {
-        $library = KeywordLibrary::query()->whereKey($libraryId)->firstOrFail();
+        $library = KeywordLibrary::query()->visibleToAdmin()->whereKey($libraryId)->firstOrFail();
 
         $payload = $request->validate([
             'name' => ['required', 'string', 'max:100'],
@@ -152,7 +153,7 @@ class KeywordLibraryController extends Controller
      */
     public function importKeywords(Request $request, int $libraryId): RedirectResponse
     {
-        $library = KeywordLibrary::query()->whereKey($libraryId)->firstOrFail();
+        $library = KeywordLibrary::query()->visibleToAdmin()->whereKey($libraryId)->firstOrFail();
 
         $payload = $request->validate([
             'keywords_text' => ['required', 'string'],
@@ -227,11 +228,11 @@ class KeywordLibraryController extends Controller
             'name.required' => __('admin.keyword_libraries.error.name_required'),
         ]);
 
-        KeywordLibrary::query()->create([
+        KeywordLibrary::query()->create(AdminTenant::stamp([
             'name' => trim((string) $payload['name']),
             'description' => trim((string) ($payload['description'] ?? '')),
             'keyword_count' => 0,
-        ]);
+        ]));
 
         return redirect()->route('admin.keyword-libraries.index')->with('message', __('admin.keyword_libraries.message.create_success'));
     }
@@ -241,7 +242,7 @@ class KeywordLibraryController extends Controller
      */
     public function edit(int $libraryId): View|RedirectResponse
     {
-        $library = KeywordLibrary::query()->whereKey($libraryId)->firstOrFail();
+        $library = KeywordLibrary::query()->visibleToAdmin()->whereKey($libraryId)->firstOrFail();
 
         return view('admin.keyword-libraries.form', [
             'pageTitle' => __('admin.keyword_libraries.page_title'),
@@ -261,7 +262,7 @@ class KeywordLibraryController extends Controller
      */
     public function update(Request $request, int $libraryId): RedirectResponse
     {
-        $library = KeywordLibrary::query()->whereKey($libraryId)->firstOrFail();
+        $library = KeywordLibrary::query()->visibleToAdmin()->whereKey($libraryId)->firstOrFail();
 
         $payload = $request->validate([
             'name' => ['required', 'string', 'max:100'],
@@ -283,7 +284,7 @@ class KeywordLibraryController extends Controller
      */
     public function destroy(int $libraryId): RedirectResponse
     {
-        $library = KeywordLibrary::query()->whereKey($libraryId)->firstOrFail();
+        $library = KeywordLibrary::query()->visibleToAdmin()->whereKey($libraryId)->firstOrFail();
 
         Keyword::query()->where('library_id', $libraryId)->delete();
         $library->delete();
@@ -298,6 +299,7 @@ class KeywordLibraryController extends Controller
     {
         $query = KeywordLibrary::query()
             ->select(['id', 'name', 'description', 'created_at', 'updated_at'])
+            ->visibleToAdmin()
             ->withCount('keywords as actual_count')
             ->orderByDesc('created_at');
 
@@ -318,8 +320,9 @@ class KeywordLibraryController extends Controller
      */
     private function loadStats(): array
     {
-        $totalLibraries = KeywordLibrary::query()->count();
-        $totalKeywords = Keyword::query()->count();
+        $visibleLibraryIds = KeywordLibrary::query()->visibleToAdmin()->select('id');
+        $totalLibraries = (clone $visibleLibraryIds)->count();
+        $totalKeywords = Keyword::query()->whereIn('library_id', $visibleLibraryIds)->count();
 
         return [
             'total_libraries' => $totalLibraries,
@@ -393,6 +396,7 @@ class KeywordLibraryController extends Controller
         }
 
         return (int) Article::query()
+            ->visibleToAdmin()
             ->whereIn('original_keyword', function ($query) use ($libraryId): void {
                 $query->select('keyword')
                     ->from('keywords')

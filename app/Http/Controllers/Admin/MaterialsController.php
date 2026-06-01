@@ -48,15 +48,19 @@ class MaterialsController extends Controller
      */
     private function loadStats(): array
     {
+        $keywordLibraryIds = KeywordLibrary::query()->visibleToAdmin()->select('id');
+        $titleLibraryIds = TitleLibrary::query()->visibleToAdmin()->select('id');
+        $imageLibraryIds = ImageLibrary::query()->visibleToAdmin()->select('id');
+
         return [
-            'keyword_libraries' => KeywordLibrary::query()->count(),
-            'total_keywords' => Keyword::query()->count(),
-            'title_libraries' => TitleLibrary::query()->count(),
-            'total_titles' => Title::query()->count(),
-            'image_libraries' => ImageLibrary::query()->count(),
-            'total_images' => Image::query()->count(),
-            'knowledge_bases' => KnowledgeBase::query()->count(),
-            'authors' => Author::query()->count(),
+            'keyword_libraries' => KeywordLibrary::query()->visibleToAdmin()->count(),
+            'total_keywords' => Keyword::query()->whereIn('library_id', $keywordLibraryIds)->count(),
+            'title_libraries' => TitleLibrary::query()->visibleToAdmin()->count(),
+            'total_titles' => Title::query()->whereIn('library_id', $titleLibraryIds)->count(),
+            'image_libraries' => ImageLibrary::query()->visibleToAdmin()->count(),
+            'total_images' => Image::query()->whereIn('library_id', $imageLibraryIds)->count(),
+            'knowledge_bases' => KnowledgeBase::query()->visibleToAdmin()->count(),
+            'authors' => Author::query()->visibleToAdmin()->count(),
         ];
     }
 }

@@ -16,6 +16,7 @@ use App\Models\KnowledgeChunk;
 use App\Models\Task;
 use App\Models\Title;
 use App\Models\TitleLibrary;
+use App\Support\Tenancy\AdminTenant;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
@@ -51,12 +52,12 @@ class MaterialLibraryService
     {
         return [
             'types' => [
-                ['type' => 'categories', 'count' => Category::query()->count()],
-                ['type' => 'authors', 'count' => Author::query()->count()],
-                ['type' => 'keyword-libraries', 'count' => KeywordLibrary::query()->count()],
-                ['type' => 'title-libraries', 'count' => TitleLibrary::query()->count()],
-                ['type' => 'image-libraries', 'count' => ImageLibrary::query()->count()],
-                ['type' => 'knowledge-bases', 'count' => KnowledgeBase::query()->count()],
+                ['type' => 'categories', 'count' => Category::query()->visibleToAdmin()->count()],
+                ['type' => 'authors', 'count' => Author::query()->visibleToAdmin()->count()],
+                ['type' => 'keyword-libraries', 'count' => KeywordLibrary::query()->visibleToAdmin()->count()],
+                ['type' => 'title-libraries', 'count' => TitleLibrary::query()->visibleToAdmin()->count()],
+                ['type' => 'image-libraries', 'count' => ImageLibrary::query()->visibleToAdmin()->count()],
+                ['type' => 'knowledge-bases', 'count' => KnowledgeBase::query()->visibleToAdmin()->count()],
             ],
         ];
     }
@@ -105,18 +106,18 @@ class MaterialLibraryService
         $row = DB::transaction(function () use ($type, $data): Model {
             return match ($type) {
                 'categories' => $this->createCategory($data),
-                'authors' => Author::query()->create($this->normalizeAuthorPayload($data, false)),
-                'keyword-libraries' => KeywordLibrary::query()->create($this->normalizeBasicLibraryPayload($data, false) + ['keyword_count' => 0]),
-                'title-libraries' => TitleLibrary::query()->create($this->normalizeBasicLibraryPayload($data, false) + [
+                'authors' => Author::query()->create(AdminTenant::stamp($this->normalizeAuthorPayload($data, false))),
+                'keyword-libraries' => KeywordLibrary::query()->create(AdminTenant::stamp($this->normalizeBasicLibraryPayload($data, false) + ['keyword_count' => 0])),
+                'title-libraries' => TitleLibrary::query()->create(AdminTenant::stamp($this->normalizeBasicLibraryPayload($data, false) + [
                     'title_count' => 0,
                     'generation_type' => 'manual',
                     'generation_rounds' => 1,
                     'is_ai_generated' => 0,
-                ]),
-                'image-libraries' => ImageLibrary::query()->create($this->normalizeBasicLibraryPayload($data, false) + [
+                ])),
+                'image-libraries' => ImageLibrary::query()->create(AdminTenant::stamp($this->normalizeBasicLibraryPayload($data, false) + [
                     'image_count' => 0,
                     'used_task_count' => 0,
-                ]),
+                ])),
                 'knowledge-bases' => $this->createKnowledgeBase($data),
             };
         });
@@ -290,11 +291,13 @@ class MaterialLibraryService
     {
         return match ($type) {
             'categories' => Category::query()
+                ->visibleToAdmin()
                 ->select(['id', 'name', 'slug', 'description', 'sort_order', 'created_at'])
                 ->withCount('articles as article_count')
                 ->orderBy('sort_order')
                 ->orderBy('name'),
             'authors' => Author::query()
+                ->visibleToAdmin()
                 ->select(['id', 'name', 'bio', 'email', 'avatar', 'website', 'social_links', 'created_at', 'updated_at'])
                 ->withCount([
                     'articles as article_count' => fn (Builder $q) => $q->whereNull('deleted_at'),
@@ -302,22 +305,26 @@ class MaterialLibraryService
                 ])
                 ->orderByDesc('created_at'),
             'keyword-libraries' => KeywordLibrary::query()
+                ->visibleToAdmin()
                 ->select(['id', 'name', 'description', 'keyword_count', 'created_at', 'updated_at'])
                 ->withCount('keywords as item_count')
                 ->withCount('titleLibraries as title_library_count')
                 ->orderByDesc('created_at'),
             'title-libraries' => TitleLibrary::query()
+                ->visibleToAdmin()
                 ->select(['id', 'name', 'description', 'title_count', 'generation_type', 'keyword_library_id', 'ai_model_id', 'prompt_id', 'generation_rounds', 'is_ai_generated', 'created_at', 'updated_at'])
                 ->withCount('titles as item_count')
                 ->withCount('tasks as task_count')
                 ->orderByDesc('created_at'),
             'image-libraries' => ImageLibrary::query()
+                ->visibleToAdmin()
                 ->select(['id', 'name', 'description', 'image_count', 'used_task_count', 'created_at', 'updated_at'])
                 ->withCount('images as item_count')
                 ->withCount('tasks as task_count')
                 ->withSum('images as total_size', 'file_size')
                 ->orderByDesc('created_at'),
             'knowledge-bases' => KnowledgeBase::query()
+                ->visibleToAdmin()
                 ->select(['id', 'name', 'description', 'content', 'character_count', 'used_task_count', 'file_type', 'file_path', 'word_count', 'usage_count', 'created_at', 'updated_at'])
                 ->withCount('chunks as chunk_count')
                 ->withCount('tasks as task_count')
@@ -547,12 +554,12 @@ class MaterialLibraryService
         $name = $this->requiredString($data, 'name', '分类名称不能为空', 255);
         $this->ensureUniqueCategoryName($name);
 
-        return Category::query()->create([
+        return Category::query()->create(AdminTenant::stamp([
             'name' => $name,
             'slug' => $this->buildCategorySlug($name, (string) ($data['slug'] ?? ''), 0),
             'description' => $this->optionalString($data, 'description'),
             'sort_order' => max(0, (int) ($data['sort_order'] ?? 0)),
-        ]);
+        ]));
     }
 
     private function updateCategory(Model $row, array $data): void
@@ -623,7 +630,7 @@ class MaterialLibraryService
     private function createKnowledgeBase(array $data): KnowledgeBase
     {
         $payload = $this->normalizeKnowledgePayload($data, false);
-        $knowledgeBase = KnowledgeBase::query()->create($payload);
+        $knowledgeBase = KnowledgeBase::query()->create(AdminTenant::stamp($payload));
         $this->chunkSyncService->sync((int) $knowledgeBase->id, (string) $payload['content']);
 
         return $knowledgeBase;

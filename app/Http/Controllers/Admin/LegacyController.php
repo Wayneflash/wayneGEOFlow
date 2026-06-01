@@ -72,6 +72,7 @@ class LegacyController extends Controller
     {
         try {
             $query = Task::query()
+                ->visibleToAdmin()
                 ->select([
                     'id',
                     'name',
@@ -198,10 +199,10 @@ class LegacyController extends Controller
     private function loadAiConfiguratorStats(): array
     {
         return [
-            'model_count' => AiModel::query()->where('status', 'active')->count(),
-            'prompt_count' => Prompt::query()->count(),
-            'total_usage' => (int) (AiModel::query()->sum('total_used') ?? 0),
-            'today_usage' => (int) (AiModel::query()->sum('used_today') ?? 0),
+            'model_count' => AiModel::query()->visibleToAdmin()->where('status', 'active')->count(),
+            'prompt_count' => Prompt::query()->visibleToAdmin(null, true)->count(),
+            'total_usage' => (int) (AiModel::query()->visibleToAdmin()->sum('total_used') ?? 0),
+            'today_usage' => (int) (AiModel::query()->visibleToAdmin()->sum('used_today') ?? 0),
         ];
     }
 }

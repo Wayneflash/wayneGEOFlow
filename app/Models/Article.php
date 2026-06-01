@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToTenant;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -10,12 +11,14 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Article extends Model
 {
+    use BelongsToTenant;
     use SoftDeletes;
 
     protected $table = 'articles';
 
     protected $fillable = [
         'title',
+        'tenant_id',
         'slug',
         'excerpt',
         'content',
@@ -38,6 +41,7 @@ class Article extends Model
     {
         return [
             'category_id' => 'integer',
+            'tenant_id' => 'integer',
             'author_id' => 'integer',
             'task_id' => 'integer',
             'view_count' => 'integer',

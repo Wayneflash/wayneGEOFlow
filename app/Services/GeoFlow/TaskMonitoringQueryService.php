@@ -5,6 +5,8 @@ namespace App\Services\GeoFlow;
 use App\Models\Task;
 use App\Models\TaskRun;
 use App\Models\WorkerHeartbeat;
+use App\Support\Tenancy\AdminTenant;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -67,7 +69,7 @@ class TaskMonitoringQueryService
         $page = max(1, $page);
         $perPage = max(1, min(100, $perPage));
 
-        $query = Task::query()
+        $query = $this->taskQuery()
             ->when(! empty($filters['status']), fn ($q) => $q->where('status', (string) $filters['status']))
             ->when(! empty($filters['search']), fn ($q) => $q->where('name', 'like', '%'.trim((string) $filters['search']).'%'))
             ->orderByDesc('created_at');
@@ -94,7 +96,7 @@ class TaskMonitoringQueryService
      */
     public function getTaskMonitoringDetail(int $taskId): array
     {
-        $task = Task::query()->whereKey($taskId)->firstOrFail();
+        $task = $this->taskQuery()->whereKey($taskId)->firstOrFail();
         $decorated = $this->decorateTasks(collect([$task]))->first();
 
         return is_array($decorated) ? $decorated : [];
@@ -106,7 +108,7 @@ class TaskMonitoringQueryService
     private function listTaskMonitoringRows(): array
     {
         /** @var Collection<int, Task> $tasks */
-        $tasks = Task::query()
+        $tasks = $this->taskQuery()
             ->orderByDesc('created_at')
             ->get();
 
@@ -373,6 +375,7 @@ class TaskMonitoringQueryService
         return TaskRun::query()
             ->select(['id', 'task_id', 'status', 'error_message', 'created_at'])
             ->with(['task:id,name'])
+            ->whereIn('task_id', $this->taskQuery()->select('id'))
             ->orderByDesc('created_at')
             ->orderByDesc('id')
             ->limit(5)
@@ -395,5 +398,15 @@ class TaskMonitoringQueryService
         }
 
         return (int) $value;
+    }
+
+    /**
+     * @return Builder<Task>
+     */
+    private function taskQuery(): Builder
+    {
+        $query = Task::query();
+
+        return AdminTenant::currentAdmin() !== null ? $query->visibleToAdmin() : $query;
     }
 }

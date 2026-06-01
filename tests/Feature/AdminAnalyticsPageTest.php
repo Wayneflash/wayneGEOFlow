@@ -76,7 +76,7 @@ class AdminAnalyticsPageTest extends TestCase
             strpos($html, route('admin.analytics')),
             strpos($html, route('admin.dashboard'))
         );
-        $this->assertStringContainsString('text-blue-600 font-medium', $html);
+        $this->assertStringContainsString('bg-blue-50 text-blue-700 ring-1 ring-blue-100', $html);
     }
 
     public function test_analytics_page_applies_date_filters_to_content_metrics(): void

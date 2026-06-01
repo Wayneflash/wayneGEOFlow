@@ -11,6 +11,7 @@ use App\Models\Title;
 use App\Models\TitleLibrary;
 use App\Services\GeoFlow\TitleAiGenerationService;
 use App\Support\AdminWeb;
+use App\Support\Tenancy\AdminTenant;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -49,7 +50,7 @@ class TitleLibraryController extends Controller
      */
     public function detail(Request $request, int $libraryId): View|RedirectResponse
     {
-        $library = TitleLibrary::query()->whereKey($libraryId)->firstOrFail();
+        $library = TitleLibrary::query()->visibleToAdmin()->whereKey($libraryId)->firstOrFail();
 
         $titles = $this->loadDetailTitles($libraryId, '');
         $usageTotal = (int) (Title::query()->where('library_id', $libraryId)->sum('used_count') ?? 0);
@@ -69,10 +70,11 @@ class TitleLibraryController extends Controller
      */
     public function aiGenerate(int $libraryId): View|RedirectResponse
     {
-        $library = TitleLibrary::query()->whereKey($libraryId)->firstOrFail();
+        $library = TitleLibrary::query()->visibleToAdmin()->whereKey($libraryId)->firstOrFail();
 
         $keywordLibraries = KeywordLibrary::query()
             ->select(['id', 'name'])
+            ->visibleToAdmin()
             ->withCount(['keywords as keyword_count'])
             ->orderByDesc('created_at')
             ->get();
@@ -80,6 +82,7 @@ class TitleLibraryController extends Controller
             ->select(['id', 'name', 'model_id'])
             ->where('status', 'active')
             ->whereRaw("COALESCE(NULLIF(model_type, ''), 'chat') = 'chat'")
+            ->visibleToAdmin()
             ->orderBy('name')
             ->get();
 
@@ -98,7 +101,7 @@ class TitleLibraryController extends Controller
      */
     public function generateWithAi(Request $request, int $libraryId): RedirectResponse
     {
-        $library = TitleLibrary::query()->whereKey($libraryId)->firstOrFail();
+        $library = TitleLibrary::query()->visibleToAdmin()->whereKey($libraryId)->firstOrFail();
 
         $payload = $request->validate([
             'keyword_library_id' => ['required', 'integer'],
@@ -121,12 +124,13 @@ class TitleLibraryController extends Controller
             'title_count.max' => __('admin.title_ai_generate.error.invalid_count'),
         ]);
 
-        $keywordLibrary = KeywordLibrary::query()->whereKey((int) $payload['keyword_library_id'])->firstOrFail();
+        $keywordLibrary = KeywordLibrary::query()->visibleToAdmin()->whereKey((int) $payload['keyword_library_id'])->firstOrFail();
 
         $aiModel = AiModel::query()
             ->whereKey((int) $payload['ai_model_id'])
             ->where('status', 'active')
             ->whereRaw("COALESCE(NULLIF(model_type, ''), 'chat') = 'chat'")
+            ->visibleToAdmin()
             ->firstOrFail();
 
         /** @var Collection<int, string> $keywords */
@@ -200,7 +204,7 @@ class TitleLibraryController extends Controller
      */
     public function storeTitle(Request $request, int $libraryId): RedirectResponse
     {
-        $library = TitleLibrary::query()->whereKey($libraryId)->firstOrFail();
+        $library = TitleLibrary::query()->visibleToAdmin()->whereKey($libraryId)->firstOrFail();
 
         $payload = $request->validate([
             'title' => ['required', 'string', 'max:500'],
@@ -240,7 +244,7 @@ class TitleLibraryController extends Controller
      */
     public function destroyTitles(Request $request, int $libraryId): RedirectResponse
     {
-        $library = TitleLibrary::query()->whereKey($libraryId)->firstOrFail();
+        $library = TitleLibrary::query()->visibleToAdmin()->whereKey($libraryId)->firstOrFail();
 
         /** @var array<int, mixed> $rawIds */
         $rawIds = (array) $request->input('title_ids', []);
@@ -269,7 +273,7 @@ class TitleLibraryController extends Controller
      */
     public function importTitles(Request $request, int $libraryId): RedirectResponse
     {
-        $library = TitleLibrary::query()->whereKey($libraryId)->firstOrFail();
+        $library = TitleLibrary::query()->visibleToAdmin()->whereKey($libraryId)->firstOrFail();
 
         $payload = $request->validate([
             'titles_text' => ['required', 'string'],
@@ -346,14 +350,14 @@ class TitleLibraryController extends Controller
             'name.required' => __('admin.title_libraries.error.name_required'),
         ]);
 
-        TitleLibrary::query()->create([
+        TitleLibrary::query()->create(AdminTenant::stamp([
             'name' => trim((string) $payload['name']),
             'description' => trim((string) ($payload['description'] ?? '')),
             'title_count' => 0,
             'generation_type' => 'manual',
             'generation_rounds' => 1,
             'is_ai_generated' => 0,
-        ]);
+        ]));
 
         return redirect()->route('admin.title-libraries.index')->with('message', __('admin.title_libraries.message.create_success'));
     }
@@ -363,7 +367,7 @@ class TitleLibraryController extends Controller
      */
     public function edit(int $libraryId): View|RedirectResponse
     {
-        $library = TitleLibrary::query()->whereKey($libraryId)->firstOrFail();
+        $library = TitleLibrary::query()->visibleToAdmin()->whereKey($libraryId)->firstOrFail();
 
         return view('admin.title-libraries.form', [
             'pageTitle' => __('admin.title_libraries.page_title'),
@@ -383,7 +387,7 @@ class TitleLibraryController extends Controller
      */
     public function update(Request $request, int $libraryId): RedirectResponse
     {
-        $library = TitleLibrary::query()->whereKey($libraryId)->firstOrFail();
+        $library = TitleLibrary::query()->visibleToAdmin()->whereKey($libraryId)->firstOrFail();
 
         $payload = $request->validate([
             'name' => ['required', 'string', 'max:100'],
@@ -405,9 +409,9 @@ class TitleLibraryController extends Controller
      */
     public function destroy(int $libraryId): RedirectResponse
     {
-        $library = TitleLibrary::query()->whereKey($libraryId)->firstOrFail();
+        $library = TitleLibrary::query()->visibleToAdmin()->whereKey($libraryId)->firstOrFail();
 
-        $taskCount = Task::query()->where('title_library_id', $libraryId)->count();
+        $taskCount = Task::query()->visibleToAdmin()->where('title_library_id', $libraryId)->count();
         if ($taskCount > 0) {
             return back()->withErrors(__('admin.title_libraries.error.delete_blocked', ['tasks' => $this->buildTaskDeleteBlockHint($libraryId, $taskCount)]));
         }
@@ -425,6 +429,7 @@ class TitleLibraryController extends Controller
     {
         $query = TitleLibrary::query()
             ->select(['id', 'name', 'description', 'created_at', 'updated_at'])
+            ->visibleToAdmin()
             ->withCount([
                 'titles as actual_count',
                 'titles as ai_count' => fn ($builder) => $builder->where('is_ai_generated', true),
@@ -449,9 +454,10 @@ class TitleLibraryController extends Controller
      */
     private function loadStats(): array
     {
-        $totalLibraries = TitleLibrary::query()->count();
-        $totalTitles = Title::query()->count();
-        $aiTitles = Title::query()->where('is_ai_generated', true)->count();
+        $visibleLibraryIds = TitleLibrary::query()->visibleToAdmin()->select('id');
+        $totalLibraries = (clone $visibleLibraryIds)->count();
+        $totalTitles = Title::query()->whereIn('library_id', $visibleLibraryIds)->count();
+        $aiTitles = Title::query()->whereIn('library_id', TitleLibrary::query()->visibleToAdmin()->select('id'))->where('is_ai_generated', true)->count();
 
         return [
             'total_libraries' => $totalLibraries,
@@ -576,7 +582,7 @@ class TitleLibraryController extends Controller
     private function refreshTitleLibraryCount(int $libraryId): void
     {
         $count = Title::query()->where('library_id', $libraryId)->count();
-        TitleLibrary::query()->whereKey($libraryId)->update([
+        TitleLibrary::query()->visibleToAdmin()->whereKey($libraryId)->update([
             'title_count' => $count,
         ]);
     }
@@ -587,6 +593,7 @@ class TitleLibraryController extends Controller
     private function buildTaskDeleteBlockHint(int $libraryId, int $taskCount): string
     {
         $tasks = Task::query()
+            ->visibleToAdmin()
             ->where('title_library_id', $libraryId)
             ->select(['id', 'name'])
             ->orderByDesc('updated_at')

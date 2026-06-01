@@ -14,6 +14,7 @@ use App\Models\Task;
 use App\Models\TaskRun;
 use App\Models\TaskSchedule;
 use App\Models\TitleLibrary;
+use App\Support\Tenancy\AdminTenant;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -77,7 +78,7 @@ class TaskLifecycleService
 
         DB::beginTransaction();
         try {
-            $task = Task::query()->create([
+            $task = Task::query()->create(AdminTenant::stamp([
                 'name' => $normalized['name'],
                 'title_library_id' => $normalized['title_library_id'],
                 'image_library_id' => $normalized['image_library_id'],
@@ -98,7 +99,7 @@ class TaskLifecycleService
                 'knowledge_base_id' => $normalized['knowledge_base_id'],
                 'category_mode' => $normalized['category_mode'],
                 'fixed_category_id' => $normalized['fixed_category_id'],
-            ]);
+            ]));
 
             $taskId = (int) $task->id;
             $this->queueService->initializeTaskSchedule($taskId);
@@ -109,7 +110,7 @@ class TaskLifecycleService
                     'next_run_time' => now()->addMinute(),
                 ]);
             } else {
-                Task::query()->whereKey($taskId)->update([
+                Task::query()->visibleToAdmin()->whereKey($taskId)->update([
                     'schedule_enabled' => 0,
                     'next_run_at' => null,
                     'updated_at' => now(),
@@ -168,7 +169,7 @@ class TaskLifecycleService
         DB::beginTransaction();
         try {
             if (! empty($normalized)) {
-                Task::query()->whereKey($taskId)->update($normalized);
+                Task::query()->visibleToAdmin()->whereKey($taskId)->update($normalized);
             }
 
             if ($status === 'active') {
@@ -196,7 +197,7 @@ class TaskLifecycleService
      */
     public function deleteTask(int $taskId): array
     {
-        $task = Task::query()->whereKey($taskId)->first(['id', 'name']);
+        $task = Task::query()->visibleToAdmin()->whereKey($taskId)->first(['id', 'name']);
         if (! $task) {
             throw new ApiException('task_not_found', '任务不存在', 404);
         }
@@ -205,6 +206,7 @@ class TaskLifecycleService
 
         DB::transaction(function () use ($taskId): void {
             Article::query()
+                ->visibleToAdmin()
                 ->where('task_id', $taskId)
                 ->whereNull('deleted_at')
                 ->update([
@@ -219,13 +221,14 @@ class TaskLifecycleService
             }
 
             Article::withTrashed()
+                ->visibleToAdmin()
                 ->where('task_id', $taskId)
                 ->update([
                     'task_id' => null,
                     'updated_at' => now(),
                 ]);
 
-            Task::query()->whereKey($taskId)->delete();
+            Task::query()->visibleToAdmin()->whereKey($taskId)->delete();
         });
 
         $this->taskRealtimeBroadcastService->broadcastOverview();
@@ -255,7 +258,7 @@ class TaskLifecycleService
             if ($enqueueNow) {
                 $jobId = $this->queueService->enqueueTaskJob($taskId, 'generate_article', ['source' => 'api_manual_start']);
                 if ($jobId !== null) {
-                    Task::query()->whereKey($taskId)->update([
+                    Task::query()->visibleToAdmin()->whereKey($taskId)->update([
                         'next_run_at' => now()->addSeconds(60),
                         'updated_at' => now(),
                     ]);
@@ -475,9 +478,10 @@ class TaskLifecycleService
             $exists = false;
             // prompt 与 ai_model 的校验规则与普通外键不同，这里单独处理业务约束。
             if (! empty($config['prompt_content'])) {
-                $exists = Prompt::query()->whereKey($id)->where('type', 'content')->exists();
+                $exists = Prompt::query()->visibleToAdmin(null, true)->whereKey($id)->where('type', 'content')->exists();
             } elseif (! empty($config['ai_active_chat'])) {
                 $exists = AiModel::query()
+                    ->visibleToAdmin()
                     ->whereKey($id)
                     ->where('status', 'active')
                     ->where(function ($q) {
@@ -487,7 +491,7 @@ class TaskLifecycleService
                     })
                     ->exists();
             } else {
-                $exists = $modelClass::query()->whereKey($id)->exists();
+                $exists = $modelClass::query()->visibleToAdmin()->whereKey($id)->exists();
             }
 
             if (! $exists) {
@@ -602,7 +606,7 @@ class TaskLifecycleService
      */
     private function activateTask(int $taskId, bool $resetNextRun): void
     {
-        $task = Task::query()->whereKey($taskId)->first(['id', 'next_run_at']);
+        $task = Task::query()->visibleToAdmin()->whereKey($taskId)->first(['id', 'next_run_at']);
         $updates = [
             'status' => 'active',
             'schedule_enabled' => 1,
@@ -613,7 +617,7 @@ class TaskLifecycleService
             $updates['next_run_at'] = now();
         }
 
-        Task::query()->whereKey($taskId)->update($updates);
+        Task::query()->visibleToAdmin()->whereKey($taskId)->update($updates);
         $this->queueService->initializeTaskSchedule($taskId);
     }
 
@@ -624,7 +628,7 @@ class TaskLifecycleService
      */
     private function pauseTask(int $taskId, string $reason): int
     {
-        Task::query()->whereKey($taskId)->update([
+        Task::query()->visibleToAdmin()->whereKey($taskId)->update([
             'status' => 'paused',
             'schedule_enabled' => 0,
             'next_run_at' => null,
@@ -648,7 +652,7 @@ class TaskLifecycleService
      */
     private function ensureTaskExists(int $taskId): void
     {
-        if (! Task::query()->whereKey($taskId)->exists()) {
+        if (! Task::query()->visibleToAdmin()->whereKey($taskId)->exists()) {
             throw new ApiException('task_not_found', '任务不存在', 404);
         }
     }

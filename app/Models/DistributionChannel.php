@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToTenant;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -9,8 +10,11 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class DistributionChannel extends Model
 {
+    use BelongsToTenant;
+
     protected $fillable = [
         'name',
+        'tenant_id',
         'domain',
         'endpoint_url',
         'channel_type',
@@ -30,6 +34,7 @@ class DistributionChannel extends Model
     {
         return [
             'created_by_admin_id' => 'integer',
+            'tenant_id' => 'integer',
             'last_health_checked_at' => 'datetime',
             'site_settings' => 'array',
             'channel_config' => 'array',

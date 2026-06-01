@@ -4,11 +4,13 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Admin;
+use App\Models\Tenant;
 use App\Support\AdminWeb;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 use Throwable;
@@ -126,15 +128,28 @@ class AdminUserController extends Controller
         ]);
 
         try {
-            Admin::query()->create([
-                'username' => trim((string) $payload['username']),
-                'display_name' => trim((string) ($payload['display_name'] ?? '')),
-                'email' => trim((string) ($payload['email'] ?? '')),
-                'password' => (string) $payload['password'],
-                'role' => 'admin',
-                'status' => 'active',
-                'created_by' => (int) (auth('admin')->id() ?? 0),
-            ]);
+            DB::transaction(function () use ($payload): void {
+                $username = trim((string) $payload['username']);
+                $displayName = trim((string) ($payload['display_name'] ?? ''));
+                $tenant = Tenant::query()->create([
+                    'name' => $displayName !== '' ? $displayName : $username,
+                    'slug' => $this->uniqueTenantSlug($displayName !== '' ? $displayName : $username),
+                    'status' => 'active',
+                ]);
+
+                $admin = Admin::query()->create([
+                    'tenant_id' => (int) $tenant->id,
+                    'username' => $username,
+                    'display_name' => $displayName,
+                    'email' => trim((string) ($payload['email'] ?? '')),
+                    'password' => (string) $payload['password'],
+                    'role' => 'admin',
+                    'status' => 'active',
+                    'created_by' => (int) (auth('admin')->id() ?? 0),
+                ]);
+
+                $tenant->update(['owner_admin_id' => (int) $admin->id]);
+            });
 
             return redirect()->route('admin.admin-users.index')->with('message', __('admin.admin_users.message.create_success'));
         } catch (Throwable $exception) {
@@ -246,8 +261,9 @@ class AdminUserController extends Controller
                 'last_login',
                 'created_at',
                 'created_by',
+                'tenant_id',
             ])
-            ->with(['creator:id,username'])
+            ->with(['creator:id,username', 'tenant:id,name'])
             // 与 bak 一致：超级管理员置顶，其余按创建时间和 ID 升序。
             ->orderByRaw("CASE WHEN LOWER(COALESCE(role, '')) IN ('super_admin', 'superadmin') THEN 0 ELSE 1 END")
             ->orderBy('created_at')
@@ -271,8 +287,26 @@ class AdminUserController extends Controller
                 'last_login' => $admin->last_login?->format('Y-m-d H:i:s') ?? '',
                 'created_at' => $admin->created_at?->format('Y-m-d H:i:s') ?? '',
                 'creator_username' => (string) ($admin->creator?->username ?? ''),
+                'tenant_name' => (string) ($admin->tenant?->name ?? ''),
                 'activity_count' => (int) ($admin->activity_count ?? 0),
             ];
         })->all();
+    }
+
+    private function uniqueTenantSlug(string $name): string
+    {
+        $base = Str::slug($name);
+        if ($base === '') {
+            $base = 'tenant';
+        }
+
+        $slug = $base;
+        $suffix = 2;
+        while (Tenant::query()->where('slug', $slug)->exists()) {
+            $slug = $base.'-'.$suffix;
+            $suffix++;
+        }
+
+        return $slug;
     }
 }

@@ -11,6 +11,7 @@ use App\Models\Author;
 use App\Models\Category;
 use App\Models\Task;
 use App\Support\GeoFlow\ArticleWorkflow;
+use App\Support\Tenancy\AdminTenant;
 use Illuminate\Support\Facades\DB;
 
 class ArticleGeoFlowService
@@ -22,7 +23,7 @@ class ArticleGeoFlowService
         $page = max(1, $page);
         $perPage = max(1, min(100, $perPage));
 
-        $query = Article::query();
+        $query = Article::query()->visibleToAdmin();
 
         foreach (['task_id', 'status', 'review_status', 'author_id'] as $key) {
             if (! empty($filters[$key])) {
@@ -71,7 +72,7 @@ class ArticleGeoFlowService
         $slug = $normalized['slug'] ?: ArticleWorkflow::generateUniqueSlug($normalized['title']);
         $excerpt = $normalized['excerpt'] !== '' ? $normalized['excerpt'] : mb_substr(strip_tags($normalized['content']), 0, 200);
 
-        $article = Article::query()->create([
+        $article = Article::query()->create(AdminTenant::stamp([
             'title' => $normalized['title'],
             'slug' => $slug,
             'content' => $normalized['content'],
@@ -85,7 +86,7 @@ class ArticleGeoFlowService
             'review_status' => $workflowState['review_status'],
             'is_ai_generated' => $normalized['is_ai_generated'],
             'published_at' => $workflowState['published_at'],
-        ]);
+        ]));
         $this->enqueueDistributionIfPublishable($article);
 
         return $this->getArticle((int) $article->id);
@@ -94,6 +95,7 @@ class ArticleGeoFlowService
     public function getArticle(int $articleId): array
     {
         $article = Article::query()
+            ->visibleToAdmin()
             ->with(['task:id,name', 'author:id,name', 'category:id,name'])
             ->find($articleId);
         if (! $article) {
@@ -148,8 +150,8 @@ class ArticleGeoFlowService
 
         $normalized['updated_at'] = now();
 
-        Article::query()->whereKey($articleId)->update($normalized);
-        $article = Article::query()->whereKey($articleId)->first();
+        Article::query()->visibleToAdmin()->whereKey($articleId)->update($normalized);
+        $article = Article::query()->visibleToAdmin()->whereKey($articleId)->first();
         if ($article) {
             $this->enqueueDistributionIfPublishable($article, $this->distributionActionForArticle($article));
         }
@@ -172,6 +174,7 @@ class ArticleGeoFlowService
             $taskNeedReview = 1;
             if (! empty($article['task_id'])) {
                 $taskNeedReview = (int) (Task::query()
+                    ->visibleToAdmin()
                     ->whereKey((int) $article['task_id'])
                     ->value('need_review') ?? 1);
             }
@@ -188,7 +191,7 @@ class ArticleGeoFlowService
         );
 
         DB::transaction(function () use ($articleId, $workflowState, $reviewStatus, $reviewNote, $auditAdminId) {
-            Article::query()->whereKey($articleId)->update([
+            Article::query()->visibleToAdmin()->whereKey($articleId)->update([
                 'status' => $workflowState['status'],
                 'review_status' => $workflowState['review_status'],
                 'published_at' => $workflowState['published_at'],
@@ -202,7 +205,7 @@ class ArticleGeoFlowService
                 'review_note' => trim($reviewNote),
             ]);
         });
-        $articleModel = Article::query()->whereKey($articleId)->first();
+        $articleModel = Article::query()->visibleToAdmin()->whereKey($articleId)->first();
         if ($articleModel) {
             $this->enqueueDistributionIfPublishable($articleModel, $this->distributionActionForArticle($articleModel));
         }
@@ -224,13 +227,13 @@ class ArticleGeoFlowService
             $article['published_at'] ?? null
         );
 
-        Article::query()->whereKey($articleId)->update([
+        Article::query()->visibleToAdmin()->whereKey($articleId)->update([
             'status' => $workflowState['status'],
             'review_status' => $workflowState['review_status'],
             'published_at' => $workflowState['published_at'],
             'updated_at' => now(),
         ]);
-        $articleModel = Article::query()->whereKey($articleId)->first();
+        $articleModel = Article::query()->visibleToAdmin()->whereKey($articleId)->first();
         if ($articleModel) {
             $this->enqueueDistributionIfPublishable($articleModel, $this->distributionActionForArticle($articleModel));
         }
@@ -240,7 +243,7 @@ class ArticleGeoFlowService
 
     public function trashArticle(int $articleId): array
     {
-        $article = Article::query()->whereKey($articleId)->first();
+        $article = Article::query()->visibleToAdmin()->whereKey($articleId)->first();
         if (! $article) {
             throw new ApiException('article_not_found', '文章不存在', 404);
         }
@@ -379,7 +382,7 @@ class ArticleGeoFlowService
      */
     private function getArticleRecord(int $articleId): array
     {
-        $article = Article::query()->whereKey($articleId)->first();
+        $article = Article::query()->visibleToAdmin()->whereKey($articleId)->first();
         if (! $article) {
             throw new ApiException('article_not_found', '文章不存在', 404);
         }
@@ -405,7 +408,7 @@ class ArticleGeoFlowService
         }
 
         $id = (int) $value;
-        if (! $modelClass::query()->whereKey($id)->exists()) {
+        if (! $modelClass::query()->visibleToAdmin()->whereKey($id)->exists()) {
             throw new ApiException('validation_failed', '参数校验失败', 422, [
                 'field_errors' => [$field => "{$field} 对应资源不存在"],
             ]);
@@ -434,7 +437,7 @@ class ArticleGeoFlowService
 
     private function isSlugAvailable(string $slug, ?int $excludeId = null): bool
     {
-        $q = Article::withTrashed()->where('slug', $slug);
+        $q = Article::withTrashed()->visibleToAdmin()->where('slug', $slug);
         if ($excludeId !== null) {
             $q->where('id', '!=', $excludeId);
         }

@@ -57,19 +57,23 @@ class AnalyticsController extends Controller
     {
         return [
             'channels' => DistributionChannel::query()
+                ->visibleToAdmin()
                 ->orderBy('name')
                 ->select('id', 'name')
                 ->get(),
             'tasks' => Task::query()
+                ->visibleToAdmin()
                 ->orderByDesc('created_at')
                 ->select('id', 'name')
                 ->limit(100)
                 ->get(),
             'categories' => Category::query()
+                ->visibleToAdmin()
                 ->orderBy('name')
                 ->select('id', 'name')
                 ->get(),
             'articles' => Article::query()
+                ->visibleToAdmin()
                 ->whereNull('deleted_at')
                 ->orderByDesc('created_at')
                 ->select('id', 'title')

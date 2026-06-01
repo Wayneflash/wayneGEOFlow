@@ -270,11 +270,12 @@
                         <label for="api_key" class="block text-sm font-medium text-gray-700">{{ __('admin.ai_models.field_api_key') }}</label>
                         <input type="password" name="api_key" id="api_key" required class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm" placeholder="{{ __('admin.ai_models.placeholder_api_key') }}">
                         <p id="apiKeyHelp" class="mt-1 text-xs text-gray-500">{{ __('admin.ai_models.api_key_help_create') }}</p>
+                        <p class="mt-1 text-xs text-blue-600">{{ __('admin.ai_models.api_key_encryption_notice') }}</p>
                     </div>
 
                     <div>
                         <label for="api_url" class="block text-sm font-medium text-gray-700">{{ __('admin.ai_models.field_api_url') }}</label>
-                        <input type="url" name="api_url" id="api_url" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm" value="https://api.deepseek.com" placeholder="{{ __('admin.ai_models.placeholder_api_url') }}">
+                        <input type="text" inputmode="url" autocomplete="off" name="api_url" id="api_url" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm" value="https://api.deepseek.com" placeholder="{{ __('admin.ai_models.placeholder_api_url') }}">
                         <p class="mt-1 text-xs text-gray-500">{{ __('admin.ai_models.api_url_help') }}</p>
                     </div>
 
@@ -328,7 +329,7 @@
             testFailedPrefix: @json(__('admin.ai_models.test_failed_prefix')),
             testNetworkError: @json(__('admin.ai_models.test_network_error')),
         };
-        const MODEL_TEST_TIMEOUT_MS = 60000;
+        const MODEL_TEST_TIMEOUT_MS = 30000;
         const UPDATE_URL_TEMPLATE = @json(route('admin.ai-models.update', ['modelId' => '__MODEL_ID__'], false));
         const DELETE_URL_TEMPLATE = @json(route('admin.ai-models.delete', ['modelId' => '__MODEL_ID__'], false));
         const TEST_URL_TEMPLATE = @json(route('admin.ai-models.test', ['modelId' => '__MODEL_ID__'], false));

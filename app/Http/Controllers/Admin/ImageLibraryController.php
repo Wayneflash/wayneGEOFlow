@@ -8,6 +8,7 @@ use App\Models\Image;
 use App\Models\ImageLibrary;
 use App\Models\Task;
 use App\Support\AdminWeb;
+use App\Support\Tenancy\AdminTenant;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -44,7 +45,7 @@ class ImageLibraryController extends Controller
      */
     public function detail(Request $request, int $libraryId): View|RedirectResponse
     {
-        $library = ImageLibrary::query()->whereKey($libraryId)->firstOrFail();
+        $library = ImageLibrary::query()->visibleToAdmin()->whereKey($libraryId)->firstOrFail();
 
         $search = trim((string) $request->query('search', ''));
         $images = $this->loadDetailImages($libraryId, $search);
@@ -71,7 +72,7 @@ class ImageLibraryController extends Controller
      */
     public function updateFromDetail(Request $request, int $libraryId): RedirectResponse
     {
-        $library = ImageLibrary::query()->whereKey($libraryId)->firstOrFail();
+        $library = ImageLibrary::query()->visibleToAdmin()->whereKey($libraryId)->firstOrFail();
 
         $payload = $request->validate([
             'name' => ['required', 'string', 'max:100'],
@@ -93,7 +94,7 @@ class ImageLibraryController extends Controller
      */
     public function uploadImages(Request $request, int $libraryId): RedirectResponse
     {
-        $library = ImageLibrary::query()->whereKey($libraryId)->firstOrFail();
+        $library = ImageLibrary::query()->visibleToAdmin()->whereKey($libraryId)->firstOrFail();
 
         $request->validate([
             'images' => ['required', 'array', 'min:1'],
@@ -168,7 +169,7 @@ class ImageLibraryController extends Controller
      */
     public function destroyImages(Request $request, int $libraryId): RedirectResponse
     {
-        $library = ImageLibrary::query()->whereKey($libraryId)->firstOrFail();
+        $library = ImageLibrary::query()->visibleToAdmin()->whereKey($libraryId)->firstOrFail();
 
         /** @var array<int, mixed> $rawIds */
         $rawIds = (array) $request->input('image_ids', []);
@@ -234,12 +235,12 @@ class ImageLibraryController extends Controller
             'name.required' => __('admin.image_libraries.error.name_required'),
         ]);
 
-        ImageLibrary::query()->create([
+        ImageLibrary::query()->create(AdminTenant::stamp([
             'name' => trim((string) $payload['name']),
             'description' => trim((string) ($payload['description'] ?? '')),
             'image_count' => 0,
             'used_task_count' => 0,
-        ]);
+        ]));
 
         return redirect()->route('admin.image-libraries.index')->with('message', __('admin.image_libraries.message.create_success'));
     }
@@ -249,7 +250,7 @@ class ImageLibraryController extends Controller
      */
     public function edit(int $libraryId): View|RedirectResponse
     {
-        $library = ImageLibrary::query()->whereKey($libraryId)->firstOrFail();
+        $library = ImageLibrary::query()->visibleToAdmin()->whereKey($libraryId)->firstOrFail();
 
         return view('admin.image-libraries.form', [
             'pageTitle' => __('admin.image_libraries.page_title'),
@@ -269,7 +270,7 @@ class ImageLibraryController extends Controller
      */
     public function update(Request $request, int $libraryId): RedirectResponse
     {
-        $library = ImageLibrary::query()->whereKey($libraryId)->firstOrFail();
+        $library = ImageLibrary::query()->visibleToAdmin()->whereKey($libraryId)->firstOrFail();
 
         $payload = $request->validate([
             'name' => ['required', 'string', 'max:100'],
@@ -291,9 +292,9 @@ class ImageLibraryController extends Controller
      */
     public function destroy(int $libraryId): RedirectResponse
     {
-        $library = ImageLibrary::query()->whereKey($libraryId)->firstOrFail();
+        $library = ImageLibrary::query()->visibleToAdmin()->whereKey($libraryId)->firstOrFail();
 
-        $taskCount = Task::query()->where('image_library_id', $libraryId)->count();
+        $taskCount = Task::query()->visibleToAdmin()->where('image_library_id', $libraryId)->count();
         if ($taskCount > 0) {
             return back()->withErrors(__('admin.image_libraries.error.in_use', ['count' => $taskCount]));
         }
@@ -319,6 +320,7 @@ class ImageLibraryController extends Controller
     {
         $query = ImageLibrary::query()
             ->select(['id', 'name', 'description', 'created_at', 'updated_at'])
+            ->visibleToAdmin()
             ->withCount('images as actual_count')
             ->withSum('images as total_size', 'file_size')
             ->orderByDesc('created_at');
@@ -341,9 +343,10 @@ class ImageLibraryController extends Controller
      */
     private function loadStats(): array
     {
-        $totalLibraries = ImageLibrary::query()->count();
-        $totalImages = Image::query()->count();
-        $totalSize = (int) (Image::query()->sum('file_size') ?? 0);
+        $visibleLibraryIds = ImageLibrary::query()->visibleToAdmin()->select('id');
+        $totalLibraries = (clone $visibleLibraryIds)->count();
+        $totalImages = Image::query()->whereIn('library_id', $visibleLibraryIds)->count();
+        $totalSize = (int) (Image::query()->whereIn('library_id', ImageLibrary::query()->visibleToAdmin()->select('id'))->sum('file_size') ?? 0);
 
         return [
             'total_libraries' => $totalLibraries,
@@ -437,7 +440,7 @@ class ImageLibraryController extends Controller
     private function refreshImageLibraryCount(int $libraryId): void
     {
         $count = Image::query()->where('library_id', $libraryId)->count();
-        ImageLibrary::query()->whereKey($libraryId)->update([
+        ImageLibrary::query()->visibleToAdmin()->whereKey($libraryId)->update([
             'image_count' => $count,
         ]);
     }

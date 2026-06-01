@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Article;
 use App\Models\Category;
 use App\Support\Site\ArticleHtmlPresenter;
+use App\Support\Site\PublicSiteTenant;
 use App\Support\Site\SiteSettingsBag;
 use App\Support\Site\SiteThemeViewResolver;
 use Illuminate\Http\Request;
@@ -22,8 +23,9 @@ class HomeController extends Controller
         $search = trim((string) $request->query('search', ''));
         $categoryId = max(0, (int) $request->query('category', 0));
         $page = max(1, (int) $request->query('page', 1));
+        $tenantId = PublicSiteTenant::currentTenantId();
 
-        $map = SiteSettingsBag::all();
+        $map = SiteSettingsBag::all($tenantId);
         $perPage = max(1, min(200, (int) ($map['per_page'] ?? config('geoflow.items_per_page', 12))));
         $featuredLimit = max(1, min(5, (int) ($map['featured_limit'] ?? 5)));
 
@@ -36,11 +38,11 @@ class HomeController extends Controller
         $category = null;
         $categoryMissing = false;
         if ($categoryId > 0) {
-            $category = Category::query()->find($categoryId);
+            $category = PublicSiteTenant::scopeTenantColumn(Category::query(), $tenantId)->find($categoryId);
             $categoryMissing = ! $category instanceof Category;
         }
 
-        $query = Article::query()->with(['category', 'author'])->published();
+        $query = PublicSiteTenant::scopeTenantColumn(Article::query(), $tenantId)->with(['category', 'author'])->published();
 
         if ($search !== '') {
             $escaped = $this->escapeLike(mb_strtolower($search));
@@ -65,7 +67,7 @@ class HomeController extends Controller
         $hotArticles = collect();
         if ($search === '' && ! $category && $page === 1) {
             if (Schema::hasColumn('articles', 'is_featured')) {
-                $featuredArticles = Article::query()
+                $featuredArticles = PublicSiteTenant::scopeTenantColumn(Article::query(), $tenantId)
                     ->with(['category', 'author'])
                     ->published()
                     ->where('is_featured', true)
@@ -76,7 +78,7 @@ class HomeController extends Controller
             }
 
             if (Schema::hasColumn('articles', 'is_hot')) {
-                $hotArticles = Article::query()
+                $hotArticles = PublicSiteTenant::scopeTenantColumn(Article::query(), $tenantId)
                     ->with(['category', 'author'])
                     ->published()
                     ->where('is_hot', true)
@@ -155,6 +157,7 @@ class HomeController extends Controller
             'pageDescription' => $pageDescription,
             'perPage' => $perPage,
             'canonicalUrl' => $canonicalUrl,
+            'publicTenantId' => $tenantId,
         ]);
     }
 

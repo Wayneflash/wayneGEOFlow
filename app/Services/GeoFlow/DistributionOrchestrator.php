@@ -24,6 +24,7 @@ class DistributionOrchestrator
     public function syncTaskChannels(Task $task, array $channelIds): void
     {
         $ids = DistributionChannel::query()
+            ->visibleToAdmin()
             ->whereIn('id', $channelIds)
             ->where('status', 'active')
             ->pluck('id')

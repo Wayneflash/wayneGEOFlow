@@ -15,6 +15,7 @@ use App\Services\GeoFlow\DistributionTargetSitePackageBuilder;
 use App\Support\AdminWeb;
 use App\Support\GeoFlow\ApiKeyCrypto;
 use App\Support\Site\SiteThemeCatalog;
+use App\Support\Tenancy\AdminTenant;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -38,6 +39,7 @@ class DistributionController extends Controller
     public function index(): View
     {
         $channels = DistributionChannel::query()
+            ->visibleToAdmin()
             ->with('activeSecret')
             ->withCount([
                 'articleDistributions as pending_count' => fn ($query) => $query->whereIn('status', ['queued', 'sending']),
@@ -47,13 +49,14 @@ class DistributionController extends Controller
             ->get();
 
         $stats = [
-            'total' => DistributionChannel::query()->count(),
-            'active' => DistributionChannel::query()->where('status', 'active')->count(),
-            'pending' => ArticleDistribution::query()->whereIn('status', ['queued', 'sending'])->count(),
-            'failed' => ArticleDistribution::query()->where('status', 'failed')->count(),
+            'total' => DistributionChannel::query()->visibleToAdmin()->count(),
+            'active' => DistributionChannel::query()->visibleToAdmin()->where('status', 'active')->count(),
+            'pending' => ArticleDistribution::query()->whereIn('article_id', \App\Models\Article::query()->visibleToAdmin()->select('id'))->whereIn('status', ['queued', 'sending'])->count(),
+            'failed' => ArticleDistribution::query()->whereIn('article_id', \App\Models\Article::query()->visibleToAdmin()->select('id'))->where('status', 'failed')->count(),
         ];
 
         $logs = DistributionLog::query()
+            ->whereIn('article_id', \App\Models\Article::query()->visibleToAdmin()->select('id'))
             ->with('channel:id,name')
             ->with('article:id,title,slug')
             ->orderByDesc('id')
@@ -83,7 +86,7 @@ class DistributionController extends Controller
     {
         $payload = $this->validateChannel($request);
 
-        $channel = DistributionChannel::query()->create([
+        $channel = DistributionChannel::query()->create(AdminTenant::stamp([
             'name' => (string) $payload['name'],
             'domain' => $this->normalizeDomain((string) $payload['domain']),
             'endpoint_url' => (string) $payload['endpoint_url'],
@@ -95,7 +98,7 @@ class DistributionController extends Controller
             'status' => (string) $payload['status'],
             'description' => filled($payload['description'] ?? null) ? (string) $payload['description'] : null,
             'created_by_admin_id' => auth('admin')->id(),
-        ]);
+        ]));
 
         if ($channel->isWordPressRest()) {
             $this->createWordPressSecret($channel, (string) $payload['wordpress_application_password']);
@@ -120,6 +123,7 @@ class DistributionController extends Controller
     public function edit(int $channelId): View|RedirectResponse
     {
         $channel = DistributionChannel::query()
+            ->visibleToAdmin()
             ->with('activeSecret')
             ->whereKey($channelId)
             ->first();
@@ -139,7 +143,7 @@ class DistributionController extends Controller
 
     public function update(Request $request, int $channelId): RedirectResponse
     {
-        $channel = DistributionChannel::query()->whereKey($channelId)->first();
+        $channel = DistributionChannel::query()->visibleToAdmin()->whereKey($channelId)->first();
         if (! $channel) {
             return redirect()->route('admin.distribution.index')->withErrors(__('admin.distribution.message.not_found'));
         }
@@ -188,6 +192,7 @@ class DistributionController extends Controller
     public function show(int $channelId): View|RedirectResponse
     {
         $channel = DistributionChannel::query()
+            ->visibleToAdmin()
             ->with('activeSecret')
             ->whereKey($channelId)
             ->first();
@@ -198,6 +203,7 @@ class DistributionController extends Controller
 
         $jobs = ArticleDistribution::query()
             ->with('article:id,title,slug,status')
+            ->whereIn('article_id', \App\Models\Article::query()->visibleToAdmin()->select('id'))
             ->where('distribution_channel_id', $channelId)
             ->orderByDesc('id')
             ->limit(20)
@@ -205,6 +211,7 @@ class DistributionController extends Controller
 
         $logs = DistributionLog::query()
             ->with('article:id,title,slug')
+            ->whereIn('article_id', \App\Models\Article::query()->visibleToAdmin()->select('id'))
             ->where('distribution_channel_id', $channelId)
             ->orderByDesc('id')
             ->limit(20)
@@ -232,6 +239,7 @@ class DistributionController extends Controller
         }
 
         $query = ArticleDistribution::query()
+            ->whereIn('article_id', \App\Models\Article::query()->visibleToAdmin()->select('id'))
             ->with(['article:id,title,slug,status', 'channel:id,name,domain']);
 
         if ($filters['status'] !== '') {
@@ -243,6 +251,7 @@ class DistributionController extends Controller
 
         $jobs = $query->orderByDesc('id')->paginate(20)->withQueryString();
         $channels = DistributionChannel::query()
+            ->visibleToAdmin()
             ->select(['id', 'name', 'domain'])
             ->orderBy('name')
             ->get();
@@ -269,7 +278,7 @@ class DistributionController extends Controller
 
     public function rotateSecret(int $channelId): RedirectResponse
     {
-        $channel = DistributionChannel::query()->whereKey($channelId)->first();
+        $channel = DistributionChannel::query()->visibleToAdmin()->whereKey($channelId)->first();
         if (! $channel) {
             return redirect()->route('admin.distribution.index')->withErrors(__('admin.distribution.message.not_found'));
         }
@@ -297,6 +306,7 @@ class DistributionController extends Controller
     public function revealSecret(Request $request, int $channelId): RedirectResponse
     {
         $channel = DistributionChannel::query()
+            ->visibleToAdmin()
             ->with('activeSecret')
             ->whereKey($channelId)
             ->first();
@@ -352,6 +362,7 @@ class DistributionController extends Controller
     public function downloadPackage(Request $request, int $channelId): StreamedResponse|RedirectResponse
     {
         $channel = DistributionChannel::query()
+            ->visibleToAdmin()
             ->with('activeSecret')
             ->whereKey($channelId)
             ->first();
@@ -406,7 +417,10 @@ class DistributionController extends Controller
 
     public function retry(int $distributionId): RedirectResponse
     {
-        $distribution = ArticleDistribution::query()->whereKey($distributionId)->first();
+        $distribution = ArticleDistribution::query()
+            ->whereIn('article_id', \App\Models\Article::query()->visibleToAdmin()->select('id'))
+            ->whereKey($distributionId)
+            ->first();
         if (! $distribution) {
             return back()->withErrors(__('admin.distribution.message.job_not_found'));
         }
@@ -437,6 +451,7 @@ class DistributionController extends Controller
     {
         $distribution = ArticleDistribution::query()
             ->with(['article', 'channel'])
+            ->whereIn('article_id', \App\Models\Article::query()->visibleToAdmin()->select('id'))
             ->whereKey($distributionId)
             ->first();
 
@@ -458,6 +473,7 @@ class DistributionController extends Controller
     {
         $distribution = ArticleDistribution::query()
             ->with(['article', 'channel'])
+            ->whereIn('article_id', \App\Models\Article::query()->visibleToAdmin()->select('id'))
             ->whereKey($distributionId)
             ->first();
 
@@ -499,6 +515,7 @@ class DistributionController extends Controller
     {
         $distribution = ArticleDistribution::query()
             ->with(['article', 'channel'])
+            ->whereIn('article_id', \App\Models\Article::query()->visibleToAdmin()->select('id'))
             ->whereKey($distributionId)
             ->first();
 
@@ -547,7 +564,7 @@ class DistributionController extends Controller
 
     public function health(int $channelId): RedirectResponse
     {
-        $channel = DistributionChannel::query()->whereKey($channelId)->first();
+        $channel = DistributionChannel::query()->visibleToAdmin()->whereKey($channelId)->first();
         if (! $channel) {
             return redirect()->route('admin.distribution.index')->withErrors(__('admin.distribution.message.not_found'));
         }
@@ -579,6 +596,7 @@ class DistributionController extends Controller
     public function syncSettings(int $channelId): RedirectResponse
     {
         $channel = DistributionChannel::query()
+            ->visibleToAdmin()
             ->with('activeSecret')
             ->whereKey($channelId)
             ->first();
@@ -841,7 +859,7 @@ class DistributionController extends Controller
 
     private function setStatus(int $channelId, string $status, string $message): RedirectResponse
     {
-        $channel = DistributionChannel::query()->whereKey($channelId)->first();
+        $channel = DistributionChannel::query()->visibleToAdmin()->whereKey($channelId)->first();
         if (! $channel) {
             return redirect()->route('admin.distribution.index')->withErrors(__('admin.distribution.message.not_found'));
         }

@@ -9,6 +9,7 @@ use App\Models\KnowledgeChunk;
 use App\Models\Task;
 use App\Services\GeoFlow\KnowledgeChunkSyncService;
 use App\Support\AdminWeb;
+use App\Support\Tenancy\AdminTenant;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -61,7 +62,7 @@ class KnowledgeBaseController extends Controller
      */
     public function detail(int $knowledgeBaseId): View|RedirectResponse
     {
-        $knowledgeBase = KnowledgeBase::query()->whereKey($knowledgeBaseId)->firstOrFail();
+        $knowledgeBase = KnowledgeBase::query()->visibleToAdmin()->whereKey($knowledgeBaseId)->firstOrFail();
 
         return view('admin.knowledge-bases.detail', [
             'pageTitle' => __('admin.knowledge_detail.page_title'),
@@ -79,7 +80,7 @@ class KnowledgeBaseController extends Controller
      */
     public function updateFromDetail(Request $request, int $knowledgeBaseId): RedirectResponse
     {
-        $knowledgeBase = KnowledgeBase::query()->whereKey($knowledgeBaseId)->firstOrFail();
+        $knowledgeBase = KnowledgeBase::query()->visibleToAdmin()->whereKey($knowledgeBaseId)->firstOrFail();
 
         $payload = $request->validate([
             'name' => ['required', 'string', 'max:100'],
@@ -146,7 +147,7 @@ class KnowledgeBaseController extends Controller
 
             $chunkCount = 0;
             DB::transaction(function () use (&$chunkCount, $knowledgeName, $request, $content, $parsed, $storedRelativePath): void {
-                $knowledgeBase = KnowledgeBase::query()->create([
+                $knowledgeBase = KnowledgeBase::query()->create(AdminTenant::stamp([
                     'name' => $knowledgeName,
                     'description' => trim((string) $request->input('description', '')),
                     'content' => $content,
@@ -156,7 +157,7 @@ class KnowledgeBaseController extends Controller
                     'usage_count' => 0,
                     'used_task_count' => 0,
                     'file_path' => $storedRelativePath,
-                ]);
+                ]));
                 $chunkCount = $this->chunkSyncService->sync((int) $knowledgeBase->id, $content);
             });
 
@@ -176,7 +177,7 @@ class KnowledgeBaseController extends Controller
         $payload = $this->validateKnowledgeForm($request);
 
         $content = trim((string) $payload['content']);
-        $knowledgeBase = KnowledgeBase::query()->create([
+        $knowledgeBase = KnowledgeBase::query()->create(AdminTenant::stamp([
             'name' => trim((string) $payload['name']),
             'description' => trim((string) ($payload['description'] ?? '')),
             'content' => $content,
@@ -186,7 +187,7 @@ class KnowledgeBaseController extends Controller
             'usage_count' => 0,
             'used_task_count' => 0,
             'file_path' => '',
-        ]);
+        ]));
 
         $chunkCount = $this->chunkSyncService->sync((int) $knowledgeBase->id, $content);
 
@@ -200,7 +201,7 @@ class KnowledgeBaseController extends Controller
      */
     public function edit(int $knowledgeBaseId): View|RedirectResponse
     {
-        $knowledgeBase = KnowledgeBase::query()->whereKey($knowledgeBaseId)->firstOrFail();
+        $knowledgeBase = KnowledgeBase::query()->visibleToAdmin()->whereKey($knowledgeBaseId)->firstOrFail();
 
         return view('admin.knowledge-bases.form', [
             'pageTitle' => __('admin.knowledge_bases.page_title'),
@@ -223,7 +224,7 @@ class KnowledgeBaseController extends Controller
      */
     public function update(Request $request, int $knowledgeBaseId): RedirectResponse
     {
-        $knowledgeBase = KnowledgeBase::query()->whereKey($knowledgeBaseId)->firstOrFail();
+        $knowledgeBase = KnowledgeBase::query()->visibleToAdmin()->whereKey($knowledgeBaseId)->firstOrFail();
 
         $payload = $this->validateKnowledgeForm($request);
         $content = trim((string) $payload['content']);
@@ -249,9 +250,9 @@ class KnowledgeBaseController extends Controller
      */
     public function destroy(int $knowledgeBaseId): RedirectResponse
     {
-        $knowledgeBase = KnowledgeBase::query()->whereKey($knowledgeBaseId)->firstOrFail();
+        $knowledgeBase = KnowledgeBase::query()->visibleToAdmin()->whereKey($knowledgeBaseId)->firstOrFail();
 
-        $taskCount = Task::query()->where('knowledge_base_id', $knowledgeBaseId)->count();
+        $taskCount = Task::query()->visibleToAdmin()->where('knowledge_base_id', $knowledgeBaseId)->count();
         if ($taskCount > 0) {
             return back()->withErrors(__('admin.knowledge_bases.error.in_use', ['count' => $taskCount]));
         }
@@ -265,7 +266,7 @@ class KnowledgeBaseController extends Controller
 
     public function refreshChunks(int $knowledgeBaseId): RedirectResponse
     {
-        $knowledgeBase = KnowledgeBase::query()->whereKey($knowledgeBaseId)->firstOrFail();
+        $knowledgeBase = KnowledgeBase::query()->visibleToAdmin()->whereKey($knowledgeBaseId)->firstOrFail();
         $content = trim((string) ($knowledgeBase->content ?? ''));
 
         if ($content === '') {
@@ -312,6 +313,7 @@ class KnowledgeBaseController extends Controller
     {
         $query = KnowledgeBase::query()
             ->select(['id', 'name', 'description', 'file_type', 'word_count', 'usage_count', 'created_at', 'updated_at'])
+            ->visibleToAdmin()
             ->withCount('chunks as chunk_count')
             ->withCount([
                 'chunks as vectorized_chunk_count' => fn ($query) => $query
@@ -344,6 +346,7 @@ class KnowledgeBaseController extends Controller
         return AiModel::query()
             ->where('status', 'active')
             ->whereRaw("COALESCE(NULLIF(model_type, ''), 'chat') = 'embedding'")
+            ->visibleToAdmin()
             ->exists();
     }
 
@@ -353,10 +356,10 @@ class KnowledgeBaseController extends Controller
     private function loadStats(): array
     {
         return [
-            'total_knowledge' => KnowledgeBase::query()->count(),
-            'total_words' => (int) (KnowledgeBase::query()->sum('word_count') ?? 0),
-            'markdown_count' => KnowledgeBase::query()->where('file_type', 'markdown')->count(),
-            'word_count' => KnowledgeBase::query()->where('file_type', 'word')->count(),
+            'total_knowledge' => KnowledgeBase::query()->visibleToAdmin()->count(),
+            'total_words' => (int) (KnowledgeBase::query()->visibleToAdmin()->sum('word_count') ?? 0),
+            'markdown_count' => KnowledgeBase::query()->visibleToAdmin()->where('file_type', 'markdown')->count(),
+            'word_count' => KnowledgeBase::query()->visibleToAdmin()->where('file_type', 'word')->count(),
         ];
     }
 
@@ -415,6 +418,7 @@ class KnowledgeBaseController extends Controller
     {
         return Task::query()
             ->select(['id', 'name', 'status', 'updated_at'])
+            ->visibleToAdmin()
             ->where('knowledge_base_id', $knowledgeBaseId)
             ->orderByDesc('updated_at')
             ->limit(5)

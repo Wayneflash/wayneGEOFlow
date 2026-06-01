@@ -1,4 +1,4 @@
-<section class="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+<section class="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden" data-analytics-single-site-section>
     <div class="border-b border-slate-100 px-5 py-4 bg-gradient-to-r from-blue-50/40 to-white">
         <div class="flex items-center gap-3">
             <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-100 text-blue-600">
@@ -11,10 +11,13 @@
         </div>
     </div>
     <div class="p-5">
-    <div class="mb-5">
-        <h2 class="text-lg font-bold text-slate-900">{{ __('admin.analytics.content_title') }}</h2>
-        <p class="mt-0.5 text-sm text-slate-400">{{ __('admin.analytics.content_desc') }}</p>
+    <div class="mb-5 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+            <h2 class="text-lg font-bold text-slate-900">{{ __('admin.analytics.single_site_title') }}</h2>
+            <p class="mt-0.5 text-sm text-slate-400">{{ __('admin.analytics.single_site_desc') }}</p>
+        </div>
     </div>
+    @include('admin.analytics._kpis', ['kpis' => $kpis])
     <div class="mb-5">
         <h2 class="text-lg font-bold text-slate-900">{{ __('admin.analytics.content_title') }}</h2>
         <p class="mt-0.5 text-sm text-slate-400">{{ __('admin.analytics.content_desc') }}</p>

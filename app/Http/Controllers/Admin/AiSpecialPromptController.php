@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Prompt;
 use App\Support\AdminWeb;
+use App\Support\Tenancy\AdminTenant;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -81,6 +82,7 @@ class AiSpecialPromptController extends Controller
         $prompt = Prompt::query()
             ->select(['id', 'content'])
             ->where('type', $type)
+            ->visibleToAdmin(includeGlobal: true)
             ->orderByDesc('updated_at')
             ->orderByDesc('id')
             ->first();
@@ -97,12 +99,14 @@ class AiSpecialPromptController extends Controller
 
         $exists = Prompt::query()
             ->where('type', $type)
+            ->visibleToAdmin()
             ->exists();
 
         if ($exists) {
             // 关键逻辑：与 bak 一致，更新同类型所有提示词，避免历史重复数据出现分叉内容。
             Prompt::query()
                 ->where('type', $type)
+                ->visibleToAdmin()
                 ->update([
                     'content' => $content,
                     'updated_at' => now(),
@@ -111,11 +115,11 @@ class AiSpecialPromptController extends Controller
             return;
         }
 
-        Prompt::query()->create([
+        Prompt::query()->create(AdminTenant::stamp([
             'name' => $fallbackName,
             'type' => $type,
             'content' => $content,
             'variables' => '',
-        ]);
+        ]));
     }
 }

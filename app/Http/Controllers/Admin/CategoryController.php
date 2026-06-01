@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Category;
 use App\Support\AdminWeb;
+use App\Support\Tenancy\AdminTenant;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -65,16 +66,16 @@ class CategoryController extends Controller
         $sortOrder = (int) ($payload['sort_order'] ?? 0);
         $slug = $this->buildCategorySlug($name, (string) ($payload['slug'] ?? ''), 0);
 
-        if (Category::query()->where('name', $name)->exists()) {
+        if (Category::query()->visibleToAdmin()->where('name', $name)->exists()) {
             return back()->withInput()->withErrors(__('admin.categories.error.name_exists'));
         }
 
-        Category::query()->create([
+        Category::query()->create(AdminTenant::stamp([
             'name' => $name,
             'slug' => $slug,
             'description' => $description,
             'sort_order' => $sortOrder,
-        ]);
+        ]));
 
         return redirect()->route('admin.categories.index')->with('message', __('admin.categories.message.add_success'));
     }
@@ -84,7 +85,7 @@ class CategoryController extends Controller
      */
     public function edit(int $categoryId): View|RedirectResponse
     {
-        $category = Category::query()->whereKey($categoryId)->firstOrFail();
+        $category = Category::query()->visibleToAdmin()->whereKey($categoryId)->firstOrFail();
 
         return view('admin.categories.form', [
             'pageTitle' => __('admin.categories.page_title'),
@@ -106,7 +107,7 @@ class CategoryController extends Controller
      */
     public function update(Request $request, int $categoryId): RedirectResponse
     {
-        $category = Category::query()->whereKey($categoryId)->firstOrFail();
+        $category = Category::query()->visibleToAdmin()->whereKey($categoryId)->firstOrFail();
 
         $payload = $request->validate([
             'name' => ['required', 'string', 'max:255'],
@@ -122,7 +123,7 @@ class CategoryController extends Controller
         $sortOrder = (int) ($payload['sort_order'] ?? 0);
         $slug = $this->buildCategorySlug($name, (string) ($payload['slug'] ?? ''), $categoryId);
 
-        $duplicateQuery = Category::query()->where('name', $name)->where('id', '!=', $categoryId);
+        $duplicateQuery = Category::query()->visibleToAdmin()->where('name', $name)->where('id', '!=', $categoryId);
         if ($duplicateQuery->exists()) {
             return back()->withInput()->withErrors(__('admin.categories.error.name_exists'));
         }
@@ -142,13 +143,13 @@ class CategoryController extends Controller
      */
     public function destroy(int $categoryId): RedirectResponse
     {
-        $category = Category::query()->withCount('articles')->whereKey($categoryId)->firstOrFail();
+        $category = Category::query()->visibleToAdmin()->withCount('articles')->whereKey($categoryId)->firstOrFail();
 
         if ((int) ($category->articles_count ?? 0) > 0) {
             return back()->withErrors(__('admin.categories.error.delete_blocked', ['count' => (int) $category->articles_count]));
         }
 
-        Category::query()->whereKey($categoryId)->delete();
+        Category::query()->visibleToAdmin()->whereKey($categoryId)->delete();
 
         return redirect()->route('admin.categories.index')->with('message', __('admin.categories.message.delete_success'));
     }
@@ -162,6 +163,7 @@ class CategoryController extends Controller
     {
         $query = Category::query()
             ->select(['id', 'name', 'slug', 'description', 'sort_order', 'created_at'])
+            ->visibleToAdmin()
             ->withCount('articles')
             ->orderBy('sort_order')
             ->orderBy('name');
@@ -198,7 +200,7 @@ class CategoryController extends Controller
         $baseSlug = $slug;
         $counter = 2;
         while (true) {
-            $existsQuery = Category::query()->where('slug', $slug);
+            $existsQuery = Category::query()->visibleToAdmin()->where('slug', $slug);
             if ($excludeId > 0) {
                 $existsQuery->where('id', '!=', $excludeId);
             }

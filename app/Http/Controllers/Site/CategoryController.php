@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Article;
 use App\Models\Category;
 use App\Support\Site\ArticleHtmlPresenter;
+use App\Support\Site\PublicSiteTenant;
 use App\Support\Site\SiteSettingsBag;
 use App\Support\Site\SiteThemeViewResolver;
 use Illuminate\Support\Facades\Schema;
@@ -19,18 +20,19 @@ class CategoryController extends Controller
 {
     public function show(string $slug): View
     {
-        $category = Category::query()->where('slug', $slug)->first();
+        $tenantId = PublicSiteTenant::currentTenantId();
+        $category = PublicSiteTenant::scopeTenantColumn(Category::query(), $tenantId)->where('slug', $slug)->first();
         if (! $category instanceof Category) {
             throw new NotFoundHttpException(__('site.category_not_found'));
         }
 
-        $map = SiteSettingsBag::all();
+        $map = SiteSettingsBag::all($tenantId);
         $perPage = max(1, min(200, (int) ($map['per_page'] ?? config('geoflow.items_per_page', 12))));
         $siteTitle = (string) ($map['site_name'] ?? config('geoflow.site_name', config('app.name')));
         $siteDescription = (string) ($map['site_description'] ?? config('geoflow.site_description', ''));
         $siteKeywords = (string) ($map['site_keywords'] ?? config('geoflow.site_keywords', ''));
 
-        $articles = Article::query()
+        $articles = PublicSiteTenant::scopeTenantColumn(Article::query(), $tenantId)
             ->with(['category', 'author'])
             ->published()
             ->where('category_id', $category->id)
@@ -48,7 +50,7 @@ class CategoryController extends Controller
 
         $hotArticles = collect();
         if (Schema::hasColumn('articles', 'is_hot')) {
-            $hotArticles = Article::query()
+            $hotArticles = PublicSiteTenant::scopeTenantColumn(Article::query(), $tenantId)
                 ->with(['category', 'author'])
                 ->published()
                 ->where('category_id', $category->id)
@@ -76,6 +78,7 @@ class CategoryController extends Controller
             'pageTitle' => $pageTitle,
             'pageDescription' => $pageDescription,
             'canonicalUrl' => route('site.category', $category->slug),
+            'publicTenantId' => $tenantId,
         ]);
     }
 }

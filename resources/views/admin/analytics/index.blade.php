@@ -13,6 +13,7 @@
                         <div>
                             <div class="text-xs font-medium text-blue-500 uppercase tracking-widest">GEO AI OPS</div>
                             <h1 class="text-xl font-bold text-slate-900 tracking-tight">{{ __('admin.analytics.heading') }}</h1>
+                            <p class="mt-1 text-sm text-slate-500">{{ __('admin.analytics.subtitle') }}</p>
                         </div>
                     </div>
                     <div class="flex flex-wrap items-center gap-3">
@@ -29,5 +30,7 @@
         @include('admin.analytics._filters', ['filters' => $filters, 'filterOptions' => $filterOptions])
         @include('admin.analytics._global-overview', ['globalOverview' => $globalOverview])
         @include('admin.analytics._content-section')
+        @include('admin.analytics._distribution-section', ['distributionSummary' => $distributionSummary])
+        @include('admin.analytics._log-section', ['logSummary' => $logSummary])
     </div>
 @endsection

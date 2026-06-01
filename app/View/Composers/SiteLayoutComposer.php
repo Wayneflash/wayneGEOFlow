@@ -3,6 +3,7 @@
 namespace App\View\Composers;
 
 use App\Models\Category;
+use App\Support\Site\PublicSiteTenant;
 use App\Support\Site\SiteSettingsBag;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\View\View;
@@ -14,7 +15,8 @@ final class SiteLayoutComposer
 {
     public function compose(View $view): void
     {
-        $map = SiteSettingsBag::all();
+        $tenantId = PublicSiteTenant::currentTenantId();
+        $map = SiteSettingsBag::all($tenantId);
         $siteName = (string) ($map['site_name'] ?? config('geoflow.site_name', config('app.name')));
         $siteLogo = (string) ($map['site_logo'] ?? '');
         $siteFavicon = (string) ($map['site_favicon'] ?? '');
@@ -23,15 +25,15 @@ final class SiteLayoutComposer
 
         $categories = collect();
         if (Schema::hasTable('categories')) {
-            $categories = Category::query()
-                ->whereHas('articles', function ($q): void {
-                    $q->published();
+            $categories = PublicSiteTenant::scopeTenantColumn(Category::query(), $tenantId)
+                ->whereHas('articles', function ($q) use ($tenantId): void {
+                    PublicSiteTenant::scopeTenantColumn($q, $tenantId)->published();
                 })
                 ->orderBy('sort_order')
                 ->orderBy('id')
                 ->withCount([
-                    'articles as published_count' => function ($q): void {
-                        $q->published();
+                    'articles as published_count' => function ($q) use ($tenantId): void {
+                        PublicSiteTenant::scopeTenantColumn($q, $tenantId)->published();
                     },
                 ])
                 ->get();
@@ -44,6 +46,7 @@ final class SiteLayoutComposer
             'footerCopyright' => $copyright,
             'headAnalyticsCode' => $analyticsCode,
             'navCategories' => $categories,
+            'publicTenantId' => $tenantId,
         ]);
     }
 }

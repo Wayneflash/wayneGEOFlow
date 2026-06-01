@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Admin;
+use App\Models\Tenant;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
@@ -82,6 +83,55 @@ class AdminUsersManagementTest extends TestCase
         $this->assertSame('editor-ops@example.com', $standardAdmin->email);
         $this->assertSame('inactive', $standardAdmin->status);
         $this->assertTrue(Hash::check('new-secret-123', $standardAdmin->password));
+    }
+
+    public function test_super_admin_creates_standard_admin_with_independent_tenant(): void
+    {
+        $superAdmin = $this->createAdmin('root_admin', 'super_admin');
+
+        $this->actingAs($superAdmin, 'admin')
+            ->post(route('admin.admin-users.store'), [
+                'username' => 'tenant_editor',
+                'display_name' => 'Tenant Editor',
+                'email' => 'tenant-editor@example.com',
+                'password' => 'tenant-secret-123',
+                'confirm_password' => 'tenant-secret-123',
+            ])
+            ->assertRedirect(route('admin.admin-users.index'));
+
+        $createdAdmin = Admin::query()->where('username', 'tenant_editor')->firstOrFail();
+        $tenant = Tenant::query()->whereKey((int) $createdAdmin->tenant_id)->firstOrFail();
+
+        $this->assertSame('admin', $createdAdmin->role);
+        $this->assertSame('Tenant Editor', $tenant->name);
+        $this->assertSame((int) $createdAdmin->id, (int) $tenant->owner_admin_id);
+        $this->assertNotSame((int) $superAdmin->tenant_id, (int) $createdAdmin->tenant_id);
+    }
+
+    public function test_created_tenant_slug_is_unique_for_duplicate_display_names(): void
+    {
+        $superAdmin = $this->createAdmin('root_admin', 'super_admin');
+
+        foreach (['tenant_editor_a', 'tenant_editor_b'] as $username) {
+            $this->actingAs($superAdmin, 'admin')
+                ->post(route('admin.admin-users.store'), [
+                    'username' => $username,
+                    'display_name' => 'Tenant Editor',
+                    'email' => $username.'@example.com',
+                    'password' => 'tenant-secret-123',
+                    'confirm_password' => 'tenant-secret-123',
+                ])
+                ->assertRedirect(route('admin.admin-users.index'));
+        }
+
+        $slugs = Tenant::query()
+            ->where('name', 'Tenant Editor')
+            ->orderBy('id')
+            ->pluck('slug')
+            ->all();
+
+        $this->assertCount(2, $slugs);
+        $this->assertCount(2, array_unique($slugs));
     }
 
     public function test_super_admin_can_delete_standard_admin(): void

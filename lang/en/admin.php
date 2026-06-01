@@ -625,6 +625,7 @@ return [
         'failover_priority_help' => 'Lower numbers are tried first as fallback models. The primary model is always attempted first; failover only starts after it fails.',
         'api_key_help_create' => 'Required when creating a model.',
         'api_key_help_edit' => 'Leave blank while editing to keep the current key. Enter a new value only when rotating credentials.',
+        'api_key_encryption_notice' => 'Paste the plaintext API key from the provider. The system encrypts it before saving and only shows a masked value.',
         'confirm_delete' => 'Delete model ":name"? This action cannot be undone.',
         'error' => [
             'required_fields' => 'Model name, API key, and model ID are required',

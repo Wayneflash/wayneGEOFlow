@@ -15,7 +15,8 @@ final class SiteThemeViewResolver
      */
     public static function activeThemeId(): string
     {
-        $id = trim(SiteSettingsBag::get('active_theme', ''));
+        $tenantId = PublicSiteTenant::currentTenantId();
+        $id = trim(SiteSettingsBag::get('active_theme', '', $tenantId));
         if ($id === '') {
             $id = trim((string) config('geoflow.default_theme', ''));
         }
