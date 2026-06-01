@@ -1,3 +1,10 @@
+@php
+    $loginBrandLogo = \App\Support\Site\SiteSettingsBag::get('site_logo');
+
+    if ($loginBrandLogo === '' && file_exists(public_path('assets/images/logo.png'))) {
+        $loginBrandLogo = asset('assets/images/logo.png');
+    }
+@endphp
 <!DOCTYPE html>
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
 <head>
@@ -37,9 +44,13 @@
 <div class="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md px-4">
     <div class="rounded-2xl p-8 login-form">
         <div class="text-center mb-8">
-            <div class="login-badge w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-                <i data-lucide="shield-check" class="w-8 h-8 text-white"></i>
-            </div>
+            @if ($loginBrandLogo !== '')
+                <img src="{{ $loginBrandLogo }}" alt="{{ $adminSiteName }}" class="mx-auto mb-4 h-16 max-w-56 object-contain">
+            @else
+                <div class="login-badge w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <i data-lucide="shield-check" class="w-8 h-8 text-white"></i>
+                </div>
+            @endif
             <h1 class="text-2xl font-bold text-gray-900 mb-2">{{ __('admin.login.title') }}</h1>
             <p class="text-gray-600">{{ __('admin.login.subtitle', ['site_name' => $adminSiteName]) }}</p>
         </div>
