@@ -574,21 +574,21 @@ class WorkerExecutionService
     private function renderPromptTemplate(string $prompt, array $context): string
     {
         $renderedPrompt = preg_replace_callback('/\{\{#if\s+([A-Za-z_][A-Za-z0-9_]*)\s*\}\}(.*?)\{\{\/if\}\}/su', function (array $matches) use ($context): string {
-            $name = (string) ($matches[1] ?? '');
+            $name = (string) $matches[1];
             if (! $this->isKnownPromptContextName($name)) {
-                return (string) ($matches[0] ?? '');
+                return (string) $matches[0];
             }
 
             $value = $this->promptContextValue($name, $context);
 
-            return trim($value) !== '' ? (string) ($matches[2] ?? '') : '';
+            return trim($value) !== '' ? (string) $matches[2] : '';
         }, $prompt) ?? $prompt;
 
         return preg_replace_callback('/\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/u', function (array $matches) use ($context): string {
-            $name = (string) ($matches[1] ?? '');
+            $name = (string) $matches[1];
             $value = $this->promptContextValue($name, $context);
 
-            return $value !== '' || $this->isKnownPromptContextName($name) ? $value : (string) ($matches[0] ?? '');
+            return $value !== '' || $this->isKnownPromptContextName($name) ? $value : (string) $matches[0];
         }, $renderedPrompt) ?? $renderedPrompt;
     }
 

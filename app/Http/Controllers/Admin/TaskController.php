@@ -307,28 +307,6 @@ class TaskController extends Controller
     }
 
     /**
-     * @return list<array<string, mixed>>
-     */
-    private function loadTasks(): array
-    {
-        return $this->taskMonitoringQueryService->buildTaskSnapshot();
-    }
-
-    /**
-     * @return array{0: list<array<string, mixed>>, 1: array<string,int>, 2: list<array<string,mixed>>}
-     */
-    private function loadRuntimePanels(): array
-    {
-        $overview = $this->taskMonitoringQueryService->buildAdminOverview();
-
-        return [
-            $overview['worker_overview'],
-            $overview['queue_overview'],
-            $overview['recent_runs'],
-        ];
-    }
-
-    /**
      * @return array<string, string>
      */
     private function taskI18n(): array
