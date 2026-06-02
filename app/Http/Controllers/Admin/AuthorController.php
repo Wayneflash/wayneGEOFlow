@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Article;
 use App\Models\Author;
 use App\Support\AdminWeb;
+use App\Support\Tenancy\AdminTenant;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -43,10 +44,11 @@ class AuthorController extends Controller
      */
     public function detail(int $authorId): View|RedirectResponse
     {
-        $author = Author::query()->whereKey($authorId)->firstOrFail();
+        $author = Author::query()->visibleToAdmin()->whereKey($authorId)->firstOrFail();
 
         $articles = Article::query()
             ->select(['id', 'title', 'status', 'review_status', 'created_at', 'deleted_at'])
+            ->visibleToAdmin()
             ->where('author_id', $authorId)
             ->orderByDesc('created_at')
             ->limit(10)
@@ -91,13 +93,13 @@ class AuthorController extends Controller
             'name.required' => __('admin.authors.error.name_required'),
         ]);
 
-        Author::query()->create([
+        Author::query()->create(AdminTenant::stamp([
             'name' => trim((string) $payload['name']),
             'email' => trim((string) ($payload['email'] ?? '')),
             'bio' => trim((string) ($payload['bio'] ?? '')),
             'website' => trim((string) ($payload['website'] ?? '')),
             'social_links' => trim((string) ($payload['social_links'] ?? '')),
-        ]);
+        ]));
 
         return redirect()->route('admin.authors.index')->with('message', __('admin.authors.message.create_success'));
     }
@@ -107,7 +109,7 @@ class AuthorController extends Controller
      */
     public function edit(int $authorId): View|RedirectResponse
     {
-        $author = Author::query()->whereKey($authorId)->firstOrFail();
+        $author = Author::query()->visibleToAdmin()->whereKey($authorId)->firstOrFail();
 
         return view('admin.authors.form', [
             'pageTitle' => __('admin.authors.page_title'),
@@ -130,7 +132,7 @@ class AuthorController extends Controller
      */
     public function update(Request $request, int $authorId): RedirectResponse
     {
-        $author = Author::query()->whereKey($authorId)->firstOrFail();
+        $author = Author::query()->visibleToAdmin()->whereKey($authorId)->firstOrFail();
 
         $payload = $request->validate([
             'name' => ['required', 'string', 'max:100'],
@@ -158,14 +160,14 @@ class AuthorController extends Controller
      */
     public function destroy(int $authorId): RedirectResponse
     {
-        $author = Author::query()->whereKey($authorId)->firstOrFail();
+        $author = Author::query()->visibleToAdmin()->whereKey($authorId)->firstOrFail();
 
-        $visibleCount = Article::query()->where('author_id', $authorId)->whereNull('deleted_at')->count();
+        $visibleCount = Article::query()->visibleToAdmin()->where('author_id', $authorId)->whereNull('deleted_at')->count();
         if ($visibleCount > 0) {
             return back()->withErrors(__('admin.authors.error.delete_visible', ['count' => $visibleCount]));
         }
 
-        $trashedCount = Article::query()->where('author_id', $authorId)->whereNotNull('deleted_at')->count();
+        $trashedCount = Article::query()->visibleToAdmin()->where('author_id', $authorId)->whereNotNull('deleted_at')->count();
         if ($trashedCount > 0) {
             return back()->withErrors(__('admin.authors.error.delete_trashed', ['count' => $trashedCount]));
         }
@@ -184,6 +186,7 @@ class AuthorController extends Controller
     {
         $query = Author::query()
             ->select(['id', 'name', 'email', 'bio', 'website', 'social_links', 'created_at'])
+            ->visibleToAdmin()
             ->orderByDesc('created_at');
 
         if ($search !== '') {
@@ -223,13 +226,14 @@ class AuthorController extends Controller
      */
     private function loadStats(): array
     {
-        $totalAuthors = Author::query()->count();
+        $totalAuthors = Author::query()->visibleToAdmin()->count();
         $activeAuthors = Article::query()
+            ->visibleToAdmin()
             ->whereNotNull('author_id')
             ->whereNull('deleted_at')
             ->distinct('author_id')
             ->count('author_id');
-        $totalArticles = Article::query()->whereNotNull('author_id')->whereNull('deleted_at')->count();
+        $totalArticles = Article::query()->visibleToAdmin()->whereNotNull('author_id')->whereNull('deleted_at')->count();
 
         return [
             'total_authors' => $totalAuthors,

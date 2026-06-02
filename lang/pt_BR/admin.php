@@ -364,6 +364,10 @@ return array_replace_recursive($base, [
         'manage_titles_short' => 'Gerenciar títulos',
         'manage_images_short' => 'Gerenciar imagens',
         'manage_knowledge_short' => 'Gerenciar conhecimento',
+        'tab' => [
+            'overview' => 'Visao geral',
+            'url_import' => 'Importacao de URL',
+        ],
         'url_import' => 'Importação Inteligente de URL',
         'url_import_iterating' => 'Em Iteração',
         'url_import_short' => 'Gere materiais de uma página web com um clique. A capacidade ainda está evoluindo.',
@@ -1343,6 +1347,7 @@ return array_replace_recursive($base, [
         'failover_priority_help' => 'Números menores são tentados primeiro como modelos de fallback. O modelo principal sempre é tentado primeiro; o fallback só começa depois de uma falha.',
         'api_key_help_create' => 'Obrigatório ao criar um modelo.',
         'api_key_help_edit' => 'Ao editar, deixe em branco para manter a chave atual. Informe um novo valor apenas ao trocar credenciais.',
+        'api_key_encryption_notice' => 'Cole a chave de API em texto simples fornecida pelo provedor. O sistema criptografa antes de salvar e mostra apenas o valor mascarado.',
     ],
     'ai_prompts' => [
         'page_title' => 'Configuração de Prompts de Conteúdo',

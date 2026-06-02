@@ -2,6 +2,7 @@
 
 namespace App\Services\Admin\Analytics;
 
+use App\Support\Tenancy\AdminTenant;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -90,7 +91,8 @@ class AnalyticsLogQueryService
     {
         $query = DB::table('view_logs')
             ->leftJoin('articles as a', 'view_logs.article_id', '=', 'a.id')
-            ->whereBetween('view_logs.created_at', [$filter->start(), $filter->end()]);
+            ->whereBetween('view_logs.created_at', [$filter->start(), $filter->end()])
+            ->when(! AdminTenant::canSeeAll(), fn (Builder $query) => $query->where('a.tenant_id', AdminTenant::currentTenantId()));
 
         if ($filter->articleId !== null) {
             $query->where('view_logs.article_id', $filter->articleId);

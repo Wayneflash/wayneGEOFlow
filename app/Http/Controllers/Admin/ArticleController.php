@@ -12,11 +12,13 @@ use App\Services\GeoFlow\DistributionOrchestrator;
 use App\Support\AdminWeb;
 use App\Support\GeoFlow\ArticleWorkflow;
 use App\Support\Site\ArticleHtmlPresenter;
+use App\Support\Tenancy\AdminTenant;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 use Throwable;
 
@@ -119,7 +121,7 @@ class ArticleController extends Controller
         }
 
         try {
-            $count = Article::onlyTrashed()->whereIn('id', $articleIds)->restore();
+            $count = Article::onlyTrashed()->visibleToAdmin()->whereIn('id', $articleIds)->restore();
 
             return back()->with('message', __('admin.articles.trash.message.restore_success', ['count' => $count]));
         } catch (Throwable $e) {
@@ -138,7 +140,7 @@ class ArticleController extends Controller
         }
 
         try {
-            $models = Article::onlyTrashed()->whereIn('id', $articleIds)->get();
+            $models = Article::onlyTrashed()->visibleToAdmin()->whereIn('id', $articleIds)->get();
             $models->each(function (Article $article): void {
                 $article->forceDelete();
             });
@@ -155,7 +157,7 @@ class ArticleController extends Controller
     public function emptyTrash(): RedirectResponse
     {
         try {
-            $models = Article::onlyTrashed()->get();
+            $models = Article::onlyTrashed()->visibleToAdmin()->get();
             if ($models->isEmpty()) {
                 return back()->with('message', __('admin.articles.trash.message.empty_already'));
             }
@@ -175,7 +177,7 @@ class ArticleController extends Controller
      */
     public function restore(int $articleId): RedirectResponse
     {
-        $article = Article::onlyTrashed()->whereKey($articleId)->firstOrFail();
+        $article = Article::onlyTrashed()->visibleToAdmin()->whereKey($articleId)->firstOrFail();
         $article->restore();
 
         return back()->with('message', __('admin.articles.trash.message.restore_success', ['count' => 1]));
@@ -186,7 +188,7 @@ class ArticleController extends Controller
      */
     public function forceDelete(int $articleId): RedirectResponse
     {
-        $article = Article::onlyTrashed()->whereKey($articleId)->firstOrFail();
+        $article = Article::onlyTrashed()->visibleToAdmin()->whereKey($articleId)->firstOrFail();
         $article->forceDelete();
 
         return back()->with('message', __('admin.articles.trash.message.delete_success', ['count' => 1]));
@@ -199,6 +201,7 @@ class ArticleController extends Controller
     {
         $article = Article::query()
             ->with(['author:id,name', 'category:id,name'])
+            ->visibleToAdmin()
             ->whereKey($articleId)
             ->firstOrFail();
 
@@ -241,7 +244,7 @@ class ArticleController extends Controller
         );
 
         try {
-            $article = Article::query()->create([
+            $article = Article::query()->create(AdminTenant::stamp([
                 'title' => $payload['title'],
                 'slug' => ArticleWorkflow::generateUniqueSlug($payload['title']),
                 'content' => $payload['content'],
@@ -256,7 +259,7 @@ class ArticleController extends Controller
                 'is_ai_generated' => 0,
                 'is_hot' => (bool) ($payload['is_hot'] ?? false),
                 'is_featured' => (bool) ($payload['is_featured'] ?? false),
-            ]);
+            ]));
             if (in_array($workflowState['status'], ['published', 'private'], true)) {
                 $this->distributionOrchestrator->enqueueForArticle($article);
             }
@@ -276,6 +279,7 @@ class ArticleController extends Controller
     {
         $article = Article::query()
             ->with(['task:id,name', 'author:id,name', 'category:id,name'])
+            ->visibleToAdmin()
             ->whereKey($articleId)
             ->firstOrFail();
 
@@ -312,7 +316,7 @@ class ArticleController extends Controller
     public function update(Request $request, int $articleId): RedirectResponse
     {
         $payload = $this->validateArticleForm($request, true);
-        $article = Article::query()->whereKey($articleId)->firstOrFail();
+        $article = Article::query()->visibleToAdmin()->whereKey($articleId)->firstOrFail();
 
         $workflowState = ArticleWorkflow::normalizeState(
             $payload['status'],
@@ -407,6 +411,7 @@ class ArticleController extends Controller
         $query = ($filters['trashed'] ?? false)
             ? Article::onlyTrashed()
             : Article::query();
+        $query->visibleToAdmin();
 
         $query->with([
             'task:id,name,need_review',
@@ -480,7 +485,7 @@ class ArticleController extends Controller
      */
     private function loadStats(): array
     {
-        $baseQuery = Article::query();
+        $baseQuery = Article::query()->visibleToAdmin();
 
         return [
             'total' => (clone $baseQuery)->count(),
@@ -497,7 +502,7 @@ class ArticleController extends Controller
     private function loadTrashStats(): array
     {
         return [
-            'trashed_total' => Article::onlyTrashed()->count(),
+            'trashed_total' => Article::onlyTrashed()->visibleToAdmin()->count(),
         ];
     }
 
@@ -509,6 +514,7 @@ class ArticleController extends Controller
         try {
             return Task::query()
                 ->select(['id', 'name'])
+                ->visibleToAdmin()
                 ->orderBy('name')
                 ->get()
                 ->map(fn (Task $task): array => [
@@ -529,6 +535,7 @@ class ArticleController extends Controller
         try {
             return Author::query()
                 ->select(['id', 'name'])
+                ->visibleToAdmin()
                 ->orderBy('name')
                 ->get()
                 ->map(fn (Author $author): array => [
@@ -555,6 +562,7 @@ class ArticleController extends Controller
         try {
             $categories = Category::query()
                 ->select(['id', 'name'])
+                ->visibleToAdmin()
                 ->orderBy('name')
                 ->get()
                 ->map(fn (Category $category): array => [
@@ -597,8 +605,8 @@ class ArticleController extends Controller
             'content' => ['required', 'string'],
             'keywords' => ['nullable', 'string', 'max:500'],
             'meta_description' => ['nullable', 'string', 'max:500'],
-            'category_id' => ['required', 'integer', 'min:1'],
-            'author_id' => ['required', 'integer', 'min:1'],
+            'category_id' => ['required', 'integer', 'min:1', $this->tenantExistsRule('categories')],
+            'author_id' => ['required', 'integer', 'min:1', $this->tenantExistsRule('authors')],
             'status' => ['required', 'string', 'in:draft,published,private'],
             'review_status' => ['required', 'string', 'in:pending,approved,rejected,auto_approved'],
             'is_hot' => ['nullable', 'boolean'],
@@ -637,6 +645,7 @@ class ArticleController extends Controller
 
         $articles = Article::query()
             ->select(['id', 'review_status', 'published_at'])
+            ->visibleToAdmin()
             ->whereIn('id', $articleIds)
             ->get();
 
@@ -674,6 +683,7 @@ class ArticleController extends Controller
         $articles = Article::query()
             ->with(['task:id,need_review'])
             ->select(['id', 'status', 'review_status', 'published_at', 'task_id'])
+            ->visibleToAdmin()
             ->whereIn('id', $articleIds)
             ->get();
 
@@ -709,7 +719,7 @@ class ArticleController extends Controller
      */
     private function handleBatchDelete(array $articleIds): RedirectResponse
     {
-        $articles = Article::query()->whereIn('id', $articleIds)->get();
+        $articles = Article::query()->visibleToAdmin()->whereIn('id', $articleIds)->get();
         foreach ($articles as $article) {
             Article::query()->whereKey((int) $article->id)->delete();
         }
@@ -782,5 +792,21 @@ class ArticleController extends Controller
             'batch_update_review' => route('admin.articles.batch.update-review'),
             'delete_articles' => route('admin.articles.batch.delete'),
         ];
+    }
+
+    private function tenantExistsRule(string $table): \Illuminate\Validation\Rules\Exists
+    {
+        return Rule::exists($table, 'id')->where(function ($query): void {
+            $tenantId = AdminTenant::currentTenantId();
+            if ($tenantId !== null && ! AdminTenant::canSeeAll()) {
+                $query->where(function ($scoped) use ($tenantId): void {
+                    $scoped->where('tenant_id', $tenantId);
+
+                    if ($tenantId === AdminTenant::defaultTenantId()) {
+                        $scoped->orWhereNull('tenant_id');
+                    }
+                });
+            }
+        });
     }
 }

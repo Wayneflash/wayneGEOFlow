@@ -17,6 +17,7 @@ use App\Services\GeoFlow\TaskLifecycleService;
 use App\Services\GeoFlow\TaskMonitoringQueryService;
 use App\Support\AdminWeb;
 use App\Support\GeoFlow\PromptGuide;
+use App\Support\Tenancy\AdminTenant;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -85,6 +86,7 @@ class TaskController extends Controller
         }
 
         try {
+            $this->authorizeTaskAccess($taskId);
             $currentStatus = (string) $request->input('status', 'paused');
             if ($currentStatus === 'active') {
                 $this->taskLifecycleService->stopTask($taskId);
@@ -110,6 +112,7 @@ class TaskController extends Controller
         }
 
         try {
+            $this->authorizeTaskAccess($taskId);
             $this->taskLifecycleService->deleteTask($taskId);
 
             return back()->with('message', __('admin.tasks.message.delete_success'));
@@ -144,21 +147,21 @@ class TaskController extends Controller
      */
     public function store(Request $request): RedirectResponse
     {
-        if (! Category::query()->exists()) {
+        if (! Category::query()->visibleToAdmin()->exists()) {
             return redirect()
                 ->route('admin.categories.create')
                 ->withErrors(__('admin.task_create.error.no_categories_configured'));
         }
 
         $payload = $this->validateTaskForm($request);
-        $taskData = $this->buildTaskPayload($request, $payload);
+        $taskData = AdminTenant::stamp($this->buildTaskPayload($request, $payload));
 
         try {
             $createdTask = $this->taskLifecycleService->createTask($taskData);
             $createdTaskId = (int) ($createdTask['id'] ?? 0);
             if ($createdTaskId) {
                 $this->distributionOrchestrator->syncTaskChannels(
-                    Task::query()->whereKey((int) $createdTaskId)->firstOrFail(),
+                    $this->visibleTaskQuery()->whereKey((int) $createdTaskId)->firstOrFail(),
                     $this->selectedDistributionChannelIds($request)
                 );
             }
@@ -178,6 +181,7 @@ class TaskController extends Controller
     public function edit(int $taskId): View|RedirectResponse
     {
         try {
+            $this->authorizeTaskAccess($taskId);
             $task = $this->taskLifecycleService->getTask($taskId);
         } catch (Throwable $e) {
             return redirect()->route('admin.tasks.index')->withErrors($e->getMessage());
@@ -225,7 +229,7 @@ class TaskController extends Controller
      */
     public function update(Request $request, int $taskId): RedirectResponse
     {
-        if (! Category::query()->exists()) {
+        if (! Category::query()->visibleToAdmin()->exists()) {
             return redirect()
                 ->route('admin.categories.create')
                 ->withErrors(__('admin.task_create.error.no_categories_configured'));
@@ -235,8 +239,9 @@ class TaskController extends Controller
         $taskData = $this->buildTaskPayload($request, $payload);
 
         try {
+            $this->authorizeTaskAccess($taskId);
             $this->taskLifecycleService->updateTask($taskId, $taskData);
-            $task = Task::query()->whereKey($taskId)->firstOrFail();
+            $task = $this->visibleTaskQuery()->whereKey($taskId)->firstOrFail();
             $this->distributionOrchestrator->syncTaskChannels($task, $this->selectedDistributionChannelIds($request));
         } catch (Throwable $e) {
             return back()->withInput()->withErrors($e->getMessage());
@@ -283,6 +288,7 @@ class TaskController extends Controller
 
         try {
             $taskId = (int) $payload['task_id'];
+            $this->authorizeTaskAccess($taskId);
             $result = $payload['action'] === 'start'
                 ? $this->taskLifecycleService->startTask($taskId, true)
                 : $this->taskLifecycleService->stopTask($taskId);
@@ -423,6 +429,7 @@ class TaskController extends Controller
         $titleLibraries = TitleLibrary::query()
             ->select(['id', 'name'])
             ->selectRaw('(SELECT COUNT(*) FROM titles WHERE titles.library_id = title_libraries.id) AS title_count')
+            ->visibleToAdmin()
             ->orderByDesc('id')
             ->get()
             ->map(static function (TitleLibrary $row): array {
@@ -437,6 +444,7 @@ class TaskController extends Controller
         $prompts = Prompt::query()
             ->select(['id', 'name'])
             ->where('type', 'content')
+            ->visibleToAdmin(includeGlobal: true)
             ->orderByDesc('id')
             ->get()
             ->map(static fn (Prompt $row): array => [
@@ -454,6 +462,7 @@ class TaskController extends Controller
                     ->orWhere('model_type', '')
                     ->orWhere('model_type', 'chat');
             })
+            ->visibleToAdmin()
             ->orderBy('failover_priority')
             ->orderByDesc('id')
             ->get()
@@ -464,6 +473,7 @@ class TaskController extends Controller
         $imageLibraries = ImageLibrary::query()
             ->select(['id', 'name'])
             ->selectRaw('(SELECT COUNT(*) FROM images WHERE images.library_id = image_libraries.id) AS image_count')
+            ->visibleToAdmin()
             ->orderBy('name')
             ->get()
             ->map(static function (ImageLibrary $row): array {
@@ -477,6 +487,7 @@ class TaskController extends Controller
 
         $knowledgeBases = KnowledgeBase::query()
             ->select(['id', 'name'])
+            ->visibleToAdmin()
             ->orderBy('name')
             ->get()
             ->map(static fn (KnowledgeBase $row): array => ['id' => (int) $row->id, 'name' => (string) $row->name])
@@ -484,6 +495,7 @@ class TaskController extends Controller
 
         $authors = Author::query()
             ->select(['id', 'name'])
+            ->visibleToAdmin()
             ->orderBy('name')
             ->get()
             ->map(static fn (Author $row): array => ['id' => (int) $row->id, 'name' => (string) $row->name])
@@ -491,6 +503,7 @@ class TaskController extends Controller
 
         $categories = Category::query()
             ->select(['id', 'name'])
+            ->visibleToAdmin()
             ->orderBy('sort_order')
             ->orderBy('id')
             ->get()
@@ -500,6 +513,7 @@ class TaskController extends Controller
         $distributionChannels = DistributionChannel::query()
             ->select(['id', 'name', 'domain'])
             ->where('status', 'active')
+            ->visibleToAdmin()
             ->orderBy('name')
             ->get()
             ->map(static fn (DistributionChannel $row): array => [
@@ -547,7 +561,20 @@ class TaskController extends Controller
                 'required',
                 'string',
                 'max:100',
-                Rule::unique('tasks', 'name')->ignore($ignoreTaskId),
+                Rule::unique('tasks', 'name')
+                    ->ignore($ignoreTaskId)
+                    ->where(function ($query): void {
+                        $tenantId = AdminTenant::currentTenantId();
+                        if ($tenantId !== null) {
+                            $query->where(function ($scoped) use ($tenantId): void {
+                                $scoped->where('tenant_id', $tenantId);
+
+                                if ($tenantId === AdminTenant::defaultTenantId()) {
+                                    $scoped->orWhereNull('tenant_id');
+                                }
+                            });
+                        }
+                    }),
             ],
             'title_library_id' => ['required', 'integer', 'min:1'],
             'prompt_id' => ['required', 'integer', 'min:1'],
@@ -626,7 +653,7 @@ class TaskController extends Controller
      */
     private function taskDistributionChannelIds(int $taskId): array
     {
-        $task = Task::query()->whereKey($taskId)->first();
+        $task = $this->visibleTaskQuery()->whereKey($taskId)->first();
         if (! $task) {
             return [];
         }
@@ -635,5 +662,20 @@ class TaskController extends Controller
             ->pluck('distribution_channels.id')
             ->map(static fn ($id): int => (int) $id)
             ->all();
+    }
+
+    private function authorizeTaskAccess(int $taskId): void
+    {
+        $this->visibleTaskQuery()
+            ->whereKey($taskId)
+            ->firstOrFail(['id']);
+    }
+
+    /**
+     * @return \Illuminate\Database\Eloquent\Builder<Task>
+     */
+    private function visibleTaskQuery(): \Illuminate\Database\Eloquent\Builder
+    {
+        return Task::query()->visibleToAdmin();
     }
 }

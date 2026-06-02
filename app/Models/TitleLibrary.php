@@ -2,16 +2,20 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToTenant;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class TitleLibrary extends Model
 {
+    use BelongsToTenant;
+
     protected $table = 'title_libraries';
 
     protected $fillable = [
         'name',
+        'tenant_id',
         'description',
         'title_count',
         'generation_type',
@@ -26,6 +30,7 @@ class TitleLibrary extends Model
     {
         return [
             'title_count' => 'integer',
+            'tenant_id' => 'integer',
             'keyword_library_id' => 'integer',
             'ai_model_id' => 'integer',
             'prompt_id' => 'integer',

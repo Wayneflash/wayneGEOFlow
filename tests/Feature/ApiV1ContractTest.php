@@ -13,6 +13,7 @@ use App\Models\Keyword;
 use App\Models\KeywordLibrary;
 use App\Models\Prompt;
 use App\Models\Task;
+use App\Models\Tenant;
 use App\Models\TitleLibrary;
 use App\Jobs\ProcessArticleDistributionJob;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -33,6 +34,25 @@ class ApiV1ContractTest extends TestCase
             'password' => $password,
             'email' => 't@example.com',
             'display_name' => 'API Test',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+    }
+
+    private function createTenantAdmin(string $username, string $tenantSlug): Admin
+    {
+        $tenant = Tenant::query()->create([
+            'name' => $tenantSlug,
+            'slug' => $tenantSlug,
+            'status' => 'active',
+        ]);
+
+        return Admin::query()->create([
+            'username' => $username,
+            'tenant_id' => (int) $tenant->id,
+            'password' => 'secret-123',
+            'email' => $username.'@example.com',
+            'display_name' => $username,
             'role' => 'admin',
             'status' => 'active',
         ]);
@@ -482,5 +502,95 @@ class ApiV1ContractTest extends TestCase
         $this->assertSame('queued', (string) $updateDistribution->status);
         $this->assertSame('456', (string) $updateDistribution->remote_id);
         Queue::assertPushed(ProcessArticleDistributionJob::class);
+    }
+
+    public function test_api_article_reads_are_limited_to_token_admin_tenant(): void
+    {
+        $tenantAdmin = $this->createTenantAdmin('tenant_articles_a', 'tenant-articles-a');
+        $otherAdmin = $this->createTenantAdmin('tenant_articles_b', 'tenant-articles-b');
+        $bearer = $this->createBearerToken($tenantAdmin, ['articles:read', 'articles:write']);
+        $ownCategory = Category::query()->create([
+            'tenant_id' => (int) $tenantAdmin->tenant_id,
+            'name' => 'Own tenant category',
+            'slug' => 'own-tenant-category',
+        ]);
+        $ownAuthor = Author::query()->create([
+            'tenant_id' => (int) $tenantAdmin->tenant_id,
+            'name' => 'Own tenant author',
+        ]);
+        $otherCategory = Category::query()->create([
+            'tenant_id' => (int) $otherAdmin->tenant_id,
+            'name' => 'Other tenant category',
+            'slug' => 'other-tenant-category',
+        ]);
+        $otherAuthor = Author::query()->create([
+            'tenant_id' => (int) $otherAdmin->tenant_id,
+            'name' => 'Other tenant author',
+        ]);
+
+        $ownArticle = Article::query()->create([
+            'tenant_id' => (int) $tenantAdmin->tenant_id,
+            'title' => 'Own tenant article',
+            'slug' => 'own-tenant-article',
+            'content' => 'Own content',
+            'category_id' => (int) $ownCategory->id,
+            'author_id' => (int) $ownAuthor->id,
+            'status' => 'draft',
+            'review_status' => 'pending',
+        ]);
+        $otherArticle = Article::query()->create([
+            'tenant_id' => (int) $otherAdmin->tenant_id,
+            'title' => 'Other tenant article',
+            'slug' => 'other-tenant-article',
+            'content' => 'Other content',
+            'category_id' => (int) $otherCategory->id,
+            'author_id' => (int) $otherAuthor->id,
+            'status' => 'draft',
+            'review_status' => 'pending',
+        ]);
+
+        $this->withHeader('Authorization', 'Bearer '.$bearer['plain'])
+            ->getJson('/api/v1/articles')
+            ->assertOk()
+            ->assertJsonPath('data.pagination.total', 1)
+            ->assertJsonPath('data.items.0.id', (int) $ownArticle->id);
+
+        $this->withHeader('Authorization', 'Bearer '.$bearer['plain'])
+            ->getJson("/api/v1/articles/{$otherArticle->id}")
+            ->assertStatus(404);
+
+        $this->withHeader('Authorization', 'Bearer '.$bearer['plain'])
+            ->patchJson("/api/v1/articles/{$otherArticle->id}", ['content' => 'Cross tenant write'])
+            ->assertStatus(404);
+    }
+
+    public function test_api_task_writes_are_limited_to_token_admin_tenant(): void
+    {
+        $tenantAdmin = $this->createTenantAdmin('tenant_tasks_a', 'tenant-tasks-a');
+        $otherAdmin = $this->createTenantAdmin('tenant_tasks_b', 'tenant-tasks-b');
+        $bearer = $this->createBearerToken($tenantAdmin, ['tasks:read', 'tasks:write']);
+
+        $ownTask = Task::query()->create([
+            'tenant_id' => (int) $tenantAdmin->tenant_id,
+            'name' => 'Own tenant task',
+            'status' => 'paused',
+        ]);
+        $otherTask = Task::query()->create([
+            'tenant_id' => (int) $otherAdmin->tenant_id,
+            'name' => 'Other tenant task',
+            'status' => 'paused',
+        ]);
+
+        $this->withHeader('Authorization', 'Bearer '.$bearer['plain'])
+            ->getJson('/api/v1/tasks')
+            ->assertOk()
+            ->assertJsonPath('data.pagination.total', 1)
+            ->assertJsonPath('data.items.0.id', (int) $ownTask->id);
+
+        $this->withHeader('Authorization', 'Bearer '.$bearer['plain'])
+            ->deleteJson("/api/v1/tasks/{$otherTask->id}")
+            ->assertStatus(404);
+
+        $this->assertDatabaseHas('tasks', ['id' => (int) $otherTask->id]);
     }
 }

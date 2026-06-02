@@ -5,7 +5,9 @@ namespace Tests\Feature;
 use App\Models\Admin;
 use App\Models\SensitiveWord;
 use App\Models\SiteSetting;
+use App\Models\Tenant;
 use App\Support\AdminWeb;
+use App\Support\Site\SiteSettingsBag;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -205,5 +207,81 @@ class AdminSiteSettingsPageTest extends TestCase
         $this->assertSame('Home Banner', $slides[0]['title']);
         $this->assertSame('/article/demo', $slides[0]['link_url']);
         $this->assertTrue($slides[0]['enabled']);
+    }
+
+    public function test_standard_admin_site_branding_is_saved_to_own_tenant_only(): void
+    {
+        $this->withoutMiddleware(ValidateCsrfToken::class);
+
+        $firstTenant = Tenant::query()->create([
+            'name' => 'First Tenant',
+            'slug' => 'first-tenant',
+            'status' => 'active',
+        ]);
+        $secondTenant = Tenant::query()->create([
+            'name' => 'Second Tenant',
+            'slug' => 'second-tenant',
+            'status' => 'active',
+        ]);
+
+        SiteSetting::query()->updateOrCreate(
+            ['setting_key' => 'site_logo'],
+            ['setting_value' => 'https://cdn.example.com/global-logo.png']
+        );
+
+        $firstAdmin = Admin::query()->create([
+            'tenant_id' => (int) $firstTenant->id,
+            'username' => 'first_tenant_admin',
+            'password' => 'secret-123',
+            'email' => 'first-tenant-admin@example.com',
+            'display_name' => 'First Tenant Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+        $secondAdmin = Admin::query()->create([
+            'tenant_id' => (int) $secondTenant->id,
+            'username' => 'second_tenant_admin',
+            'password' => 'secret-123',
+            'email' => 'second-tenant-admin@example.com',
+            'display_name' => 'Second Tenant Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+
+        $this->actingAs($firstAdmin, 'admin')
+            ->post(route('admin.site-settings.update'), [
+                'site_name' => 'First Tenant Site',
+                'site_subtitle' => '',
+                'site_description' => '',
+                'site_keywords' => '',
+                'copyright_info' => '',
+                'site_logo' => 'https://cdn.example.com/first-logo.png',
+                'site_favicon' => 'https://cdn.example.com/first-favicon.ico',
+                'analytics_code' => '',
+                'seo_title_template' => '{title} - {site_name}',
+                'seo_description_template' => '{description}',
+                'featured_limit' => 6,
+                'per_page' => 12,
+                'admin_base_path' => AdminWeb::basePath(),
+            ])
+            ->assertRedirect(route('admin.site-settings.index'));
+
+        $this->assertDatabaseHas('site_settings', [
+            'setting_key' => 'tenant:'.((int) $firstTenant->id).':site_logo',
+            'setting_value' => 'https://cdn.example.com/first-logo.png',
+        ]);
+        $this->assertDatabaseHas('site_settings', [
+            'setting_key' => 'site_logo',
+            'setting_value' => 'https://cdn.example.com/global-logo.png',
+        ]);
+
+        $this->assertSame('https://cdn.example.com/first-logo.png', SiteSettingsBag::get('site_logo', '', (int) $firstTenant->id));
+        $this->assertSame('https://cdn.example.com/global-logo.png', SiteSettingsBag::get('site_logo', '', (int) $secondTenant->id));
+
+        $this->actingAs($secondAdmin, 'admin')
+            ->get(route('admin.site-settings.index'))
+            ->assertOk()
+            ->assertSee('value="https://cdn.example.com/global-logo.png"', false)
+            ->assertDontSee('https://cdn.example.com/first-logo.png', false);
     }
 }

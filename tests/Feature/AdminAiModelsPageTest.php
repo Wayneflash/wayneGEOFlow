@@ -40,6 +40,105 @@ class AdminAiModelsPageTest extends TestCase
             && $request->hasHeader('Authorization', 'Bearer test-api-key'));
     }
 
+    public function test_admin_can_store_plaintext_api_key_and_connection_test_uses_decrypted_key(): void
+    {
+        Http::fake([
+            'https://ai.test/v1/chat/completions' => Http::response([
+                'choices' => [
+                    ['message' => ['content' => 'OK']],
+                ],
+            ]),
+        ]);
+
+        $admin = $this->createAdmin();
+        $plainApiKey = 'sk-plain-key-from-provider';
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.ai-models.store'), [
+                'name' => 'Plain Key Model',
+                'version' => 'v1',
+                'api_key' => $plainApiKey,
+                'model_id' => 'test-chat-model',
+                'model_type' => 'chat',
+                'api_url' => 'https://ai.test',
+                'failover_priority' => 100,
+                'daily_limit' => 0,
+            ])
+            ->assertRedirect(route('admin.ai-models.index'));
+
+        $model = AiModel::query()->where('name', 'Plain Key Model')->firstOrFail();
+        $storedApiKey = (string) $model->getRawOriginal('api_key');
+
+        $this->assertNotSame($plainApiKey, $storedApiKey);
+        $this->assertStringStartsWith('enc:v1:', $storedApiKey);
+        $this->assertSame($plainApiKey, app(ApiKeyCrypto::class)->decrypt($storedApiKey));
+
+        $this->actingAs($admin, 'admin')
+            ->postJson(route('admin.ai-models.test', ['modelId' => (int) $model->id]))
+            ->assertOk()
+            ->assertJsonPath('success', true);
+
+        Http::assertSent(fn ($request): bool => $request->hasHeader('Authorization', 'Bearer '.$plainApiKey));
+    }
+
+    public function test_admin_can_store_model_api_url_without_scheme(): void
+    {
+        $admin = $this->createAdmin();
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.ai-models.store'), [
+                'name' => 'DeepSeek Normalized URL',
+                'version' => '',
+                'api_key' => 'sk-provider-key',
+                'model_id' => 'deepseek-chat',
+                'model_type' => 'chat',
+                'api_url' => 'api.deepseek.com/',
+                'failover_priority' => 100,
+                'daily_limit' => 0,
+            ])
+            ->assertRedirect(route('admin.ai-models.index'));
+
+        $this->assertSame(
+            'https://api.deepseek.com',
+            (string) AiModel::query()->where('name', 'DeepSeek Normalized URL')->value('api_url')
+        );
+    }
+
+    public function test_admin_cannot_create_duplicate_model_name_in_same_tenant(): void
+    {
+        $admin = $this->createAdmin();
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.ai-models.store'), [
+                'name' => 'Duplicate Model',
+                'version' => '',
+                'api_key' => 'sk-provider-key-1',
+                'model_id' => 'first-model',
+                'model_type' => 'chat',
+                'api_url' => 'https://ai.test',
+                'failover_priority' => 100,
+                'daily_limit' => 0,
+            ])
+            ->assertRedirect(route('admin.ai-models.index'));
+
+        $this->actingAs($admin, 'admin')
+            ->from(route('admin.ai-models.index'))
+            ->post(route('admin.ai-models.store'), [
+                'name' => 'Duplicate Model',
+                'version' => '',
+                'api_key' => 'sk-provider-key-2',
+                'model_id' => 'second-model',
+                'model_type' => 'chat',
+                'api_url' => 'https://ai.test',
+                'failover_priority' => 100,
+                'daily_limit' => 0,
+            ])
+            ->assertRedirect(route('admin.ai-models.index'))
+            ->assertSessionHasErrors('name');
+
+        $this->assertSame(1, AiModel::query()->where('name', 'Duplicate Model')->count());
+    }
+
     public function test_admin_models_page_shows_test_action(): void
     {
         $this->createAiModel('chat');
@@ -49,6 +148,7 @@ class AdminAiModelsPageTest extends TestCase
 
         $response->assertOk()
             ->assertSee(__('admin.ai_models.test'))
+            ->assertSee('type="text" inputmode="url"', false)
             ->assertSee('MODEL_TEST_TIMEOUT_MS', false)
             ->assertSee('parseModelTestResponse', false)
             ->assertSee('document.querySelector(\'meta[name="csrf-token"]\')', false);
@@ -192,6 +292,10 @@ class AdminAiModelsPageTest extends TestCase
         $response->assertOk()
             ->assertSee('Gemini', false)
             ->assertSee('Gemini Embedding', false)
+            ->assertSee('智谱 GLM-4.6', false)
+            ->assertSee('火山方舟 Chat', false)
+            ->assertDontSee('鏅鸿氨', false)
+            ->assertDontSee('鐏北', false)
             ->assertSee(__('admin.ai_models.gemini_embedding_notice'));
     }
 

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Article;
 use App\Support\Site\ArticleHtmlPresenter;
 use App\Support\Site\ArticleStickyAdPicker;
+use App\Support\Site\PublicSiteTenant;
 use App\Support\Site\SiteSettingsBag;
 use App\Support\Site\SiteThemeViewResolver;
 use Illuminate\View\View;
@@ -18,7 +19,8 @@ class ArticleController extends Controller
 {
     public function show(string $slug): View
     {
-        $article = Article::query()
+        $tenantId = PublicSiteTenant::currentTenantId();
+        $article = PublicSiteTenant::scopeTenantColumn(Article::query(), $tenantId)
             ->published()
             ->where('slug', $slug)
             ->with(['category', 'author'])
@@ -31,7 +33,7 @@ class ArticleController extends Controller
         $article->increment('view_count');
         $article->refresh();
 
-        $map = SiteSettingsBag::all();
+        $map = SiteSettingsBag::all($tenantId);
         $siteTitle = (string) ($map['site_name'] ?? config('geoflow.site_name', config('app.name')));
         $siteDescription = (string) ($map['site_description'] ?? config('geoflow.site_description', ''));
 
@@ -46,7 +48,7 @@ class ArticleController extends Controller
 
         $tags = $this->keywordTags((string) $article->keywords);
 
-        $related = Article::query()
+        $related = PublicSiteTenant::scopeTenantColumn(Article::query(), $tenantId)
             ->published()
             ->where('category_id', $article->category_id)
             ->whereKeyNot($article->id)
@@ -57,7 +59,7 @@ class ArticleController extends Controller
         $pageTitle = $article->title.' - '.$siteTitle;
         $pageDescription = $excerpt !== '' ? $excerpt : ArticleHtmlPresenter::cardSummary($article, 160);
 
-        $stickyAd = ArticleStickyAdPicker::firstEnabled();
+        $stickyAd = ArticleStickyAdPicker::firstEnabled($tenantId);
 
         return SiteThemeViewResolver::first('article', [
             'activeNav' => 'article',
@@ -73,6 +75,7 @@ class ArticleController extends Controller
             'pageDescription' => $pageDescription,
             'stickyAd' => $stickyAd,
             'canonicalUrl' => route('site.article', $article->slug),
+            'publicTenantId' => $tenantId,
         ]);
     }
 

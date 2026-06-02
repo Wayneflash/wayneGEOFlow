@@ -1,141 +1,156 @@
 @extends('admin.layouts.app')
 
 @section('content')
-    <div class="px-4 sm:px-0">
-        <div class="mb-8 flex items-center justify-between">
-            <div class="flex items-center space-x-4">
-                <a href="{{ route('admin.materials.index') }}" class="text-gray-400 hover:text-gray-600">
-                    <i data-lucide="arrow-left" class="w-5 h-5"></i>
-                </a>
-                <div>
-                    <h1 class="text-2xl font-bold text-gray-900">{{ __('admin.authors.page_title') }}</h1>
-                    <p class="mt-1 text-sm text-gray-600">{{ __('admin.authors.page_subtitle') }}</p>
-                </div>
-            </div>
-            <button type="button" onclick="showCreateModal()" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">
-                <i data-lucide="plus" class="w-4 h-4 mr-2"></i>
-                {{ __('admin.authors.create') }}
-            </button>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <div class="bg-white overflow-hidden shadow rounded-lg">
-                <div class="p-5">
-                    <div class="flex items-center">
-                        <div class="flex-shrink-0">
-                            <i data-lucide="users" class="h-6 w-6 text-indigo-600"></i>
-                        </div>
-                        <div class="ml-5 w-0 flex-1">
-                            <dl>
-                                <dt class="text-sm font-medium text-gray-500 truncate">{{ __('admin.authors.stats_total') }}</dt>
-                                <dd class="text-lg font-medium text-gray-900">{{ (int) ($stats['total_authors'] ?? 0) }}</dd>
-                            </dl>
-                        </div>
+    @php
+        $stats = is_array($stats ?? null) ? $stats : [];
+        $authors = is_array($authors ?? null) ? $authors : [];
+        $search = (string) ($search ?? '');
+    @endphp
+    <div class="space-y-6">
+        <div class="admin-panel">
+            <div class="admin-panel-header">
+                <div class="flex items-start gap-3">
+                    <a href="{{ route('admin.materials.index') }}" class="admin-icon-btn" aria-label="{{ __('admin.common.back') }}">
+                        <i data-lucide="arrow-left" class="h-4 w-4"></i>
+                    </a>
+                    <div>
+                        <div class="text-xs font-medium uppercase tracking-widest text-slate-400">{{ __('admin.authors.page_eyebrow') }}</div>
+                        <h1 class="mt-1 text-xl font-semibold tracking-tight text-slate-950">{{ __('admin.authors.page_title') }}</h1>
+                        <p class="mt-1 text-sm text-slate-500">{{ __('admin.authors.page_subtitle') }}</p>
                     </div>
                 </div>
-            </div>
-            <div class="bg-white overflow-hidden shadow rounded-lg">
-                <div class="p-5">
-                    <div class="flex items-center">
-                        <div class="flex-shrink-0">
-                            <i data-lucide="user-check" class="h-6 w-6 text-green-600"></i>
-                        </div>
-                        <div class="ml-5 w-0 flex-1">
-                            <dl>
-                                <dt class="text-sm font-medium text-gray-500 truncate">{{ __('admin.authors.stats_active') }}</dt>
-                                <dd class="text-lg font-medium text-gray-900">{{ (int) ($stats['active_authors'] ?? 0) }}</dd>
-                            </dl>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="bg-white overflow-hidden shadow rounded-lg">
-                <div class="p-5">
-                    <div class="flex items-center">
-                        <div class="flex-shrink-0">
-                            <i data-lucide="trending-up" class="h-6 w-6 text-blue-600"></i>
-                        </div>
-                        <div class="ml-5 w-0 flex-1">
-                            <dl>
-                                <dt class="text-sm font-medium text-gray-500 truncate">{{ __('admin.authors.stats_average') }}</dt>
-                                <dd class="text-lg font-medium text-gray-900">{{ (float) ($stats['avg_articles'] ?? 0) }}</dd>
-                            </dl>
-                        </div>
-                    </div>
+                <div class="flex flex-wrap items-center gap-2">
+                    <button type="button" onclick="showCreateModal()" class="admin-btn-primary">
+                        <i data-lucide="plus" class="h-4 w-4"></i>
+                        {{ __('admin.authors.create') }}
+                    </button>
                 </div>
             </div>
         </div>
 
-        <div class="bg-white shadow rounded-lg mb-6">
-            <div class="px-6 py-4">
-                <form method="GET" class="flex items-center gap-4">
-                    <div class="flex-1 min-w-0">
-                        <input type="text" name="search" value="{{ $search }}" placeholder="{{ __('admin.authors.search_placeholder') }}" class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+        <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div class="admin-panel p-5">
+                <div class="flex items-center gap-4">
+                    <span class="flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+                        <i data-lucide="users" class="h-5 w-5"></i>
+                    </span>
+                    <div class="min-w-0">
+                        <div class="text-xs font-medium text-slate-500">{{ __('admin.authors.stats_total') }}</div>
+                        <div class="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{{ (int) ($stats['total_authors'] ?? 0) }}</div>
                     </div>
-                    <button type="submit" class="inline-flex shrink-0 whitespace-nowrap items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">
-                        <i data-lucide="search" class="w-4 h-4 mr-2"></i>
+                </div>
+            </div>
+            <div class="admin-panel p-5">
+                <div class="flex items-center gap-4">
+                    <span class="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
+                        <i data-lucide="user-check" class="h-5 w-5"></i>
+                    </span>
+                    <div class="min-w-0">
+                        <div class="text-xs font-medium text-slate-500">{{ __('admin.authors.stats_active') }}</div>
+                        <div class="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{{ (int) ($stats['active_authors'] ?? 0) }}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="admin-panel p-5">
+                <div class="flex items-center gap-4">
+                    <span class="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+                        <i data-lucide="trending-up" class="h-5 w-5"></i>
+                    </span>
+                    <div class="min-w-0">
+                        <div class="text-xs font-medium text-slate-500">{{ __('admin.authors.stats_average') }}</div>
+                        <div class="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{{ (float) ($stats['avg_articles'] ?? 0) }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="admin-panel p-4">
+            <form method="GET" class="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <div class="relative flex-1 min-w-0">
+                    <i data-lucide="search" class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"></i>
+                    <input type="text" name="search" value="{{ $search }}" placeholder="{{ __('admin.authors.search_placeholder') }}" class="admin-input pl-9">
+                </div>
+                <div class="flex shrink-0 items-center gap-2">
+                    <button type="submit" class="admin-btn-primary">
+                        <i data-lucide="search" class="h-4 w-4"></i>
                         {{ __('admin.button.search') }}
                     </button>
-                    <a href="{{ route('admin.authors.index') }}" class="inline-flex shrink-0 whitespace-nowrap items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
-                        <i data-lucide="x" class="w-4 h-4 mr-2"></i>
+                    <a href="{{ route('admin.authors.index') }}" class="admin-btn-secondary">
+                        <i data-lucide="x" class="h-4 w-4"></i>
                         {{ __('admin.button.clear') }}
                     </a>
-                </form>
-            </div>
+                </div>
+            </form>
         </div>
 
-        <div class="bg-white shadow rounded-lg">
-            <div class="px-6 py-4 border-b border-gray-200">
-                <h3 class="text-lg font-medium text-gray-900">
-                    {{ __('admin.authors.list_title') }}
-                    <span class="text-sm text-gray-500">({{ (int) ($authorsPagination?->total() ?? 0) }})</span>
-                </h3>
+        <div class="admin-panel">
+            <div class="admin-panel-header">
+                <div>
+                    <h2 class="text-base font-semibold text-slate-950">{{ __('admin.authors.list_title') }}</h2>
+                    <p class="mt-1 text-sm text-slate-500">{{ __('admin.authors.list_subtitle') }}</p>
+                </div>
+                <div class="flex items-center gap-2 text-xs text-slate-500">
+                    <i data-lucide="list" class="h-4 w-4 text-slate-400"></i>
+                    {{ (int) ($authorsPagination?->total() ?? 0) }}
+                </div>
             </div>
             @if (empty($authors))
-                <div class="px-6 py-8 text-center">
-                    <i data-lucide="user-plus" class="w-12 h-12 mx-auto text-gray-400 mb-4"></i>
-                    <h3 class="text-lg font-medium text-gray-900 mb-2">{{ __('admin.authors.empty_title') }}</h3>
-                    <p class="text-gray-500 mb-4">{{ $search !== '' ? __('admin.authors.empty_search') : __('admin.authors.empty_desc') }}</p>
+                <div class="px-6 py-16 text-center">
+                    <div class="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
+                        <i data-lucide="user-round-x" class="h-6 w-6"></i>
+                    </div>
+                    <div class="mt-4 text-sm font-semibold text-slate-700">{{ __('admin.authors.empty_title') }}</div>
+                    <p class="mt-1 text-sm text-slate-500">{{ $search !== '' ? __('admin.authors.empty_search') : __('admin.authors.empty_desc') }}</p>
                     @if ($search === '')
-                        <button type="button" onclick="showCreateModal()" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">
-                            <i data-lucide="plus" class="w-4 h-4 mr-2"></i>
+                        <button type="button" onclick="showCreateModal()" class="admin-btn-primary mt-5">
+                            <i data-lucide="plus" class="h-4 w-4"></i>
                             {{ __('admin.authors.create') }}
                         </button>
                     @endif
                 </div>
             @else
-                <div class="divide-y divide-gray-200">
+                <div class="divide-y divide-slate-100">
                     @foreach ($authors as $author)
-                        <div class="px-6 py-6">
-                            <div class="flex items-center justify-between">
-                                <div class="flex items-center space-x-4">
-                                    <div class="flex-shrink-0">
-                                        <div class="w-12 h-12 bg-indigo-100 rounded-full flex items-center justify-center">
-                                            <i data-lucide="user" class="w-6 h-6 text-indigo-600"></i>
-                                        </div>
+                        <div class="px-5 py-5 transition hover:bg-slate-50/60">
+                            <div class="flex items-start justify-between gap-4">
+                                <div class="flex min-w-0 items-start gap-4">
+                                    <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-indigo-600">
+                                        <i data-lucide="user" class="h-5 w-5"></i>
                                     </div>
-                                    <div class="flex-1">
-                                        <h4 class="text-lg font-medium text-gray-900">{{ $author['name'] }}</h4>
+                                    <div class="min-w-0 flex-1">
+                                        <h4 class="text-base font-semibold text-slate-900">{{ $author['name'] }}</h4>
                                         @if ($author['email'] !== '')
-                                            <p class="text-sm text-gray-600">{{ $author['email'] }}</p>
+                                            <p class="mt-0.5 text-sm text-slate-600">{{ $author['email'] }}</p>
                                         @endif
                                         @if ($author['bio'] !== '')
-                                            <p class="text-sm text-gray-500 mt-1">
+                                            <p class="mt-1 text-sm leading-6 text-slate-500">
                                                 {{ \Illuminate\Support\Str::limit($author['bio'], 100, '...') }}
                                             </p>
                                         @endif
-                                        <div class="mt-2 flex items-center space-x-4 text-sm text-gray-500">
-                                            <span>{{ __('admin.authors.article_count', ['count' => (int) $author['article_count']]) }}</span>
-                                            <span>{{ __('admin.authors.published_count', ['count' => (int) $author['published_count']]) }}</span>
+                                        <div class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
+                                            <span class="inline-flex items-center gap-1">
+                                                <i data-lucide="file-text" class="h-3.5 w-3.5 text-slate-400"></i>
+                                                {{ __('admin.authors.article_count', ['count' => (int) $author['article_count']]) }}
+                                            </span>
+                                            <span class="inline-flex items-center gap-1">
+                                                <i data-lucide="check-circle-2" class="h-3.5 w-3.5 text-emerald-500"></i>
+                                                {{ __('admin.authors.published_count', ['count' => (int) $author['published_count']]) }}
+                                            </span>
                                             @if ((int) $author['trashed_count'] > 0)
-                                                <span>{{ __('admin.authors.trashed_count', ['count' => (int) $author['trashed_count']]) }}</span>
+                                                <span class="inline-flex items-center gap-1">
+                                                    <i data-lucide="trash-2" class="h-3.5 w-3.5 text-amber-500"></i>
+                                                    {{ __('admin.authors.trashed_count', ['count' => (int) $author['trashed_count']]) }}
+                                                </span>
                                             @endif
-                                            <span>{{ __('admin.authors.created_prefix', ['date' => $author['created_at'] ? \Illuminate\Support\Carbon::parse($author['created_at'])->format('Y-m-d') : '-']) }}</span>
+                                            <span class="inline-flex items-center gap-1">
+                                                <i data-lucide="calendar" class="h-3.5 w-3.5 text-slate-400"></i>
+                                                {{ __('admin.authors.created_prefix', ['date' => $author['created_at'] ? \Illuminate\Support\Carbon::parse($author['created_at'])->format('Y-m-d') : '-']) }}
+                                            </span>
                                         </div>
                                     </div>
                                 </div>
 
-                                <div class="flex items-center space-x-2">
+                                <div class="flex shrink-0 items-center gap-2">
                                     <button
                                         type="button"
                                         onclick="showEditModal(this)"
@@ -145,9 +160,9 @@
                                         data-author-bio="{{ $author['bio'] }}"
                                         data-author-website="{{ $author['website'] }}"
                                         data-author-social-links="{{ $author['social_links'] }}"
-                                        class="inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50"
+                                        class="admin-btn-secondary h-8 px-3 text-xs"
                                     >
-                                        <i data-lucide="pencil" class="w-4 h-4 mr-1"></i>
+                                        <i data-lucide="pencil" class="h-3.5 w-3.5"></i>
                                         {{ __('admin.authors.edit') }}
                                     </button>
                                     <button
@@ -156,9 +171,9 @@
                                         data-author-id="{{ (int) $author['id'] }}"
                                         data-author-name="{{ $author['name'] }}"
                                         data-trashed-count="{{ (int) $author['trashed_count'] }}"
-                                        class="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded text-white bg-red-600 hover:bg-red-700"
+                                        class="admin-btn-danger h-8 px-3 text-xs"
                                     >
-                                        <i data-lucide="trash-2" class="w-4 h-4 mr-1"></i>
+                                        <i data-lucide="trash-2" class="h-3.5 w-3.5"></i>
                                         {{ __('admin.authors.delete') }}
                                     </button>
                                 </div>
@@ -167,18 +182,19 @@
                     @endforeach
                 </div>
                 @if (($authorsPagination?->lastPage() ?? 1) > 1)
-                    <div class="px-6 py-4 border-t border-gray-200">
-                        <div class="flex items-center justify-between">
-                            <div class="text-sm text-gray-700">
+                    <div class="border-t border-slate-200 px-5 py-4">
+                        <div class="flex flex-col items-center justify-between gap-3 sm:flex-row">
+                            <div class="text-sm text-slate-600">
                                 {{ __('admin.articles.pagination.summary', [
                                     'from' => (string) ($authorsPagination?->firstItem() ?? 0),
                                     'to' => (string) ($authorsPagination?->lastItem() ?? 0),
                                     'total' => (string) ($authorsPagination?->total() ?? 0),
                                 ]) }}
                             </div>
-                            <div class="flex space-x-1">
+                            <div class="flex items-center gap-1">
                                 @if (($authorsPagination?->currentPage() ?? 1) > 1)
-                                    <a href="{{ $authorsPagination?->url(($authorsPagination?->currentPage() ?? 2) - 1) }}" class="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+                                    <a href="{{ $authorsPagination?->url(($authorsPagination?->currentPage() ?? 2) - 1) }}" class="inline-flex h-9 items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-600 transition hover:bg-slate-50">
+                                        <i data-lucide="chevron-left" class="h-3.5 w-3.5"></i>
                                         {{ __('admin.articles.pagination.prev') }}
                                     </a>
                                 @endif
@@ -189,14 +205,15 @@
                                 @endphp
                                 @for ($i = max(1, $currentPage - 2); $i <= min($lastPage, $currentPage + 2); $i++)
                                     <a href="{{ $authorsPagination?->url($i) }}"
-                                       class="px-3 py-2 text-sm font-medium {{ $i === $currentPage ? 'text-indigo-600 bg-indigo-50 border-indigo-500' : 'text-gray-500 bg-white border-gray-300' }} border rounded-md hover:bg-gray-50">
+                                       class="inline-flex h-9 min-w-9 items-center justify-center rounded-lg border px-3 text-sm font-medium transition {{ $i === $currentPage ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50' }}">
                                         {{ $i }}
                                     </a>
                                 @endfor
 
                                 @if (($authorsPagination?->currentPage() ?? 1) < ($authorsPagination?->lastPage() ?? 1))
-                                    <a href="{{ $authorsPagination?->url(($authorsPagination?->currentPage() ?? 0) + 1) }}" class="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+                                    <a href="{{ $authorsPagination?->url(($authorsPagination?->currentPage() ?? 0) + 1) }}" class="inline-flex h-9 items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-600 transition hover:bg-slate-50">
                                         {{ __('admin.articles.pagination.next') }}
+                                        <i data-lucide="chevron-right" class="h-3.5 w-3.5"></i>
                                     </a>
                                 @endif
                             </div>
@@ -207,104 +224,134 @@
         </div>
     </div>
 
-    <div id="create-modal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-        <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
-            <div class="mt-3">
-                <h3 class="text-lg font-medium text-gray-900 mb-4">{{ __('admin.authors.modal_create') }}</h3>
-                <form method="POST" action="{{ route('admin.authors.store') }}">
-                    @csrf
-
-                    <div class="space-y-4">
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700">{{ __('admin.authors.field_name') }}</label>
-                            <input type="text" name="name" required class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="{{ __('admin.authors.placeholder_name') }}">
-                        </div>
-
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700">{{ __('admin.authors.field_email') }}</label>
-                            <input type="email" name="email" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="{{ __('admin.authors.placeholder_email') }}">
-                        </div>
-
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700">{{ __('admin.authors.field_bio') }}</label>
-                            <textarea name="bio" rows="3" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="{{ __('admin.authors.placeholder_bio') }}"></textarea>
-                        </div>
-
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700">{{ __('admin.authors.field_website') }}</label>
-                            <input type="url" name="website" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="https://example.com">
-                        </div>
-
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700">{{ __('admin.authors.field_social') }}</label>
-                            <textarea name="social_links" rows="2" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="{{ __('admin.authors.placeholder_social') }}"></textarea>
-                        </div>
-                    </div>
-
-                    <div class="mt-6 flex justify-end space-x-3">
-                        <button type="button" onclick="hideCreateModal()" class="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50">
-                            {{ __('admin.button.cancel') }}
-                        </button>
-                        <button type="submit" class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700">
-                            {{ __('admin.authors.save_create') }}
-                        </button>
-                    </div>
-                </form>
+    <div id="create-modal" class="admin-modal-shell fixed inset-0 z-50 hidden" role="dialog" aria-modal="true" aria-labelledby="create-modal-title">
+        <div class="admin-modal-backdrop absolute inset-0 bg-slate-900/45 backdrop-blur-sm" onclick="hideCreateModal()"></div>
+        <div class="relative mx-auto mt-[8vh] flex w-full max-w-md flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl shadow-slate-900/15">
+            <div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+                <div class="flex items-center gap-3">
+                    <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+                        <i data-lucide="user-plus" class="h-4 w-4"></i>
+                    </span>
+                    <h3 id="create-modal-title" class="text-base font-semibold text-slate-950">{{ __('admin.authors.modal_create') }}</h3>
+                </div>
+                <button type="button" onclick="hideCreateModal()" class="admin-icon-btn" aria-label="{{ __('admin.common.close') }}">
+                    <i data-lucide="x" class="h-4 w-4"></i>
+                </button>
             </div>
+            <form method="POST" action="{{ route('admin.authors.store') }}" class="px-6 py-5 space-y-4">
+                @csrf
+
+                <div class="admin-field">
+                    <label class="admin-label">{{ __('admin.authors.field_name') }}</label>
+                    <input type="text" name="name" required class="admin-input" placeholder="{{ __('admin.authors.placeholder_name') }}">
+                </div>
+
+                <div class="admin-field">
+                    <label class="admin-label">{{ __('admin.authors.field_email') }}</label>
+                    <input type="email" name="email" class="admin-input" placeholder="{{ __('admin.authors.placeholder_email') }}">
+                </div>
+
+                <div class="admin-field">
+                    <label class="admin-label">{{ __('admin.authors.field_bio') }}</label>
+                    <textarea name="bio" rows="3" class="admin-input min-h-[5.5rem]" placeholder="{{ __('admin.authors.placeholder_bio') }}"></textarea>
+                </div>
+
+                <div class="admin-field">
+                    <label class="admin-label">{{ __('admin.authors.field_website') }}</label>
+                    <input type="url" name="website" class="admin-input" placeholder="https://example.com">
+                </div>
+
+                <div class="admin-field">
+                    <label class="admin-label">{{ __('admin.authors.field_social') }}</label>
+                    <textarea name="social_links" rows="2" class="admin-input min-h-[4rem]" placeholder="{{ __('admin.authors.placeholder_social') }}"></textarea>
+                </div>
+
+                <div class="flex justify-end gap-3 border-t border-slate-100 pt-4">
+                    <button type="button" onclick="hideCreateModal()" class="admin-btn-secondary">{{ __('admin.button.cancel') }}</button>
+                    <button type="submit" class="admin-btn-primary">
+                        <i data-lucide="check" class="h-4 w-4"></i>
+                        {{ __('admin.authors.save_create') }}
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 
-    <div id="edit-modal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-        <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
-            <div class="mt-3">
-                <h3 class="text-lg font-medium text-gray-900 mb-4">{{ __('admin.authors.modal_edit') }}</h3>
-                <form method="POST" id="edit-form">
-                    @csrf
-                    @method('PUT')
-                    <input type="hidden" name="author_id" id="edit-author-id" value="">
-
-                    <div class="space-y-4">
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700">{{ __('admin.authors.field_name') }}</label>
-                            <input type="text" name="name" id="edit-author-name" required class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="{{ __('admin.authors.placeholder_name') }}">
-                        </div>
-
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700">{{ __('admin.authors.field_email') }}</label>
-                            <input type="email" name="email" id="edit-author-email" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="{{ __('admin.authors.placeholder_email') }}">
-                        </div>
-
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700">{{ __('admin.authors.field_bio') }}</label>
-                            <textarea name="bio" id="edit-author-bio" rows="3" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="{{ __('admin.authors.placeholder_bio') }}"></textarea>
-                        </div>
-
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700">{{ __('admin.authors.field_website') }}</label>
-                            <input type="url" name="website" id="edit-author-website" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="https://example.com">
-                        </div>
-
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700">{{ __('admin.authors.field_social') }}</label>
-                            <textarea name="social_links" id="edit-author-social-links" rows="2" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="{{ __('admin.authors.placeholder_social') }}"></textarea>
-                        </div>
-                    </div>
-
-                    <div class="mt-6 flex justify-end space-x-3">
-                        <button type="button" onclick="hideEditModal()" class="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50">
-                            {{ __('admin.button.cancel') }}
-                        </button>
-                        <button type="submit" class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700">
-                            {{ __('admin.authors.save_edit') }}
-                        </button>
-                    </div>
-                </form>
+    <div id="edit-modal" class="admin-modal-shell fixed inset-0 z-50 hidden" role="dialog" aria-modal="true" aria-labelledby="edit-modal-title">
+        <div class="admin-modal-backdrop absolute inset-0 bg-slate-900/45 backdrop-blur-sm" onclick="hideEditModal()"></div>
+        <div class="relative mx-auto mt-[8vh] flex w-full max-w-md flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl shadow-slate-900/15">
+            <div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+                <div class="flex items-center gap-3">
+                    <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+                        <i data-lucide="user-cog" class="h-4 w-4"></i>
+                    </span>
+                    <h3 id="edit-modal-title" class="text-base font-semibold text-slate-950">{{ __('admin.authors.modal_edit') }}</h3>
+                </div>
+                <button type="button" onclick="hideEditModal()" class="admin-icon-btn" aria-label="{{ __('admin.common.close') }}">
+                    <i data-lucide="x" class="h-4 w-4"></i>
+                </button>
             </div>
+            <form method="POST" id="edit-form" class="px-6 py-5 space-y-4">
+                @csrf
+                @method('PUT')
+                <input type="hidden" name="author_id" id="edit-author-id" value="">
+
+                <div class="admin-field">
+                    <label class="admin-label">{{ __('admin.authors.field_name') }}</label>
+                    <input type="text" name="name" id="edit-author-name" required class="admin-input" placeholder="{{ __('admin.authors.placeholder_name') }}">
+                </div>
+
+                <div class="admin-field">
+                    <label class="admin-label">{{ __('admin.authors.field_email') }}</label>
+                    <input type="email" name="email" id="edit-author-email" class="admin-input" placeholder="{{ __('admin.authors.placeholder_email') }}">
+                </div>
+
+                <div class="admin-field">
+                    <label class="admin-label">{{ __('admin.authors.field_bio') }}</label>
+                    <textarea name="bio" id="edit-author-bio" rows="3" class="admin-input min-h-[5.5rem]" placeholder="{{ __('admin.authors.placeholder_bio') }}"></textarea>
+                </div>
+
+                <div class="admin-field">
+                    <label class="admin-label">{{ __('admin.authors.field_website') }}</label>
+                    <input type="url" name="website" id="edit-author-website" class="admin-input" placeholder="https://example.com">
+                </div>
+
+                <div class="admin-field">
+                    <label class="admin-label">{{ __('admin.authors.field_social') }}</label>
+                    <textarea name="social_links" id="edit-author-social-links" rows="2" class="admin-input min-h-[4rem]" placeholder="{{ __('admin.authors.placeholder_social') }}"></textarea>
+                </div>
+
+                <div class="flex justify-end gap-3 border-t border-slate-100 pt-4">
+                    <button type="button" onclick="hideEditModal()" class="admin-btn-secondary">{{ __('admin.button.cancel') }}</button>
+                    <button type="submit" class="admin-btn-primary">
+                        <i data-lucide="check" class="h-4 w-4"></i>
+                        {{ __('admin.authors.save_edit') }}
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 @endsection
 
 @push('scripts')
+    <style>
+        .admin-btn-danger {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.4rem;
+            border-radius: 0.5rem;
+            background-color: rgb(220 38 38);
+            padding: 0 0.75rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: white;
+            box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+            transition: all 150ms ease;
+        }
+        .admin-btn-danger:hover { background-color: rgb(185 28 28); }
+        .admin-btn-danger:active { transform: translateY(1px); }
+    </style>
     <script>
         const AUTHORS_I18N = {
             confirmDelete: @json(__('admin.authors.confirm_delete', ['name' => '__NAME__'])),
@@ -315,10 +362,12 @@
 
         function showCreateModal() {
             document.getElementById('create-modal').classList.remove('hidden');
+            document.documentElement.classList.add('admin-modal-open');
         }
 
         function hideCreateModal() {
             document.getElementById('create-modal').classList.add('hidden');
+            document.documentElement.classList.remove('admin-modal-open');
         }
 
         function showEditModal(button) {
@@ -332,10 +381,12 @@
             const editForm = document.getElementById('edit-form');
             editForm.action = AUTHOR_UPDATE_URL_TEMPLATE.replace('__AUTHOR_ID__', button.dataset.authorId || '');
             document.getElementById('edit-modal').classList.remove('hidden');
+            document.documentElement.classList.add('admin-modal-open');
         }
 
         function hideEditModal() {
             document.getElementById('edit-modal').classList.add('hidden');
+            document.documentElement.classList.remove('admin-modal-open');
         }
 
         function deleteAuthor(button) {
@@ -361,16 +412,10 @@
             form.submit();
         }
 
-        window.addEventListener('click', function (event) {
-            const createModal = document.getElementById('create-modal');
-            const editModal = document.getElementById('edit-modal');
-
-            if (event.target === createModal) {
-                hideCreateModal();
-            }
-            if (event.target === editModal) {
-                hideEditModal();
-            }
+        document.addEventListener('keydown', (event) => {
+            if (event.key !== 'Escape') return;
+            hideCreateModal();
+            hideEditModal();
         });
     </script>
 @endpush

@@ -1,141 +1,165 @@
 @extends('admin.layouts.app')
 
 @section('content')
-    <div class="px-4 sm:px-0">
-        <div class="flex items-center justify-between mb-8">
-            <div class="flex items-center space-x-4">
-                <a href="{{ route('admin.site-settings.index') }}" class="text-gray-400 hover:text-gray-600">
-                    <i data-lucide="arrow-left" class="w-5 h-5"></i>
-                </a>
+    @php
+        $stats = is_array($stats ?? null) ? $stats : ['total_admins' => 0, 'active_admins' => 0, 'super_admins' => 0];
+        $admins = is_array($admins ?? null) ? $admins : [];
+        $currentAdminId = isset($currentAdminId) ? (int) $currentAdminId : 0;
+    @endphp
+    <div class="space-y-6">
+        <div class="admin-panel">
+            <div class="admin-panel-header">
+                <div class="flex items-start gap-3">
+                    <a href="{{ route('admin.site-settings.index') }}" class="admin-icon-btn" aria-label="{{ __('admin.common.back') }}">
+                        <i data-lucide="arrow-left" class="h-4 w-4"></i>
+                    </a>
+                    <div>
+                        <div class="text-xs font-medium uppercase tracking-widest text-slate-400">{{ __('admin.admin_users.page_eyebrow') }}</div>
+                        <h1 class="mt-1 text-xl font-semibold tracking-tight text-slate-950">{{ __('admin.admin_users.page_title') }}</h1>
+                        <p class="mt-1 text-sm text-slate-500">{{ __('admin.admin_users.page_subtitle') }}</p>
+                    </div>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                    <a href="{{ route('admin.admin-activity-logs') }}" class="admin-btn-secondary">
+                        <i data-lucide="clipboard-list" class="h-4 w-4"></i>
+                        {{ __('admin.admin_users.view_logs') }}
+                    </a>
+                    <button type="button" onclick="showCreateAdminModal()" class="admin-btn-primary">
+                        <i data-lucide="user-plus" class="h-4 w-4"></i>
+                        {{ __('admin.admin_users.add_admin') }}
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            <div class="admin-panel p-5">
+                <div class="flex items-center gap-4">
+                    <span class="flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+                        <i data-lucide="users" class="h-5 w-5"></i>
+                    </span>
+                    <div class="min-w-0 flex-1">
+                        <div class="text-xs font-medium text-slate-500">{{ __('admin.admin_users.total_admins') }}</div>
+                        <div class="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{{ (int) ($stats['total_admins'] ?? 0) }}</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="admin-panel p-5">
+                <div class="flex items-center gap-4">
+                    <span class="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
+                        <i data-lucide="badge-check" class="h-5 w-5"></i>
+                    </span>
+                    <div class="min-w-0 flex-1">
+                        <div class="text-xs font-medium text-slate-500">{{ __('admin.admin_users.active_admins') }}</div>
+                        <div class="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{{ (int) ($stats['active_admins'] ?? 0) }}</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="admin-panel p-5">
+                <div class="flex items-center gap-4">
+                    <span class="flex h-12 w-12 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
+                        <i data-lucide="shield-check" class="h-5 w-5"></i>
+                    </span>
+                    <div class="min-w-0 flex-1">
+                        <div class="text-xs font-medium text-slate-500">{{ __('admin.admin_users.super_admins') }}</div>
+                        <div class="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{{ (int) ($stats['super_admins'] ?? 0) }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="flex items-start gap-3 rounded-xl border border-blue-100 bg-blue-50/70 px-4 py-3 text-sm text-blue-900">
+            <i data-lucide="info" class="mt-0.5 h-4 w-4 shrink-0 text-blue-600"></i>
+            <div class="leading-6">{{ __('admin.admin_users.permission_notice') }}</div>
+        </div>
+
+        <div class="admin-panel">
+            <div class="admin-panel-header">
                 <div>
-                    <h1 class="text-2xl font-bold text-gray-900">{{ __('admin.admin_users.page_title') }}</h1>
-                    <p class="mt-1 text-sm text-gray-600">{{ __('admin.admin_users.page_subtitle') }}</p>
+                    <h2 class="text-base font-semibold text-slate-950">{{ __('admin.admin_users.list_title') }}</h2>
+                    <p class="mt-1 text-sm text-slate-500">{{ __('admin.admin_users.list_subtitle') }}</p>
                 </div>
-            </div>
-            <div class="flex items-center gap-3">
-                <a href="{{ route('admin.admin-activity-logs') }}" class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
-                    <i data-lucide="clipboard-list" class="w-4 h-4 mr-2"></i>
-                    {{ __('admin.admin_users.view_logs') }}
-                </a>
-                <button type="button" onclick="showCreateAdminModal()" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">
-                    <i data-lucide="user-plus" class="w-4 h-4 mr-2"></i>
-                    {{ __('admin.admin_users.add_admin') }}
-                </button>
-            </div>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <div class="bg-white overflow-hidden shadow rounded-lg">
-                <div class="p-5">
-                    <div class="flex items-center">
-                        <div class="flex-shrink-0">
-                            <i data-lucide="users" class="h-6 w-6 text-indigo-600"></i>
-                        </div>
-                        <div class="ml-5 w-0 flex-1">
-                            <dt class="text-sm font-medium text-gray-500 truncate">{{ __('admin.admin_users.total_admins') }}</dt>
-                            <dd class="text-lg font-medium text-gray-900">{{ $stats['total_admins'] }}</dd>
-                        </div>
-                    </div>
+                <div class="flex items-center gap-2 text-xs text-slate-500">
+                    <i data-lucide="shield-user" class="h-4 w-4 text-slate-400"></i>
+                    {{ __('admin.admin_users.list_count', ['count' => count($admins)]) }}
                 </div>
-            </div>
-
-            <div class="bg-white overflow-hidden shadow rounded-lg">
-                <div class="p-5">
-                    <div class="flex items-center">
-                        <div class="flex-shrink-0">
-                            <i data-lucide="badge-check" class="h-6 w-6 text-green-600"></i>
-                        </div>
-                        <div class="ml-5 w-0 flex-1">
-                            <dt class="text-sm font-medium text-gray-500 truncate">{{ __('admin.admin_users.active_admins') }}</dt>
-                            <dd class="text-lg font-medium text-gray-900">{{ $stats['active_admins'] }}</dd>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="bg-white overflow-hidden shadow rounded-lg">
-                <div class="p-5">
-                    <div class="flex items-center">
-                        <div class="flex-shrink-0">
-                            <i data-lucide="shield-check" class="h-6 w-6 text-amber-600"></i>
-                        </div>
-                        <div class="ml-5 w-0 flex-1">
-                            <dt class="text-sm font-medium text-gray-500 truncate">{{ __('admin.admin_users.super_admins') }}</dt>
-                            <dd class="text-lg font-medium text-gray-900">{{ $stats['super_admins'] }}</dd>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <div class="flex items-start gap-3">
-                <i data-lucide="info" class="w-5 h-5 text-blue-600 mt-0.5"></i>
-                <div class="text-sm text-blue-900">
-                    {{ __('admin.admin_users.permission_notice') }}
-                </div>
-            </div>
-        </div>
-
-        <div class="bg-white shadow rounded-lg overflow-hidden">
-            <div class="px-6 py-4 border-b border-gray-200">
-                <h3 class="text-lg font-medium text-gray-900">{{ __('admin.admin_users.list_title') }}</h3>
             </div>
             <div class="overflow-x-auto">
-                <table class="min-w-full divide-y divide-gray-200">
-                    <thead class="bg-gray-50">
+                <table class="admin-table">
+                    <thead>
                         <tr>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ __('admin.admin_users.column_account') }}</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ __('admin.admin_users.column_role') }}</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ __('admin.admin_users.column_status') }}</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ __('admin.admin_users.column_last_login') }}</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ __('admin.admin_users.column_created') }}</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ __('admin.admin_users.column_activity') }}</th>
-                            <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{{ __('admin.common.actions') }}</th>
+                            <th>{{ __('admin.admin_users.column_account') }}</th>
+                            <th>{{ __('admin.admin_users.column_role') }}</th>
+                            <th>{{ __('admin.admin_users.column_status') }}</th>
+                            <th>{{ __('admin.admin_users.column_last_login') }}</th>
+                            <th>{{ __('admin.admin_users.column_created') }}</th>
+                            <th>{{ __('admin.admin_users.column_activity') }}</th>
+                            <th class="text-right">{{ __('admin.common.actions') }}</th>
                         </tr>
                     </thead>
-                    <tbody class="bg-white divide-y divide-gray-200">
-                        @foreach ($admins as $admin)
-                            <tr>
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    <div class="text-sm font-medium text-gray-900">{{ $admin['display_name'] !== '' ? $admin['display_name'] : $admin['username'] }}</div>
-                                    <div class="text-sm text-gray-500">{{ $admin['username'] }}</div>
-                                    @if ($admin['email'] !== '')
-                                        <div class="text-xs text-gray-400">{{ $admin['email'] }}</div>
-                                    @endif
+                    <tbody>
+                        @forelse ($admins as $admin)
+                            <tr class="transition hover:bg-slate-50/70">
+                                <td>
+                                    <div class="flex items-center gap-3">
+                                        <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-sm font-semibold text-slate-600">
+                                            {{ mb_substr((string) ($admin['display_name'] !== '' ? $admin['display_name'] : $admin['username']), 0, 1) }}
+                                        </span>
+                                        <div class="min-w-0">
+                                            <div class="text-sm font-semibold text-slate-900">{{ $admin['display_name'] !== '' ? $admin['display_name'] : $admin['username'] }}</div>
+                                            <div class="text-xs text-slate-500">{{ $admin['username'] }}</div>
+                                            @if ($admin['email'] !== '')
+                                                <div class="text-xs text-slate-400">{{ $admin['email'] }}</div>
+                                            @endif
+                                        </div>
+                                    </div>
                                 </td>
-                                <td class="px-6 py-4 whitespace-nowrap">
+                                <td>
                                     @if ($admin['is_super_admin'])
-                                        <span class="inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">{{ __('admin.admin_users.role_super_admin') }}</span>
+                                        <span class="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-700">
+                                            <i data-lucide="shield-check" class="h-3 w-3"></i>
+                                            {{ __('admin.admin_users.role_super_admin') }}
+                                        </span>
                                     @else
-                                        <span class="inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">{{ __('admin.admin_users.role_admin') }}</span>
+                                        <span class="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-blue-700">
+                                            <i data-lucide="user" class="h-3 w-3"></i>
+                                            {{ __('admin.admin_users.role_admin') }}
+                                        </span>
                                     @endif
                                 </td>
-                                <td class="px-6 py-4 whitespace-nowrap">
+                                <td>
                                     @if ($admin['status'] === 'active')
-                                        <span class="inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">{{ __('admin.admin_users.status_active') }}</span>
+                                        <span class="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">
+                                            <span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+                                            {{ __('admin.admin_users.status_active') }}
+                                        </span>
                                     @else
-                                        <span class="inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">{{ __('admin.admin_users.status_inactive') }}</span>
+                                        <span class="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-xs font-semibold text-slate-600">
+                                            <span class="h-1.5 w-1.5 rounded-full bg-slate-400"></span>
+                                            {{ __('admin.admin_users.status_inactive') }}
+                                        </span>
                                     @endif
                                 </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                <td class="text-sm text-slate-600">
                                     {{ $admin['last_login'] !== '' ? $admin['last_login'] : __('admin.admin_users.none_last_login') }}
                                 </td>
-                                <td class="px-6 py-4 text-sm text-gray-500">
+                                <td class="text-sm text-slate-600">
                                     <div>{{ $admin['created_at'] }}</div>
-                                    <div class="text-xs text-gray-400">
+                                    <div class="text-xs text-slate-400">
                                         {{ __('admin.admin_users.created_by', ['value' => $admin['creator_username'] !== '' ? $admin['creator_username'] : __('admin.admin_users.system_init')]) }}
                                     </div>
                                 </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                <td class="text-sm text-slate-600">
                                     {{ __('admin.admin_users.activity_count', ['count' => $admin['activity_count']]) }}
                                 </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                <td class="text-right text-sm font-medium">
                                     @if ($admin['id'] === $currentAdminId)
                                         <button
                                             type="button"
                                             onclick="showEditAdminModal({{ \Illuminate\Support\Js::from($admin) }})"
-                                            class="text-blue-600 hover:text-blue-800"
+                                            class="text-blue-600 transition hover:text-blue-800"
                                         >
                                             {{ __('admin.button.edit') }}
                                         </button>
@@ -144,142 +168,195 @@
                                             <button
                                                 type="button"
                                                 onclick="showEditAdminModal({{ \Illuminate\Support\Js::from($admin) }})"
-                                                class="text-blue-600 hover:text-blue-800"
+                                                class="text-blue-600 transition hover:text-blue-800"
                                             >
                                                 {{ __('admin.button.edit') }}
                                             </button>
                                             <form method="POST" action="{{ route('admin.admin-users.toggle-status', ['adminId' => $admin['id']]) }}" class="inline">
                                                 @csrf
                                                 <input type="hidden" name="next_status" value="{{ $admin['status'] === 'active' ? 'inactive' : 'active' }}">
-                                                <button type="submit" class="{{ $admin['status'] === 'active' ? 'text-amber-600 hover:text-amber-800' : 'text-green-600 hover:text-green-800' }}">
+                                                <button type="submit" class="{{ $admin['status'] === 'active' ? 'text-amber-600 hover:text-amber-800' : 'text-emerald-600 hover:text-emerald-800' }} transition">
                                                     {{ $admin['status'] === 'active' ? __('admin.admin_users.action_disable') : __('admin.admin_users.action_enable') }}
                                                 </button>
                                             </form>
                                             <form method="POST" action="{{ route('admin.admin-users.delete', ['adminId' => $admin['id']]) }}" class="inline" onsubmit="return confirm({{ \Illuminate\Support\Js::from(__('admin.admin_users.confirm_delete', ['username' => $admin['username']])) }})">
                                                 @csrf
-                                                <button type="submit" class="text-red-600 hover:text-red-800">
+                                                <button type="submit" class="text-red-600 transition hover:text-red-800">
                                                     {{ __('admin.button.delete') }}
                                                 </button>
                                             </form>
                                         </div>
                                     @else
-                                        <span class="text-gray-300">-</span>
+                                        <span class="text-slate-300">-</span>
                                     @endif
                                 </td>
                             </tr>
-                        @endforeach
+                        @empty
+                            <tr>
+                                <td colspan="7" class="px-6 py-16 text-center">
+                                    <div class="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
+                                        <i data-lucide="user-round-x" class="h-6 w-6"></i>
+                                    </div>
+                                    <div class="mt-4 text-sm font-semibold text-slate-700">{{ __('admin.admin_users.empty_title') }}</div>
+                                    <div class="mt-1 text-sm text-slate-500">{{ __('admin.admin_users.empty_desc') }}</div>
+                                    <button type="button" onclick="showCreateAdminModal()" class="admin-btn-primary mt-5">
+                                        <i data-lucide="user-plus" class="h-4 w-4"></i>
+                                        {{ __('admin.admin_users.add_admin') }}
+                                    </button>
+                                </td>
+                            </tr>
+                        @endforelse
                     </tbody>
                 </table>
             </div>
         </div>
     </div>
 
-    <div id="create-admin-modal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden z-50">
-        <div class="flex items-center justify-center min-h-screen p-4">
-            <div class="bg-white rounded-lg shadow-xl max-w-lg w-full">
-                <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-                    <h3 class="text-lg font-medium text-gray-900">{{ __('admin.admin_users.modal_create') }}</h3>
-                    <button type="button" onclick="hideCreateAdminModal()" class="text-gray-400 hover:text-gray-600">
-                        <i data-lucide="x" class="w-5 h-5"></i>
+    <div id="create-admin-modal" class="admin-modal-shell fixed inset-0 z-50 hidden" role="dialog" aria-modal="true" aria-labelledby="create-admin-modal-title">
+        <div class="admin-modal-backdrop absolute inset-0 bg-slate-900/45 backdrop-blur-sm" onclick="hideCreateAdminModal()"></div>
+        <div class="relative mx-auto mt-[6vh] flex w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl shadow-slate-900/15">
+            <div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+                <div class="flex items-center gap-3">
+                    <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+                        <i data-lucide="user-plus" class="h-4 w-4"></i>
+                    </span>
+                    <h3 id="create-admin-modal-title" class="text-base font-semibold text-slate-950">{{ __('admin.admin_users.modal_create') }}</h3>
+                </div>
+                <button type="button" onclick="hideCreateAdminModal()" class="admin-icon-btn" aria-label="{{ __('admin.common.close') }}">
+                    <i data-lucide="x" class="h-4 w-4"></i>
+                </button>
+            </div>
+            <form method="POST" action="{{ route('admin.admin-users.store') }}" enctype="multipart/form-data" class="px-6 py-5 space-y-4">
+                @csrf
+                <div class="grid gap-4 sm:grid-cols-2">
+                    <div class="admin-field">
+                        <label for="username" class="admin-label">{{ __('admin.admin_users.field_username') }}</label>
+                        <input type="text" name="username" id="username" required class="admin-input" placeholder="{{ __('admin.admin_users.placeholder_username') }}" value="{{ old('username') }}">
+                    </div>
+
+                    <div class="admin-field">
+                        <label for="display_name" class="admin-label">{{ __('admin.admin_users.field_display_name') }}</label>
+                        <input type="text" name="display_name" id="display_name" class="admin-input" placeholder="{{ __('admin.admin_users.placeholder_display_name') }}" value="{{ old('display_name') }}">
+                    </div>
+                </div>
+
+                <div class="admin-field">
+                    <label for="email" class="admin-label">{{ __('admin.admin_users.field_email') }}</label>
+                    <input type="email" name="email" id="email" class="admin-input" placeholder="{{ __('admin.admin_users.placeholder_email') }}" value="{{ old('email') }}">
+                </div>
+
+                <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <div class="flex items-start gap-4">
+                        <div class="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-white text-slate-400">
+                            <img src="" alt="{{ __('admin.admin_users.tenant_logo_alt') }}" class="hidden h-full w-full object-contain p-2" data-tenant-logo-preview>
+                            <i data-lucide="image-plus" class="h-6 w-6" data-tenant-logo-placeholder></i>
+                        </div>
+                        <div class="min-w-0 flex-1">
+                            <label for="tenant_logo" class="admin-label">{{ __('admin.admin_users.field_tenant_logo') }}</label>
+                            <input
+                                type="file"
+                                name="tenant_logo"
+                                id="tenant_logo"
+                                accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                                class="block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-indigo-700 hover:file:bg-indigo-100"
+                                data-tenant-logo-input
+                            >
+                            <p class="mt-2 text-xs leading-5 text-slate-500">{{ __('admin.admin_users.tenant_logo_hint') }}</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div class="admin-field">
+                        <label for="password" class="admin-label">{{ __('admin.admin_users.field_password') }}</label>
+                        <input type="password" name="password" id="password" required class="admin-input">
+                    </div>
+                    <div class="admin-field">
+                        <label for="confirm_password" class="admin-label">{{ __('admin.admin_users.field_confirm_password') }}</label>
+                        <input type="password" name="confirm_password" id="confirm_password" required class="admin-input">
+                    </div>
+                </div>
+
+                <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600">
+                    {{ __('admin.admin_users.create_help') }}
+                </div>
+
+                <div class="flex justify-end gap-3 border-t border-slate-100 pt-4">
+                    <button type="button" onclick="hideCreateAdminModal()" class="admin-btn-secondary">{{ __('admin.button.cancel') }}</button>
+                    <button type="submit" class="admin-btn-primary">
+                        <i data-lucide="user-plus" class="h-4 w-4"></i>
+                        {{ __('admin.admin_users.create_admin_submit') }}
                     </button>
                 </div>
-                <form method="POST" action="{{ route('admin.admin-users.store') }}" class="px-6 py-5 space-y-4">
-                    @csrf
-                    <div>
-                        <label for="username" class="block text-sm font-medium text-gray-700 mb-1">{{ __('admin.admin_users.field_username') }}</label>
-                        <input type="text" name="username" id="username" required class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500" placeholder="{{ __('admin.admin_users.placeholder_username') }}" value="{{ old('username') }}">
-                    </div>
-
-                    <div>
-                        <label for="display_name" class="block text-sm font-medium text-gray-700 mb-1">{{ __('admin.admin_users.field_display_name') }}</label>
-                        <input type="text" name="display_name" id="display_name" class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500" placeholder="{{ __('admin.admin_users.placeholder_display_name') }}" value="{{ old('display_name') }}">
-                    </div>
-
-                    <div>
-                        <label for="email" class="block text-sm font-medium text-gray-700 mb-1">{{ __('admin.admin_users.field_email') }}</label>
-                        <input type="email" name="email" id="email" class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500" placeholder="{{ __('admin.admin_users.placeholder_email') }}" value="{{ old('email') }}">
-                    </div>
-
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                            <label for="password" class="block text-sm font-medium text-gray-700 mb-1">{{ __('admin.admin_users.field_password') }}</label>
-                            <input type="password" name="password" id="password" required class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
-                        </div>
-                        <div>
-                            <label for="confirm_password" class="block text-sm font-medium text-gray-700 mb-1">{{ __('admin.admin_users.field_confirm_password') }}</label>
-                            <input type="password" name="confirm_password" id="confirm_password" required class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
-                        </div>
-                    </div>
-
-                    <div class="bg-gray-50 border border-gray-200 rounded-md p-3 text-sm text-gray-600">
-                        {{ __('admin.admin_users.create_help') }}
-                    </div>
-
-                    <div class="flex justify-end gap-3 pt-2">
-                        <button type="button" onclick="hideCreateAdminModal()" class="px-4 py-2 border border-gray-300 rounded-md text-gray-700 bg-white hover:bg-gray-50">{{ __('admin.button.cancel') }}</button>
-                        <button type="submit" class="px-4 py-2 border border-transparent rounded-md text-white bg-indigo-600 hover:bg-indigo-700">{{ __('admin.admin_users.create_admin_submit') }}</button>
-                    </div>
-                </form>
-            </div>
+            </form>
         </div>
     </div>
 
-    <div id="edit-admin-modal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden z-50">
-        <div class="flex items-center justify-center min-h-screen p-4">
-            <div class="bg-white rounded-lg shadow-xl max-w-lg w-full">
-                <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-                    <h3 class="text-lg font-medium text-gray-900">{{ __('admin.admin_users.modal_edit') }}</h3>
-                    <button type="button" onclick="hideEditAdminModal()" class="text-gray-400 hover:text-gray-600">
-                        <i data-lucide="x" class="w-5 h-5"></i>
+    <div id="edit-admin-modal" class="admin-modal-shell fixed inset-0 z-50 hidden" role="dialog" aria-modal="true" aria-labelledby="edit-admin-modal-title">
+        <div class="admin-modal-backdrop absolute inset-0 bg-slate-900/45 backdrop-blur-sm" onclick="hideEditAdminModal()"></div>
+        <div class="relative mx-auto mt-[6vh] flex w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl shadow-slate-900/15">
+            <div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+                <div class="flex items-center gap-3">
+                    <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+                        <i data-lucide="user-cog" class="h-4 w-4"></i>
+                    </span>
+                    <h3 id="edit-admin-modal-title" class="text-base font-semibold text-slate-950">{{ __('admin.admin_users.modal_edit') }}</h3>
+                </div>
+                <button type="button" onclick="hideEditAdminModal()" class="admin-icon-btn" aria-label="{{ __('admin.common.close') }}">
+                    <i data-lucide="x" class="h-4 w-4"></i>
+                </button>
+            </div>
+            <form id="edit-admin-form" method="POST" action="#" class="px-6 py-5 space-y-4">
+                @csrf
+                <div class="grid gap-4 sm:grid-cols-2">
+                    <div class="admin-field">
+                        <label for="edit_username" class="admin-label">{{ __('admin.admin_users.field_username') }}</label>
+                        <input type="text" name="username" id="edit_username" required class="admin-input">
+                    </div>
+
+                    <div class="admin-field">
+                        <label for="edit_display_name" class="admin-label">{{ __('admin.admin_users.field_display_name') }}</label>
+                        <input type="text" name="display_name" id="edit_display_name" class="admin-input">
+                    </div>
+                </div>
+
+                <div class="admin-field">
+                    <label for="edit_email" class="admin-label">{{ __('admin.admin_users.field_email') }}</label>
+                    <input type="email" name="email" id="edit_email" class="admin-input">
+                </div>
+
+                <div class="admin-field">
+                    <label for="edit_status" class="admin-label">{{ __('admin.admin_users.column_status') }}</label>
+                    <input type="hidden" name="status" id="edit_status_hidden" disabled>
+                    <select name="status" id="edit_status" required class="admin-input">
+                        <option value="active">{{ __('admin.admin_users.status_active') }}</option>
+                        <option value="inactive">{{ __('admin.admin_users.status_inactive') }}</option>
+                    </select>
+                </div>
+
+                <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div class="admin-field">
+                        <label for="edit_password" class="admin-label">{{ __('admin.admin_users.field_new_password') }}</label>
+                        <input type="password" name="password" id="edit_password" class="admin-input">
+                    </div>
+                    <div class="admin-field">
+                        <label for="edit_confirm_password" class="admin-label">{{ __('admin.admin_users.field_confirm_new_password') }}</label>
+                        <input type="password" name="confirm_password" id="edit_confirm_password" class="admin-input">
+                    </div>
+                </div>
+
+                <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600">
+                    {{ __('admin.admin_users.edit_help') }}
+                </div>
+
+                <div class="flex justify-end gap-3 border-t border-slate-100 pt-4">
+                    <button type="button" onclick="hideEditAdminModal()" class="admin-btn-secondary">{{ __('admin.button.cancel') }}</button>
+                    <button type="submit" class="admin-btn-primary">
+                        <i data-lucide="check" class="h-4 w-4"></i>
+                        {{ __('admin.admin_users.update_admin_submit') }}
                     </button>
                 </div>
-                <form id="edit-admin-form" method="POST" action="#" class="px-6 py-5 space-y-4">
-                    @csrf
-                    <div>
-                        <label for="edit_username" class="block text-sm font-medium text-gray-700 mb-1">{{ __('admin.admin_users.field_username') }}</label>
-                        <input type="text" name="username" id="edit_username" required class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
-                    </div>
-
-                    <div>
-                        <label for="edit_display_name" class="block text-sm font-medium text-gray-700 mb-1">{{ __('admin.admin_users.field_display_name') }}</label>
-                        <input type="text" name="display_name" id="edit_display_name" class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
-                    </div>
-
-                    <div>
-                        <label for="edit_email" class="block text-sm font-medium text-gray-700 mb-1">{{ __('admin.admin_users.field_email') }}</label>
-                        <input type="email" name="email" id="edit_email" class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
-                    </div>
-
-                    <div>
-                        <label for="edit_status" class="block text-sm font-medium text-gray-700 mb-1">{{ __('admin.admin_users.column_status') }}</label>
-                        <input type="hidden" name="status" id="edit_status_hidden" disabled>
-                        <select name="status" id="edit_status" required class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
-                            <option value="active">{{ __('admin.admin_users.status_active') }}</option>
-                            <option value="inactive">{{ __('admin.admin_users.status_inactive') }}</option>
-                        </select>
-                    </div>
-
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                            <label for="edit_password" class="block text-sm font-medium text-gray-700 mb-1">{{ __('admin.admin_users.field_new_password') }}</label>
-                            <input type="password" name="password" id="edit_password" class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
-                        </div>
-                        <div>
-                            <label for="edit_confirm_password" class="block text-sm font-medium text-gray-700 mb-1">{{ __('admin.admin_users.field_confirm_new_password') }}</label>
-                            <input type="password" name="confirm_password" id="edit_confirm_password" class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
-                        </div>
-                    </div>
-
-                    <div class="bg-gray-50 border border-gray-200 rounded-md p-3 text-sm text-gray-600">
-                        {{ __('admin.admin_users.edit_help') }}
-                    </div>
-
-                    <div class="flex justify-end gap-3 pt-2">
-                        <button type="button" onclick="hideEditAdminModal()" class="px-4 py-2 border border-gray-300 rounded-md text-gray-700 bg-white hover:bg-gray-50">{{ __('admin.button.cancel') }}</button>
-                        <button type="submit" class="px-4 py-2 border border-transparent rounded-md text-white bg-indigo-600 hover:bg-indigo-700">{{ __('admin.admin_users.update_admin_submit') }}</button>
-                    </div>
-                </form>
-            </div>
+            </form>
         </div>
     </div>
 @endsection
@@ -291,11 +368,35 @@
 
         function showCreateAdminModal() {
             document.getElementById('create-admin-modal').classList.remove('hidden');
+            document.documentElement.classList.add('admin-modal-open');
         }
 
         function hideCreateAdminModal() {
             document.getElementById('create-admin-modal').classList.add('hidden');
+            document.documentElement.classList.remove('admin-modal-open');
         }
+
+        document.querySelector('[data-tenant-logo-input]')?.addEventListener('change', (event) => {
+            const file = event.target.files?.[0];
+            const preview = document.querySelector('[data-tenant-logo-preview]');
+            const placeholder = document.querySelector('[data-tenant-logo-placeholder]');
+
+            if (!preview || !placeholder) {
+                return;
+            }
+
+            if (!file) {
+                preview.classList.add('hidden');
+                preview.removeAttribute('src');
+                placeholder.classList.remove('hidden');
+                return;
+            }
+
+            preview.src = URL.createObjectURL(file);
+            preview.onload = () => URL.revokeObjectURL(preview.src);
+            preview.classList.remove('hidden');
+            placeholder.classList.add('hidden');
+        });
 
         function showEditAdminModal(admin) {
             const form = document.getElementById('edit-admin-form');
@@ -313,10 +414,18 @@
             document.getElementById('edit_password').value = '';
             document.getElementById('edit_confirm_password').value = '';
             document.getElementById('edit-admin-modal').classList.remove('hidden');
+            document.documentElement.classList.add('admin-modal-open');
         }
 
         function hideEditAdminModal() {
             document.getElementById('edit-admin-modal').classList.add('hidden');
+            document.documentElement.classList.remove('admin-modal-open');
         }
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key !== 'Escape') return;
+            hideCreateAdminModal();
+            hideEditAdminModal();
+        });
     </script>
 @endpush

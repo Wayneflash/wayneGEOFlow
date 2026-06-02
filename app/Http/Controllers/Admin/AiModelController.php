@@ -9,11 +9,14 @@ use App\Models\SiteSetting;
 use App\Support\AdminWeb;
 use App\Support\GeoFlow\ApiKeyCrypto;
 use App\Support\GeoFlow\OpenAiRuntimeProvider;
+use App\Support\Site\SiteSettingsBag;
+use App\Support\Tenancy\AdminTenant;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 use Throwable;
 
@@ -71,17 +74,17 @@ class AiModelController extends Controller
         }
 
         try {
-            $createdModel = AiModel::query()->create([
+            $createdModel = AiModel::query()->create(AdminTenant::stamp([
                 'name' => trim((string) $payload['name']),
                 'version' => trim((string) ($payload['version'] ?? '')),
                 'api_key' => $this->encryptApiKey($apiKey),
                 'model_id' => trim((string) $payload['model_id']),
                 'model_type' => $this->normalizeModelType((string) ($payload['model_type'] ?? 'chat')),
-                'api_url' => trim((string) ($payload['api_url'] ?? '')),
+                'api_url' => $this->normalizeApiUrl((string) ($payload['api_url'] ?? '')),
                 'failover_priority' => max(1, (int) ($payload['failover_priority'] ?? 100)),
                 'daily_limit' => max(0, (int) ($payload['daily_limit'] ?? 0)),
                 'status' => 'active',
-            ]);
+            ]));
         } catch (\RuntimeException) {
             return back()->withInput()->withErrors(__('admin.ai_models.error.crypto_key_missing'));
         }
@@ -104,8 +107,8 @@ class AiModelController extends Controller
      */
     public function update(Request $request, int $modelId): RedirectResponse
     {
-        $model = AiModel::query()->whereKey($modelId)->firstOrFail();
-        $payload = $this->validateModelPayload($request, true);
+        $model = AiModel::query()->visibleToAdmin()->whereKey($modelId)->firstOrFail();
+        $payload = $this->validateModelPayload($request, true, $modelId);
 
         $modelType = $this->normalizeModelType((string) ($payload['model_type'] ?? 'chat'));
         $status = (string) ($payload['status'] ?? 'active');
@@ -118,7 +121,7 @@ class AiModelController extends Controller
             'version' => trim((string) ($payload['version'] ?? '')),
             'model_id' => trim((string) $payload['model_id']),
             'model_type' => $modelType,
-            'api_url' => trim((string) ($payload['api_url'] ?? '')),
+            'api_url' => $this->normalizeApiUrl((string) ($payload['api_url'] ?? '')),
             'failover_priority' => max(1, (int) ($payload['failover_priority'] ?? 100)),
             'daily_limit' => max(0, (int) ($payload['daily_limit'] ?? 0)),
             'status' => $status,
@@ -152,7 +155,7 @@ class AiModelController extends Controller
      */
     public function destroy(int $modelId): RedirectResponse
     {
-        $model = AiModel::query()->whereKey($modelId)->firstOrFail();
+        $model = AiModel::query()->visibleToAdmin()->whereKey($modelId)->firstOrFail();
         $taskCount = $model->tasks()->count();
         if ($taskCount > 0) {
             return back()->withErrors(__('admin.ai_models.error.in_use', ['count' => $taskCount]));
@@ -173,7 +176,7 @@ class AiModelController extends Controller
      */
     public function testConnection(int $modelId): JsonResponse
     {
-        $model = AiModel::query()->whereKey($modelId)->firstOrFail();
+        $model = AiModel::query()->visibleToAdmin()->whereKey($modelId)->firstOrFail();
         $startedAt = microtime(true);
 
         try {
@@ -195,8 +198,8 @@ class AiModelController extends Controller
 
             $request = Http::acceptJson()
                 ->asJson()
-                ->connectTimeout(10)
-                ->timeout(45);
+                ->connectTimeout(6)
+                ->timeout(25);
 
             $request = $isGemini
                 ? $request->withHeaders(['x-goog-api-key' => $apiKey])
@@ -266,6 +269,7 @@ class AiModelController extends Controller
                 ->whereKey($modelId)
                 ->where('status', 'active')
                 ->whereRaw("COALESCE(NULLIF(model_type, ''), 'chat') = 'embedding'")
+                ->visibleToAdmin()
                 ->exists();
 
             if (! $available) {
@@ -300,6 +304,7 @@ class AiModelController extends Controller
                         ->orWhere('model_type', '')
                         ->orWhere('model_type', 'chat');
                 })
+                ->visibleToAdmin()
                 ->exists();
 
             if (! $available) {
@@ -312,11 +317,11 @@ class AiModelController extends Controller
         }
 
         SiteSetting::query()->updateOrCreate(
-            ['setting_key' => 'knowledge_chunk_strategy'],
+            ['setting_key' => SiteSettingsBag::storageKey('knowledge_chunk_strategy')],
             ['setting_value' => $strategy]
         );
         SiteSetting::query()->updateOrCreate(
-            ['setting_key' => 'knowledge_chunking_model_id'],
+            ['setting_key' => SiteSettingsBag::storageKey('knowledge_chunking_model_id')],
             ['setting_value' => (string) $modelId]
         );
 
@@ -345,6 +350,7 @@ class AiModelController extends Controller
                 'created_at',
                 'updated_at',
             ])
+            ->visibleToAdmin()
             ->withCount('tasks as task_count')
             ->addSelect([
                 'article_count' => Article::query()
@@ -391,6 +397,7 @@ class AiModelController extends Controller
             ->select(['id', 'name', 'model_id'])
             ->where('status', 'active')
             ->whereRaw("COALESCE(NULLIF(model_type, ''), 'chat') = 'embedding'")
+            ->visibleToAdmin()
             ->orderBy('name')
             ->orderByDesc('id')
             ->get()
@@ -417,6 +424,7 @@ class AiModelController extends Controller
                     ->orWhere('model_type', '')
                     ->orWhere('model_type', 'chat');
             })
+            ->visibleToAdmin()
             ->orderBy('failover_priority')
             ->orderBy('name')
             ->get()
@@ -434,12 +442,19 @@ class AiModelController extends Controller
      * @param  bool  $isUpdate  true 表示编辑模式（允许 api_key 为空）
      * @return array<string, mixed>
      */
-    private function validateModelPayload(Request $request, bool $isUpdate): array
+    private function validateModelPayload(Request $request, bool $isUpdate, ?int $ignoreModelId = null): array
     {
+        $tenantId = (int) (AdminTenant::currentTenantId() ?? 0);
+        $uniqueName = Rule::unique('ai_models', 'name')
+            ->where(fn ($query) => $query->where('tenant_id', $tenantId > 0 ? $tenantId : null));
+        if ($ignoreModelId !== null) {
+            $uniqueName = $uniqueName->ignore($ignoreModelId);
+        }
+
         $rules = [
-            'name' => ['required', 'string', 'max:100'],
+            'name' => ['required', 'string', 'max:100', $uniqueName],
             'version' => ['nullable', 'string', 'max:50'],
-            'api_key' => [$isUpdate ? 'nullable' : 'required', 'string', 'max:500'],
+            'api_key' => [$isUpdate ? 'nullable' : 'required', 'string', 'max:4096'],
             'model_id' => ['required', 'string', 'max:100'],
             'model_type' => ['required', 'in:chat,embedding'],
             'api_url' => ['nullable', 'string', 'max:500'],
@@ -451,6 +466,20 @@ class AiModelController extends Controller
         }
 
         return $request->validate($rules);
+    }
+
+    private function normalizeApiUrl(string $apiUrl): string
+    {
+        $apiUrl = trim($apiUrl);
+        if ($apiUrl === '') {
+            return '';
+        }
+
+        if (! preg_match('#^https?://#i', $apiUrl)) {
+            $apiUrl = 'https://'.$apiUrl;
+        }
+
+        return rtrim($apiUrl, '/');
     }
 
     /**
@@ -468,9 +497,7 @@ class AiModelController extends Controller
      */
     private function getDefaultEmbeddingModelId(): int
     {
-        return (int) (SiteSetting::query()
-            ->where('setting_key', 'default_embedding_model_id')
-            ->value('setting_value') ?? 0);
+        return (int) SiteSettingsBag::get('default_embedding_model_id', '0');
     }
 
     /**
@@ -478,9 +505,10 @@ class AiModelController extends Controller
      */
     private function getChunkingConfig(): array
     {
-        $settings = SiteSetting::query()
-            ->whereIn('setting_key', ['knowledge_chunk_strategy', 'knowledge_chunking_model_id'])
-            ->pluck('setting_value', 'setting_key');
+        $settings = array_intersect_key(SiteSettingsBag::all(), [
+            'knowledge_chunk_strategy' => true,
+            'knowledge_chunking_model_id' => true,
+        ]);
         $strategy = (string) ($settings['knowledge_chunk_strategy'] ?? 'rule');
 
         return [
@@ -495,7 +523,7 @@ class AiModelController extends Controller
     private function setDefaultEmbeddingModelId(int $modelId): void
     {
         SiteSetting::query()->updateOrCreate(
-            ['setting_key' => 'default_embedding_model_id'],
+            ['setting_key' => SiteSettingsBag::storageKey('default_embedding_model_id')],
             ['setting_value' => (string) max(0, $modelId)]
         );
     }

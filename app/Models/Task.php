@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToTenant;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -9,10 +10,13 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Task extends Model
 {
+    use BelongsToTenant;
+
     protected $table = 'tasks';
 
     protected $fillable = [
         'name',
+        'tenant_id',
         'title_library_id',
         'image_library_id',
         'image_count',
@@ -51,6 +55,7 @@ class Task extends Model
     {
         return [
             'title_library_id' => 'integer',
+            'tenant_id' => 'integer',
             'image_library_id' => 'integer',
             'image_count' => 'integer',
             'prompt_id' => 'integer',

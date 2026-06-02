@@ -2,21 +2,32 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToTenant;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Author extends Model
 {
+    use BelongsToTenant;
+
     protected $table = 'authors';
 
     protected $fillable = [
         'name',
+        'tenant_id',
         'bio',
         'email',
         'avatar',
         'website',
         'social_links',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'tenant_id' => 'integer',
+        ];
+    }
 
     public function articles(): HasMany
     {

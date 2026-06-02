@@ -10,9 +10,9 @@ final class ArticleStickyAdPicker
     /**
      * @return array{id:string,badge:string,title:string,copy:string,button_text:string,button_url:string}|null
      */
-    public static function firstEnabled(): ?array
+    public static function firstEnabled(?int $tenantId = null): ?array
     {
-        $raw = SiteSettingsBag::get('article_detail_ads', '[]');
+        $raw = SiteSettingsBag::get('article_detail_ads', '[]', $tenantId);
         $decoded = json_decode($raw, true);
         if (! is_array($decoded)) {
             return null;

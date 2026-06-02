@@ -10,6 +10,7 @@ use App\Models\TitleLibrary;
 use App\Models\UrlImportJob;
 use App\Models\UrlImportJobLog;
 use App\Services\GeoFlow\UrlImportProcessingService;
+use App\Support\Tenancy\AdminTenant;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -58,7 +59,7 @@ class UrlImportController extends Controller
                 ->withErrors(['ai_model' => $exception->getMessage()]);
         }
 
-        $job = UrlImportJob::query()->create([
+        $job = UrlImportJob::query()->create(AdminTenant::stamp([
             'url' => $validated['url'],
             'normalized_url' => $normalized['url'],
             'source_domain' => $normalized['host'],
@@ -76,7 +77,7 @@ class UrlImportController extends Controller
             'result_json' => '',
             'error_message' => '',
             'created_by' => Auth::guard('admin')->user()?->username ?? '',
-        ]);
+        ]));
 
         UrlImportJobLog::query()->create([
             'job_id' => $job->id,
@@ -90,7 +91,7 @@ class UrlImportController extends Controller
 
     public function run(int $jobId): JsonResponse
     {
-        $job = UrlImportJob::query()->whereKey($jobId)->firstOrFail();
+        $job = UrlImportJob::query()->visibleToAdmin()->whereKey($jobId)->firstOrFail();
 
         if (in_array($job->status, ['queued', 'failed'], true)) {
             try {
@@ -142,14 +143,14 @@ class UrlImportController extends Controller
 
     public function status(int $jobId): JsonResponse
     {
-        $job = UrlImportJob::query()->whereKey($jobId)->firstOrFail();
+        $job = UrlImportJob::query()->visibleToAdmin()->whereKey($jobId)->firstOrFail();
 
         return response()->json($this->statusPayload($job));
     }
 
     public function commit(int $jobId): RedirectResponse
     {
-        $job = UrlImportJob::query()->whereKey($jobId)->firstOrFail();
+        $job = UrlImportJob::query()->visibleToAdmin()->whereKey($jobId)->firstOrFail();
 
         try {
             $summary = $this->urlImportProcessingService->commit($job);
@@ -168,7 +169,7 @@ class UrlImportController extends Controller
 
     public function show(int $jobId): View
     {
-        $job = UrlImportJob::query()->findOrFail($jobId);
+        $job = UrlImportJob::query()->visibleToAdmin()->whereKey($jobId)->firstOrFail();
 
         $job->load(['logs' => fn ($query) => $query->oldest()->limit(120)]);
 
@@ -186,12 +187,12 @@ class UrlImportController extends Controller
         return view('admin.url-import.history', [
             'pageTitle' => __('admin.url_import_history.page_title'),
             'activeMenu' => 'materials',
-            'jobs' => UrlImportJob::query()->latest()->paginate(20),
+            'jobs' => UrlImportJob::query()->visibleToAdmin()->latest()->paginate(20),
             'stats' => [
-                'total' => UrlImportJob::query()->count(),
-                'completed' => UrlImportJob::query()->where('status', 'completed')->count(),
-                'running' => UrlImportJob::query()->whereIn('status', ['queued', 'running'])->count(),
-                'failed' => UrlImportJob::query()->where('status', 'failed')->count(),
+                'total' => UrlImportJob::query()->visibleToAdmin()->count(),
+                'completed' => UrlImportJob::query()->visibleToAdmin()->where('status', 'completed')->count(),
+                'running' => UrlImportJob::query()->visibleToAdmin()->whereIn('status', ['queued', 'running'])->count(),
+                'failed' => UrlImportJob::query()->visibleToAdmin()->where('status', 'failed')->count(),
             ],
         ]);
     }
@@ -199,9 +200,9 @@ class UrlImportController extends Controller
     private function loadStats(): array
     {
         return [
-            'knowledge_bases' => KnowledgeBase::query()->count(),
-            'keyword_libraries' => KeywordLibrary::query()->count(),
-            'title_libraries' => TitleLibrary::query()->count(),
+            'knowledge_bases' => KnowledgeBase::query()->visibleToAdmin()->count(),
+            'keyword_libraries' => KeywordLibrary::query()->visibleToAdmin()->count(),
+            'title_libraries' => TitleLibrary::query()->visibleToAdmin()->count(),
         ];
     }
 

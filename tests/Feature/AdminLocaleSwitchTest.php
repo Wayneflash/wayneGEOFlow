@@ -11,29 +11,28 @@ class AdminLocaleSwitchTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_admin_supported_locales_include_new_languages(): void
+    public function test_admin_supported_locales_are_limited_to_chinese_and_english(): void
     {
         $this->assertSame([
             'zh_CN',
             'en',
-            'ja',
-            'es',
-            'ru',
-            'pt_BR',
         ], array_keys(AdminWeb::supportedLocales()));
     }
 
-    public function test_admin_locale_switch_accepts_new_languages(): void
+    public function test_admin_locale_switch_accepts_english_and_rejects_hidden_locales(): void
     {
-        foreach (['ja', 'es', 'ru', 'pt_BR'] as $locale) {
-            $this->from(route('admin.login'))
-                ->get(route('admin.locale.switch', ['locale' => $locale]))
-                ->assertRedirect(route('admin.login'))
-                ->assertSessionHas('locale', $locale);
-        }
+        $this->from(route('admin.login'))
+            ->get(route('admin.locale.switch', ['locale' => 'en']))
+            ->assertRedirect(route('admin.login'))
+            ->assertSessionHas('locale', 'en');
+
+        $this->from(route('admin.login'))
+            ->get(route('admin.locale.switch', ['locale' => 'ja']))
+            ->assertRedirect(route('admin.login'))
+            ->assertSessionHas('locale', 'zh_CN');
     }
 
-    public function test_admin_dashboard_renders_new_locale_core_copy(): void
+    public function test_admin_dashboard_renders_english_core_copy(): void
     {
         $admin = Admin::query()->create([
             'username' => 'locale_admin',
@@ -44,20 +43,11 @@ class AdminLocaleSwitchTest extends TestCase
             'status' => 'active',
         ]);
 
-        $expectations = [
-            'ja' => 'ダッシュボード',
-            'es' => 'Panel',
-            'ru' => 'Панель',
-            'pt_BR' => 'Painel',
-        ];
-
-        foreach ($expectations as $locale => $heading) {
-            $this->actingAs($admin, 'admin')
-                ->withSession(['locale' => $locale])
-                ->get(route('admin.dashboard'))
-                ->assertOk()
-                ->assertSee($heading)
-                ->assertDontSee('dashboard.heading');
-        }
+        $this->actingAs($admin, 'admin')
+            ->withSession(['locale' => 'en'])
+            ->get(route('admin.dashboard'))
+            ->assertOk()
+            ->assertSee('Dashboard')
+            ->assertDontSee('dashboard.heading');
     }
 }

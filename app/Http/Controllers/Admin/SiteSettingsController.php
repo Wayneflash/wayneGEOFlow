@@ -55,8 +55,8 @@ class SiteSettingsController extends Controller
             'site_description' => ['nullable', 'string'],
             'site_keywords' => ['nullable', 'string', 'max:500'],
             'copyright_info' => ['nullable', 'string', 'max:500'],
-            'site_logo' => ['nullable', 'url', 'max:500'],
-            'site_favicon' => ['nullable', 'url', 'max:500'],
+            'site_logo' => ['nullable', 'string', 'max:500'],
+            'site_favicon' => ['nullable', 'string', 'max:500'],
             'analytics_code' => ['nullable', 'string'],
             'seo_title_template' => ['nullable', 'string', 'max:255'],
             'seo_description_template' => ['nullable', 'string', 'max:255'],
@@ -93,6 +93,9 @@ class SiteSettingsController extends Controller
         $currentAdminBasePath = AdminWeb::basePath();
         $currentSettings = $this->loadSettings();
         $canEditAnalytics = auth('admin')->user()?->isSuperAdmin() === true;
+        $currentAnalyticsCode = (string) (SiteSetting::query()
+            ->where('setting_key', SiteSettingsBag::storageKey('analytics_code'))
+            ->value('setting_value') ?? ($currentSettings['analytics_code'] ?? ''));
 
         $settings = [
             'site_name' => trim((string) $payload['site_name']),
@@ -105,7 +108,7 @@ class SiteSettingsController extends Controller
             'site_favicon' => trim((string) ($payload['site_favicon'] ?? '')),
             'analytics_code' => $canEditAnalytics
                 ? trim((string) ($payload['analytics_code'] ?? ''))
-                : (string) ($currentSettings['analytics_code'] ?? ''),
+                : $currentAnalyticsCode,
             'seo_title_template' => trim((string) ($payload['seo_title_template'] ?? '')),
             'seo_description_template' => trim((string) ($payload['seo_description_template'] ?? '')),
             'featured_limit' => (string) ((int) ($payload['featured_limit'] ?? 6)),
@@ -116,7 +119,7 @@ class SiteSettingsController extends Controller
 
         foreach ($settings as $settingKey => $settingValue) {
             SiteSetting::query()->updateOrCreate(
-                ['setting_key' => $settingKey],
+                ['setting_key' => SiteSettingsBag::storageKey($settingKey)],
                 ['setting_value' => $settingValue]
             );
         }
@@ -156,7 +159,7 @@ class SiteSettingsController extends Controller
         }
 
         SiteSetting::query()->updateOrCreate(
-            ['setting_key' => 'active_theme'],
+            ['setting_key' => SiteSettingsBag::storageKey('active_theme')],
             ['setting_value' => $selectedTheme]
         );
 
@@ -215,7 +218,7 @@ class SiteSettingsController extends Controller
         }
 
         SiteSetting::query()->updateOrCreate(
-            ['setting_key' => 'article_detail_ads'],
+            ['setting_key' => SiteSettingsBag::storageKey('article_detail_ads')],
             ['setting_value' => (string) json_encode($ads, JSON_UNESCAPED_UNICODE)]
         );
 
@@ -265,12 +268,7 @@ class SiteSettingsController extends Controller
             'article_detail_ads' => '[]',
         ];
 
-        $stored = SiteSetting::query()
-            ->select(['setting_key', 'setting_value'])
-            ->whereIn('setting_key', array_keys($defaults))
-            ->get()
-            ->pluck('setting_value', 'setting_key')
-            ->all();
+        $stored = array_intersect_key(SiteSettingsBag::all(), $defaults);
 
         foreach ($defaults as $key => $defaultValue) {
             if (! array_key_exists($key, $stored)) {

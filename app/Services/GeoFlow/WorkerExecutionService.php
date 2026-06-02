@@ -18,6 +18,8 @@ use App\Support\GeoFlow\ApiKeyCrypto;
 use App\Support\GeoFlow\ArticleWorkflow;
 use App\Support\GeoFlow\ImageUrlNormalizer;
 use App\Support\GeoFlow\OpenAiRuntimeProvider;
+use App\Support\Tenancy\AdminTenant;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 use Throwable;
@@ -107,6 +109,7 @@ class WorkerExecutionService
             }
 
             $article = Article::query()->create([
+                'tenant_id' => $this->tenantIdForTask($task),
                 'title' => (string) $titleRow->title,
                 'slug' => ArticleWorkflow::generateUniqueSlug((string) $titleRow->title),
                 'excerpt' => $excerpt,
@@ -282,6 +285,9 @@ class WorkerExecutionService
         }
 
         $aiModel = AiModel::query()
+            ->where(function (Builder $query) use ($task): void {
+                $this->scopeToTaskTenant($query, $task);
+            })
             ->whereKey($aiModelId)
             ->where('status', 'active')
             ->where(function ($query): void {
@@ -358,6 +364,9 @@ class WorkerExecutionService
         }
 
         $fallbackModels = AiModel::query()
+            ->where(function (Builder $query) use ($task): void {
+                $this->scopeToTaskTenant($query, $task);
+            })
             ->whereKeyNot((int) $primaryModel->id)
             ->where(function ($query): void {
                 $query->whereNull('model_type')
@@ -445,30 +454,84 @@ class WorkerExecutionService
     {
         $authorId = (int) ($task->custom_author_id ?: $task->author_id);
         if ($authorId > 0) {
-            $author = Author::query()->find($authorId);
+            $author = Author::query()
+                ->where(function (Builder $query) use ($task): void {
+                    $this->scopeToTaskTenant($query, $task);
+                })
+                ->whereKey($authorId)
+                ->first();
             if ($author) {
                 return $author;
             }
         }
 
-        $author = Author::query()->orderBy('id')->first();
+        $author = Author::query()
+            ->where(function (Builder $query) use ($task): void {
+                $this->scopeToTaskTenant($query, $task);
+            })
+            ->orderBy('id')
+            ->first();
         if ($author) {
             return $author;
         }
 
-        return Author::query()->firstOrCreate(
-            ['name' => '深联云GEO'],
-            ['bio' => '深联云GEO自动内容生产默认作者。']
-        );
+        return Author::query()->create([
+            'tenant_id' => $this->tenantIdForTask($task),
+            'name' => '深联云GEO',
+            'bio' => '深联云GEO自动内容生产默认作者。',
+        ]);
+
     }
 
     private function pickCategory(Task $task): ?Category
     {
         if (($task->category_mode ?? 'smart') === 'fixed' && (int) ($task->fixed_category_id ?? 0) > 0) {
-            return Category::query()->find((int) $task->fixed_category_id);
+            return Category::query()
+                ->where(function (Builder $query) use ($task): void {
+                    $this->scopeToTaskTenant($query, $task);
+                })
+                ->whereKey((int) $task->fixed_category_id)
+                ->first();
         }
 
-        return Category::query()->orderBy('sort_order')->orderBy('id')->first();
+        return Category::query()
+            ->where(function (Builder $query) use ($task): void {
+                $this->scopeToTaskTenant($query, $task);
+            })
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->first();
+    }
+
+    private function scopeToTaskTenant(Builder $query, Task $task): void
+    {
+        $taskTenantId = (int) ($task->tenant_id ?? 0);
+        $tenantId = (int) ($this->tenantIdForTask($task) ?? 0);
+        if ($tenantId <= 0) {
+            $query->whereRaw('1 = 0');
+
+            return;
+        }
+
+        $includeGlobalRows = $taskTenantId <= 0 || $tenantId === AdminTenant::defaultTenantId();
+
+        $query->where(function (Builder $scoped) use ($tenantId, $includeGlobalRows): void {
+            $scoped->where($scoped->qualifyColumn('tenant_id'), $tenantId);
+
+            if ($includeGlobalRows) {
+                $scoped->orWhereNull($scoped->qualifyColumn('tenant_id'));
+            }
+        });
+    }
+
+    private function tenantIdForTask(Task $task): ?int
+    {
+        $tenantId = (int) ($task->tenant_id ?? 0);
+        if ($tenantId > 0) {
+            return $tenantId;
+        }
+
+        return AdminTenant::defaultTenantId();
     }
 
     /**
@@ -627,6 +690,9 @@ class WorkerExecutionService
         }
 
         $knowledgeBase = KnowledgeBase::query()
+            ->where(function (Builder $query) use ($task): void {
+                $this->scopeToTaskTenant($query, $task);
+            })
             ->whereKey($knowledgeBaseId)
             ->first(['id', 'content']);
         if (! $knowledgeBase) {

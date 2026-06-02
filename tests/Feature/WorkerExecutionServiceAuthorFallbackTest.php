@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Author;
 use App\Models\Task;
+use App\Models\Tenant;
 use App\Services\GeoFlow\WorkerExecutionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use ReflectionMethod;
@@ -48,6 +49,28 @@ class WorkerExecutionServiceAuthorFallbackTest extends TestCase
             'id' => $picked->id,
             'name' => '深联云GEO',
         ]);
+    }
+
+    public function test_worker_does_not_use_global_author_for_non_default_tenant(): void
+    {
+        $tenant = Tenant::query()->create([
+            'name' => 'Strict Tenant',
+            'slug' => 'strict-tenant',
+            'status' => 'active',
+        ]);
+        Author::query()->create(['name' => 'Legacy Global Author']);
+        $tenantAuthor = Author::query()->create([
+            'tenant_id' => (int) $tenant->id,
+            'name' => 'Tenant Author',
+        ]);
+        $task = Task::query()->create([
+            'tenant_id' => (int) $tenant->id,
+            'name' => 'Tenant isolated task',
+        ]);
+
+        $picked = $this->pickAuthor($task);
+
+        $this->assertSame($tenantAuthor->id, $picked->id);
     }
 
     private function pickAuthor(Task $task): Author

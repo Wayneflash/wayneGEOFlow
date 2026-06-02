@@ -17,6 +17,7 @@ use App\Models\TaskRun;
 use App\Models\Title;
 use App\Models\TitleLibrary;
 use App\Models\UrlImportJob;
+use App\Support\Tenancy\AdminTenant;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -29,22 +30,22 @@ class AnalyticsOverviewService
      */
     public function globalOverview(): array
     {
-        $totalArticles = (int) Article::query()->whereNull('deleted_at')->count();
-        $publishedArticles = (int) Article::query()
+        $totalArticles = (int) $this->articleQuery()->whereNull('deleted_at')->count();
+        $publishedArticles = (int) $this->articleQuery()
             ->where('status', 'published')
             ->whereNull('deleted_at')
             ->count();
-        $aiGeneratedArticles = (int) Article::query()
+        $aiGeneratedArticles = (int) $this->articleQuery()
             ->where('is_ai_generated', 1)
             ->whereNull('deleted_at')
             ->count();
         $today = Carbon::today();
-        $runningJobs = (int) TaskRun::query()->where('status', 'running')->count();
-        $pendingJobs = (int) TaskRun::query()->where('status', 'pending')->count();
+        $runningJobs = (int) TaskRun::query()->whereIn('task_id', $this->taskQuery()->select('id'))->where('status', 'running')->count();
+        $pendingJobs = (int) TaskRun::query()->whereIn('task_id', $this->taskQuery()->select('id'))->where('status', 'pending')->count();
 
         return [
             'total_articles' => $totalArticles,
-            'today_articles' => (int) Article::query()
+            'today_articles' => (int) $this->articleQuery()
                 ->whereNull('deleted_at')
                 ->whereDate('created_at', $today)
                 ->count(),
@@ -52,15 +53,17 @@ class AnalyticsOverviewService
             'publish_rate' => $totalArticles > 0 ? round(($publishedArticles * 100) / $totalArticles, 1) : 0.0,
             'ai_generated_articles' => $aiGeneratedArticles,
             'ai_generated_ratio' => $totalArticles > 0 ? round(($aiGeneratedArticles * 100) / $totalArticles, 1) : 0.0,
-            'total_views' => (int) (Article::query()->whereNull('deleted_at')->sum('view_count') ?? 0),
+            'total_views' => (int) ($this->articleQuery()->whereNull('deleted_at')->sum('view_count') ?? 0),
             'today_views' => $this->todayViews($today),
             'running_jobs' => $runningJobs,
             'pending_jobs' => $pendingJobs,
-            'total_tasks' => (int) Task::query()->count(),
-            'active_tasks' => (int) Task::query()->where('status', 'active')->count(),
-            'active_ai_models' => (int) AiModel::query()->where('status', 'active')->count(),
-            'material_total' => (int) Keyword::query()->count() + (int) Title::query()->count() + (int) Image::query()->count(),
-            'pending_review' => (int) Article::query()
+            'total_tasks' => (int) $this->taskQuery()->count(),
+            'active_tasks' => (int) $this->taskQuery()->where('status', 'active')->count(),
+            'active_ai_models' => (int) $this->aiModelQuery()->where('status', 'active')->count(),
+            'material_total' => (int) Keyword::query()->whereIn('library_id', KeywordLibrary::query()->visibleToAdmin()->select('id'))->count()
+                + (int) Title::query()->whereIn('library_id', TitleLibrary::query()->visibleToAdmin()->select('id'))->count()
+                + (int) Image::query()->whereIn('library_id', ImageLibrary::query()->visibleToAdmin()->select('id'))->count(),
+            'pending_review' => (int) $this->articleQuery()
                 ->where('review_status', 'pending')
                 ->whereNull('deleted_at')
                 ->count(),
@@ -84,7 +87,7 @@ class AnalyticsOverviewService
             'published' => (int) $published->count(),
             'running_tasks' => (int) (clone $taskRuns)->where('status', 'running')->count(),
             'failed_tasks' => (int) (clone $taskRuns)->where('status', 'failed')->count(),
-            'ai_calls' => (int) AiModel::query()->sum('used_today'),
+            'ai_calls' => (int) $this->aiModelQuery()->sum('used_today'),
             'distribution_failed' => (int) (clone $distributions)->where('status', 'failed')->count(),
             'distribution_pending' => (int) (clone $distributions)->whereIn('status', ['queued', 'sending'])->count(),
             'total_views' => (int) $this->filteredArticles($filter)->sum('view_count'),
@@ -229,10 +232,10 @@ class AnalyticsOverviewService
     public function aiUsageSummary(AnalyticsFilter $filter): array
     {
         return [
-            'used_today' => (int) AiModel::query()->sum('used_today'),
-            'total_used' => (int) AiModel::query()->sum('total_used'),
-            'active_models' => (int) AiModel::query()->where('status', 'active')->count(),
-            'model_rows' => AiModel::query()
+            'used_today' => (int) $this->aiModelQuery()->sum('used_today'),
+            'total_used' => (int) $this->aiModelQuery()->sum('total_used'),
+            'active_models' => (int) $this->aiModelQuery()->where('status', 'active')->count(),
+            'model_rows' => $this->aiModelQuery()
                 ->where('status', 'active')
                 ->orderByDesc('used_today')
                 ->select('id', 'name', 'model_id', 'model_type', 'used_today', 'total_used')
@@ -309,7 +312,7 @@ class AnalyticsOverviewService
      */
     public function taskHealth(AnalyticsFilter $filter): array
     {
-        $taskQuery = Task::query();
+        $taskQuery = $this->taskQuery();
         if ($filter->taskId !== null) {
             $taskQuery->where('id', $filter->taskId);
         }
@@ -328,6 +331,7 @@ class AnalyticsOverviewService
             ->leftJoin('tasks as t', 'tr.task_id', '=', 't.id')
             ->where('tr.status', 'failed')
             ->whereBetween('tr.created_at', [$filter->start(), $filter->end()])
+            ->when(! AdminTenant::canSeeAll(), fn ($query) => $query->where('t.tenant_id', AdminTenant::currentTenantId()))
             ->when($filter->taskId !== null, fn ($query) => $query->where('tr.task_id', $filter->taskId))
             ->orderByDesc('tr.created_at')
             ->select('tr.id', 'tr.error_message', 'tr.created_at', 't.name as task_name')
@@ -350,8 +354,11 @@ class AnalyticsOverviewService
      */
     public function materialHealth(): array
     {
-        $knowledgeChunks = (int) KnowledgeChunk::query()->count();
+        $knowledgeChunks = (int) KnowledgeChunk::query()
+            ->whereIn('knowledge_base_id', KnowledgeBase::query()->visibleToAdmin()->select('id'))
+            ->count();
         $vectorizedChunks = (int) KnowledgeChunk::query()
+            ->whereIn('knowledge_base_id', KnowledgeBase::query()->visibleToAdmin()->select('id'))
             ->where(function ($query): void {
                 $query->whereNotNull('embedding_json')
                     ->orWhereNotNull('embedding_model_id')
@@ -360,11 +367,11 @@ class AnalyticsOverviewService
             ->count();
 
         return [
-            'keyword_libraries' => (int) KeywordLibrary::query()->count(),
-            'title_libraries' => (int) TitleLibrary::query()->count(),
-            'knowledge_bases' => (int) KnowledgeBase::query()->count(),
-            'image_libraries' => (int) ImageLibrary::query()->count(),
-            'authors' => (int) Author::query()->count(),
+            'keyword_libraries' => (int) KeywordLibrary::query()->visibleToAdmin()->count(),
+            'title_libraries' => (int) TitleLibrary::query()->visibleToAdmin()->count(),
+            'knowledge_bases' => (int) KnowledgeBase::query()->visibleToAdmin()->count(),
+            'image_libraries' => (int) ImageLibrary::query()->visibleToAdmin()->count(),
+            'authors' => (int) Author::query()->visibleToAdmin()->count(),
             'knowledge_chunks' => $knowledgeChunks,
             'vectorized_chunks' => $vectorizedChunks,
             'unvectorized_chunks' => max(0, $knowledgeChunks - $vectorizedChunks),
@@ -376,7 +383,7 @@ class AnalyticsOverviewService
      */
     public function aiHealth(): array
     {
-        $activeModels = AiModel::query()->where('status', 'active');
+        $activeModels = $this->aiModelQuery()->where('status', 'active');
 
         return [
             'chat_models' => (int) (clone $activeModels)
@@ -389,9 +396,9 @@ class AnalyticsOverviewService
             'embedding_models' => (int) (clone $activeModels)
                 ->where('model_type', 'embedding')
                 ->count(),
-            'used_today' => (int) AiModel::query()->sum('used_today'),
-            'total_used' => (int) AiModel::query()->sum('total_used'),
-            'active_models' => AiModel::query()
+            'used_today' => (int) $this->aiModelQuery()->sum('used_today'),
+            'total_used' => (int) $this->aiModelQuery()->sum('total_used'),
+            'active_models' => $this->aiModelQuery()
                 ->where('status', 'active')
                 ->orderBy('failover_priority')
                 ->orderBy('id')
@@ -407,7 +414,7 @@ class AnalyticsOverviewService
      */
     public function urlImportHealth(AnalyticsFilter $filter): array
     {
-        $query = UrlImportJob::query()->whereBetween('created_at', [$filter->start(), $filter->end()]);
+        $query = UrlImportJob::query()->visibleToAdmin()->whereBetween('created_at', [$filter->start(), $filter->end()]);
         $statusCounts = (clone $query)
             ->selectRaw('status, COUNT(*) as c')
             ->groupBy('status')
@@ -438,6 +445,7 @@ class AnalyticsOverviewService
     private function filteredArticles(AnalyticsFilter $filter): Builder
     {
         $query = Article::query()
+            ->visibleToAdmin()
             ->whereNull('deleted_at')
             ->whereBetween('articles.created_at', [$filter->start(), $filter->end()]);
 
@@ -461,7 +469,9 @@ class AnalyticsOverviewService
         }
 
         return (int) DB::table('view_logs')
-            ->whereDate('created_at', $today)
+            ->leftJoin('articles as a', 'view_logs.article_id', '=', 'a.id')
+            ->when(! AdminTenant::canSeeAll(), fn ($query) => $query->where('a.tenant_id', AdminTenant::currentTenantId()))
+            ->whereDate('view_logs.created_at', $today)
             ->count();
     }
 
@@ -470,7 +480,9 @@ class AnalyticsOverviewService
      */
     private function filteredTaskRuns(AnalyticsFilter $filter): Builder
     {
-        $query = TaskRun::query()->whereBetween('created_at', [$filter->start(), $filter->end()]);
+        $query = TaskRun::query()
+            ->whereIn('task_id', $this->taskQuery()->select('id'))
+            ->whereBetween('created_at', [$filter->start(), $filter->end()]);
 
         if ($filter->taskId !== null) {
             $query->where('task_id', $filter->taskId);
@@ -484,7 +496,9 @@ class AnalyticsOverviewService
      */
     private function filteredDistributions(AnalyticsFilter $filter): Builder
     {
-        $query = ArticleDistribution::query()->whereBetween('article_distributions.created_at', [$filter->start(), $filter->end()]);
+        $query = ArticleDistribution::query()
+            ->whereIn('article_id', $this->articleQuery()->select('id'))
+            ->whereBetween('article_distributions.created_at', [$filter->start(), $filter->end()]);
 
         if ($filter->channelId !== null) {
             $query->where('distribution_channel_id', $filter->channelId);
@@ -512,5 +526,29 @@ class AnalyticsOverviewService
         }
 
         return $days;
+    }
+
+    /**
+     * @return Builder<Article>
+     */
+    private function articleQuery(): Builder
+    {
+        return Article::query()->visibleToAdmin();
+    }
+
+    /**
+     * @return Builder<Task>
+     */
+    private function taskQuery(): Builder
+    {
+        return Task::query()->visibleToAdmin();
+    }
+
+    /**
+     * @return Builder<AiModel>
+     */
+    private function aiModelQuery(): Builder
+    {
+        return AiModel::query()->visibleToAdmin();
     }
 }

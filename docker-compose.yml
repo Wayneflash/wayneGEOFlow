@@ -67,6 +67,7 @@ services:
     environment:
       COMPOSER_ON_START: "false"
       PHP_CLI_SERVER_WORKERS: "8"
+      APP_KEY: ${APP_KEY}
     command: ["php", "artisan", "serve", "--host=0.0.0.0", "--port=8080", "--no-reload"]
     ports:
       - "${APP_PORT:-18080}:8080"

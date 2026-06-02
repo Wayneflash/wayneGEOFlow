@@ -20,6 +20,8 @@ use App\Models\Title;
 use App\Models\TitleLibrary;
 use App\Models\UrlImportJob;
 use App\Support\AdminWeb;
+use App\Support\Tenancy\AdminTenant;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -91,6 +93,7 @@ class DashboardController extends Controller
 
         try {
             $jobStatusCounts = TaskRun::query()
+                ->whereIn('task_id', $this->taskQuery()->select('id'))
                 ->selectRaw('status, COUNT(*) as c')
                 ->groupBy('status')
                 ->pluck('c', 'status')
@@ -100,25 +103,25 @@ class DashboardController extends Controller
             $defaults['failed_jobs'] = (int) ($jobStatusCounts['failed'] ?? 0);
             $defaults['completed_tasks'] = (int) ($jobStatusCounts['completed'] ?? 0);
 
-            $defaults['total_articles'] = (int) Article::query()->whereNull('deleted_at')->count();
-            $defaults['published_articles'] = (int) Article::query()->where('status', 'published')->whereNull('deleted_at')->count();
-            $defaults['draft_articles'] = (int) Article::query()->where('status', 'draft')->whereNull('deleted_at')->count();
-            $defaults['ai_generated_articles'] = (int) Article::query()->where('is_ai_generated', 1)->whereNull('deleted_at')->count();
-            $defaults['pending_review'] = (int) Article::query()->where('review_status', 'pending')->whereNull('deleted_at')->count();
-            $defaults['approved_articles'] = (int) Article::query()->where('review_status', 'approved')->whereNull('deleted_at')->count();
-            $defaults['total_views'] = (int) (Article::query()->whereNull('deleted_at')->sum('view_count') ?? 0);
+            $defaults['total_articles'] = (int) $this->articleQuery()->whereNull('deleted_at')->count();
+            $defaults['published_articles'] = (int) $this->articleQuery()->where('status', 'published')->whereNull('deleted_at')->count();
+            $defaults['draft_articles'] = (int) $this->articleQuery()->where('status', 'draft')->whereNull('deleted_at')->count();
+            $defaults['ai_generated_articles'] = (int) $this->articleQuery()->where('is_ai_generated', 1)->whereNull('deleted_at')->count();
+            $defaults['pending_review'] = (int) $this->articleQuery()->where('review_status', 'pending')->whereNull('deleted_at')->count();
+            $defaults['approved_articles'] = (int) $this->articleQuery()->where('review_status', 'approved')->whereNull('deleted_at')->count();
+            $defaults['total_views'] = (int) ($this->articleQuery()->whereNull('deleted_at')->sum('view_count') ?? 0);
             if (Schema::hasColumn('articles', 'like_count')) {
-                $defaults['total_likes'] = (int) (Article::query()->whereNull('deleted_at')->sum('like_count') ?? 0);
+                $defaults['total_likes'] = (int) ($this->articleQuery()->whereNull('deleted_at')->sum('like_count') ?? 0);
             }
 
-            $defaults['total_tasks'] = (int) Task::query()->count();
-            $defaults['active_tasks'] = (int) Task::query()->where('status', 'active')->count();
-            $defaults['total_keywords'] = (int) Keyword::query()->count();
-            $defaults['total_titles'] = (int) Title::query()->count();
-            $defaults['total_images'] = (int) Image::query()->count();
-            $defaults['total_categories'] = (int) Category::query()->count();
-            $defaults['active_ai_models'] = (int) AiModel::query()->where('status', 'active')->count();
-            $defaults['total_prompts'] = (int) Prompt::query()->count();
+            $defaults['total_tasks'] = (int) $this->taskQuery()->count();
+            $defaults['active_tasks'] = (int) $this->taskQuery()->where('status', 'active')->count();
+            $defaults['total_keywords'] = (int) Keyword::query()->whereIn('library_id', KeywordLibrary::query()->visibleToAdmin()->select('id'))->count();
+            $defaults['total_titles'] = (int) Title::query()->whereIn('library_id', TitleLibrary::query()->visibleToAdmin()->select('id'))->count();
+            $defaults['total_images'] = (int) Image::query()->whereIn('library_id', ImageLibrary::query()->visibleToAdmin()->select('id'))->count();
+            $defaults['total_categories'] = (int) Category::query()->visibleToAdmin()->count();
+            $defaults['active_ai_models'] = (int) $this->aiModelQuery()->where('status', 'active')->count();
+            $defaults['total_prompts'] = (int) Prompt::query()->visibleToAdmin(includeGlobal: true)->count();
         } catch (\Throwable) {
             return $defaults;
         }
@@ -134,14 +137,14 @@ class DashboardController extends Controller
         $out = ['today_articles' => 0, 'today_tasks' => 0, 'today_views' => 0];
         try {
             $today = Carbon::today();
-            $out['today_articles'] = (int) Article::query()
+            $out['today_articles'] = (int) $this->articleQuery()
                 ->whereNull('deleted_at')
                 ->whereDate('created_at', $today)
                 ->count();
-            $out['today_tasks'] = (int) Task::query()
+            $out['today_tasks'] = (int) $this->taskQuery()
                 ->whereDate('created_at', $today)
                 ->count();
-            $out['today_views'] = (int) DB::table('view_logs')
+            $out['today_views'] = (int) $this->viewLogsQuery()
                 ->whereDate('created_at', $today)
                 ->count();
         } catch (\Throwable) {
@@ -159,11 +162,11 @@ class DashboardController extends Controller
         $out = ['week_articles' => 0, 'week_tasks' => 0];
         try {
             $since = now()->subDays(7);
-            $out['week_articles'] = (int) Article::query()
+            $out['week_articles'] = (int) $this->articleQuery()
                 ->whereNull('deleted_at')
                 ->where('created_at', '>=', $since)
                 ->count();
-            $out['week_tasks'] = (int) Task::query()->where('created_at', '>=', $since)->count();
+            $out['week_tasks'] = (int) $this->taskQuery()->where('created_at', '>=', $since)->count();
         } catch (\Throwable) {
             // ignore
         }
@@ -183,6 +186,14 @@ class DashboardController extends Controller
                 ->leftJoin('articles as a', function ($join): void {
                     $join->on('c.id', '=', 'a.category_id')
                         ->whereNull('a.deleted_at');
+                })
+                ->when(! AdminTenant::canSeeAll(), function ($query): void {
+                    $tenantId = AdminTenant::currentTenantId();
+                    $query->where('c.tenant_id', $tenantId)
+                        ->where(function ($articleQuery) use ($tenantId): void {
+                            $articleQuery->whereNull('a.id')
+                                ->orWhere('a.tenant_id', $tenantId);
+                        });
                 })
                 ->select('c.name', DB::raw('COUNT(a.id) as count'))
                 ->groupBy('c.id', 'c.name')
@@ -207,6 +218,7 @@ class DashboardController extends Controller
             return DB::table('articles as a')
                 ->leftJoin('categories as c', 'a.category_id', '=', 'c.id')
                 ->whereNull('a.deleted_at')
+                ->when(! AdminTenant::canSeeAll(), fn ($query) => $query->where('a.tenant_id', AdminTenant::currentTenantId()))
                 ->orderByDesc('a.created_at')
                 ->select('a.*', 'c.name as category_name')
                 ->limit(5)
@@ -227,7 +239,7 @@ class DashboardController extends Controller
     {
         $viewedArticles = 0;
         try {
-            $viewedArticles = (int) Article::query()
+            $viewedArticles = (int) $this->articleQuery()
                 ->whereNull('deleted_at')
                 ->where('view_count', '>', 0)
                 ->count();
@@ -296,7 +308,7 @@ class DashboardController extends Controller
         ];
 
         try {
-            $taskStatusCounts = Task::query()
+            $taskStatusCounts = $this->taskQuery()
                 ->selectRaw('status, COUNT(*) as c')
                 ->groupBy('status')
                 ->pluck('c', 'status')
@@ -305,6 +317,7 @@ class DashboardController extends Controller
             $out['paused_tasks'] = (int) (($taskStatusCounts['paused'] ?? 0) + ($taskStatusCounts['inactive'] ?? 0));
 
             $jobStatusCounts = TaskRun::query()
+                ->whereIn('task_id', $this->taskQuery()->select('id'))
                 ->selectRaw('status, COUNT(*) as c')
                 ->groupBy('status')
                 ->pluck('c', 'status')
@@ -316,6 +329,7 @@ class DashboardController extends Controller
             $out['recent_failures'] = DB::table('task_runs as tr')
                 ->leftJoin('tasks as t', 'tr.task_id', '=', 't.id')
                 ->where('tr.status', 'failed')
+                ->when(! AdminTenant::canSeeAll(), fn ($query) => $query->where('t.tenant_id', AdminTenant::currentTenantId()))
                 ->orderByDesc('tr.created_at')
                 ->select('tr.id', 'tr.error_message', 'tr.created_at', 't.name as task_name')
                 ->limit(4)
@@ -345,13 +359,17 @@ class DashboardController extends Controller
         ];
 
         try {
-            $out['keyword_libraries'] = (int) KeywordLibrary::query()->count();
-            $out['title_libraries'] = (int) TitleLibrary::query()->count();
-            $out['knowledge_bases'] = (int) KnowledgeBase::query()->count();
-            $out['image_libraries'] = (int) ImageLibrary::query()->count();
-            $out['authors'] = (int) Author::query()->count();
-            $out['knowledge_chunks'] = (int) KnowledgeChunk::query()->count();
+            $out['keyword_libraries'] = (int) KeywordLibrary::query()->visibleToAdmin()->count();
+            $out['title_libraries'] = (int) TitleLibrary::query()->visibleToAdmin()->count();
+            $out['knowledge_bases'] = (int) KnowledgeBase::query()->visibleToAdmin()->count();
+            $out['image_libraries'] = (int) ImageLibrary::query()->visibleToAdmin()->count();
+            $out['authors'] = (int) Author::query()->visibleToAdmin()->count();
+            $visibleKnowledgeBaseIds = KnowledgeBase::query()->visibleToAdmin()->select('id');
+            $out['knowledge_chunks'] = (int) KnowledgeChunk::query()
+                ->whereIn('knowledge_base_id', $visibleKnowledgeBaseIds)
+                ->count();
             $out['vectorized_chunks'] = (int) KnowledgeChunk::query()
+                ->whereIn('knowledge_base_id', KnowledgeBase::query()->visibleToAdmin()->select('id'))
                 ->where(function ($query): void {
                     $query->whereNotNull('embedding_json')
                         ->orWhereNotNull('embedding_model_id')
@@ -380,7 +398,7 @@ class DashboardController extends Controller
         ];
 
         try {
-            $activeModels = AiModel::query()->where('status', 'active');
+            $activeModels = $this->aiModelQuery()->where('status', 'active');
             $out['chat_models'] = (int) (clone $activeModels)
                 ->where(function ($query): void {
                     $query->whereNull('model_type')
@@ -391,9 +409,9 @@ class DashboardController extends Controller
             $out['embedding_models'] = (int) (clone $activeModels)
                 ->where('model_type', 'embedding')
                 ->count();
-            $out['used_today'] = (int) AiModel::query()->sum('used_today');
-            $out['total_used'] = (int) AiModel::query()->sum('total_used');
-            $out['active_models'] = AiModel::query()
+            $out['used_today'] = (int) $this->aiModelQuery()->sum('used_today');
+            $out['total_used'] = (int) $this->aiModelQuery()->sum('total_used');
+            $out['active_models'] = $this->aiModelQuery()
                 ->where('status', 'active')
                 ->orderBy('failover_priority')
                 ->orderBy('id')
@@ -423,7 +441,7 @@ class DashboardController extends Controller
         ];
 
         try {
-            $statusCounts = UrlImportJob::query()
+            $statusCounts = UrlImportJob::query()->visibleToAdmin()
                 ->selectRaw('status, COUNT(*) as c')
                 ->groupBy('status')
                 ->pluck('c', 'status')
@@ -432,11 +450,11 @@ class DashboardController extends Controller
             $out['running'] = (int) (($statusCounts['running'] ?? 0) + ($statusCounts['queued'] ?? 0));
             $out['completed'] = (int) ($statusCounts['completed'] ?? 0);
             $out['failed'] = (int) ($statusCounts['failed'] ?? 0);
-            $out['waiting_import'] = (int) UrlImportJob::query()
+            $out['waiting_import'] = (int) UrlImportJob::query()->visibleToAdmin()
                 ->where('status', 'completed')
                 ->where('current_step', '!=', 'imported')
                 ->count();
-            $out['recent_jobs'] = UrlImportJob::query()
+            $out['recent_jobs'] = UrlImportJob::query()->visibleToAdmin()
                 ->orderByDesc('created_at')
                 ->select('id', 'source_domain', 'page_title', 'status', 'current_step', 'progress_percent', 'created_at')
                 ->limit(5)
@@ -458,6 +476,7 @@ class DashboardController extends Controller
             return DB::table('articles as a')
                 ->leftJoin('categories as c', 'a.category_id', '=', 'c.id')
                 ->whereNull('a.deleted_at')
+                ->when(! AdminTenant::canSeeAll(), fn ($query) => $query->where('a.tenant_id', AdminTenant::currentTenantId()))
                 ->orderByDesc('a.view_count')
                 ->orderByDesc('a.created_at')
                 ->select('a.id', 'a.title', 'a.view_count', 'a.status', 'c.name as category_name')
@@ -481,7 +500,7 @@ class DashboardController extends Controller
             $day = now()->subDays($i)->startOfDay();
             $key = $day->format('Y-m-d');
             try {
-                $count = (int) Article::query()
+                $count = (int) $this->articleQuery()
                     ->whereNull('deleted_at')
                     ->whereBetween('created_at', [$day, $day->copy()->endOfDay()])
                     ->count();
@@ -604,6 +623,7 @@ class DashboardController extends Controller
         $daily = 0;
         try {
             $raw = TaskRun::query()
+                ->whereIn('task_id', $this->taskQuery()->select('id'))
                 ->where('duration_ms', '>', 0)
                 ->selectRaw('AVG(duration_ms) / 1000.0 as avg_time')
                 ->value('avg_time');
@@ -612,7 +632,7 @@ class DashboardController extends Controller
             // ignore
         }
         try {
-            $daily = (int) Article::query()
+            $daily = (int) $this->articleQuery()
                 ->whereNull('deleted_at')
                 ->whereDate('created_at', Carbon::today())
                 ->where('is_ai_generated', 1)
@@ -626,5 +646,36 @@ class DashboardController extends Controller
             'success_rate' => $successRate,
             'daily_quota_used' => $daily,
         ];
+    }
+
+    /**
+     * @return Builder<Article>
+     */
+    private function articleQuery(): Builder
+    {
+        return Article::query()->visibleToAdmin();
+    }
+
+    /**
+     * @return Builder<Task>
+     */
+    private function taskQuery(): Builder
+    {
+        return Task::query()->visibleToAdmin();
+    }
+
+    /**
+     * @return Builder<AiModel>
+     */
+    private function aiModelQuery(): Builder
+    {
+        return AiModel::query()->visibleToAdmin();
+    }
+
+    private function viewLogsQuery(): \Illuminate\Database\Query\Builder
+    {
+        return DB::table('view_logs')
+            ->leftJoin('articles as a', 'view_logs.article_id', '=', 'a.id')
+            ->when(! AdminTenant::canSeeAll(), fn ($query) => $query->where('a.tenant_id', AdminTenant::currentTenantId()));
     }
 }

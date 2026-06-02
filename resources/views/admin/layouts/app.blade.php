@@ -8,6 +8,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>@isset($pageTitle){{ $pageTitle }} — @endisset{{ $adminBrandName }}</title>
+    <script>
+        window.AdminRealtime = {
+            key: @js((string) env('REVERB_APP_KEY', '')),
+            host: @js((string) env('REVERB_HOST', request()->getHost())),
+            port: @js((int) env('REVERB_PORT', 80)),
+            scheme: @js((string) env('REVERB_SCHEME', request()->isSecure() ? 'https' : 'http')),
+        };
+    </script>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     <script src="{{ asset('js/lucide.min.js') }}"></script>
     @stack('styles')
@@ -22,7 +30,7 @@
     'pageTitle' => $pageTitle ?? '',
     'activeMenu' => $activeMenu ?? '',
 ])
-    <main class="admin-shell-main">
+    <main id="admin-main-content" class="admin-shell-main">
         <div class="mx-auto w-full max-w-[104rem]">
         @if (session('message'))
             <div class="admin-flash-alert mb-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 shadow-sm">
@@ -47,6 +55,7 @@
         const processingLabel = @js(__('admin.message.processing'));
         const toastRegion = () => document.getElementById('admin-toast-region');
         let progressTimer = null;
+        const prefetchedUrls = new Set();
         const escapeHtml = (value) => String(value || '').replace(/[&<>"']/g, (match) => ({
             '&': '&amp;',
             '<': '&lt;',
@@ -76,6 +85,7 @@
             const bar = progress?.querySelector('[data-admin-progress-bar]');
             if (!progress || !bar || progress.dataset.active === '1') return;
             progress.dataset.active = '1';
+            document.documentElement.classList.add('admin-page-loading');
             progress.classList.remove('hidden');
             bar.style.width = '35%';
             window.setTimeout(() => { bar.style.width = '72%'; }, 80);
@@ -92,8 +102,21 @@
             window.setTimeout(() => {
                 progress.classList.add('hidden');
                 progress.dataset.active = '0';
+                document.documentElement.classList.remove('admin-page-loading');
                 bar.style.width = '0%';
             }, 180);
+        };
+
+        const prefetchUrl = (href) => {
+            if (!href || prefetchedUrls.has(href)) return;
+            const url = new URL(href, window.location.href);
+            if (url.origin !== window.location.origin || url.href === window.location.href) return;
+            prefetchedUrls.add(url.href);
+            const link = document.createElement('link');
+            link.rel = 'prefetch';
+            link.href = url.href;
+            link.as = 'document';
+            document.head.appendChild(link);
         };
 
         window.AdminUtils = window.AdminUtils || {};
@@ -194,9 +217,22 @@
             startProgress();
         });
 
+        const handlePrefetchIntent = (event) => {
+            const link = event.target?.closest?.('a[href]');
+            if (!link || link.target || link.hasAttribute('download')) return;
+            const href = link.getAttribute('href') || '';
+            if (href === '' || href.startsWith('#') || href.startsWith('javascript:')) return;
+            prefetchUrl(href);
+        };
+
+        document.addEventListener('mouseover', handlePrefetchIntent, { passive: true });
+        document.addEventListener('focusin', handlePrefetchIntent);
+
         window.addEventListener('pageshow', () => {
             resetSubmittingForms();
             stopProgress();
+            document.documentElement.classList.add('admin-page-ready');
+            window.setTimeout(() => document.documentElement.classList.remove('admin-page-ready'), 260);
         });
     })();
 </script>

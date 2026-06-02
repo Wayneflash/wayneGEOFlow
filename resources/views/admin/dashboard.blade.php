@@ -33,7 +33,6 @@
         $draftRate = max(0, 100 - $publishedRate - $reviewRate);
         $queueSuccessRate = (float) ($performanceStats['success_rate'] ?? 0);
         $modelCount = (int) ($aiHealth['chat_models'] ?? 0) + (int) ($aiHealth['embedding_models'] ?? 0);
-        $systemScore = min(99, max(12, (int) round(($publishedRate * 0.36) + ($queueSuccessRate * 0.34) + (min($modelCount, 3) / 3 * 30))));
 
         $signalCards = [
             ['label' => '内容资产', 'value' => $totalArticles, 'hint' => '今日 +'.(int) ($todayStats['today_articles'] ?? 0), 'icon' => 'layers-3', 'tone' => 'bg-blue-50 text-blue-600'],
@@ -42,9 +41,9 @@
             ['label' => '素材资产', 'value' => $materialTotal, 'hint' => '知识块 '.(int) ($materialHealth['knowledge_chunks'] ?? 0), 'icon' => 'database', 'tone' => 'bg-sky-50 text-sky-600'],
         ];
         $healthCards = [
-            ['label' => '审核与发布质量', 'value' => $publishedRate.'%', 'hint' => '草稿 '.$draftArticles.' / 待审 '.$pendingReview, 'icon' => 'shield-check', 'bar' => $publishedRate, 'tone' => 'bg-emerald-500'],
+            ['label' => '审核与发布', 'value' => $publishedRate.'%', 'hint' => '草稿 '.$draftArticles.' / 待审核 '.$pendingReview, 'icon' => 'shield-check', 'bar' => $publishedRate, 'tone' => 'bg-emerald-500'],
             ['label' => '任务与队列', 'value' => number_format($queueSuccessRate, 1).'%', 'hint' => '失败 '.(int) ($taskHealth['failed_jobs'] ?? 0).' / 等待 '.(int) ($taskHealth['pending_jobs'] ?? 0), 'icon' => 'workflow', 'bar' => $queueSuccessRate, 'tone' => 'bg-blue-600'],
-            ['label' => 'AI 配置健康度', 'value' => $modelCount, 'hint' => '聊天 '.(int) ($aiHealth['chat_models'] ?? 0).' / 向量 '.(int) ($aiHealth['embedding_models'] ?? 0), 'icon' => 'bot', 'bar' => min(100, ($modelCount / 3) * 100), 'tone' => 'bg-blue-600'],
+            ['label' => 'AI 模型配置', 'value' => $modelCount, 'hint' => '聊天 '.(int) ($aiHealth['chat_models'] ?? 0).' / 向量 '.(int) ($aiHealth['embedding_models'] ?? 0), 'icon' => 'bot', 'bar' => min(100, ($modelCount / 3) * 100), 'tone' => 'bg-indigo-600'],
         ];
         $guideSteps = [
             ['label' => '配置模型', 'desc' => '先接入可用的聊天模型；需要知识库召回时，再补充 embedding 模型。', 'href' => route('admin.ai-models.index'), 'icon' => 'cpu'],
@@ -61,6 +60,7 @@
             ['label' => __('admin.dashboard.navigation.articles_title'), 'href' => route('admin.articles.index'), 'icon' => 'file-text'],
             ['label' => __('admin.dashboard.navigation.analytics_title'), 'href' => route('admin.analytics'), 'icon' => 'chart-no-axes-combined'],
             ['label' => __('admin.dashboard.navigation.prompt_config_title'), 'href' => route('admin.ai-prompts'), 'icon' => 'message-square-text', 'meta' => __('admin.dashboard.navigation.body_prompt_label').' / '.__('admin.dashboard.navigation.special_prompt_label')],
+            ['label' => __('admin.dashboard.navigation.special_prompt_label'), 'href' => route('admin.ai-special-prompts'), 'icon' => 'sparkles'],
             ['label' => __('admin.dashboard.navigation.distribution_channels_title'), 'href' => route('admin.distribution.index'), 'icon' => 'radio-tower'],
             ['label' => __('admin.dashboard.navigation.distribution_jobs_title'), 'href' => route('admin.distribution.jobs'), 'icon' => 'list-checks'],
             ['label' => __('admin.dashboard.navigation.multi_site_title'), 'href' => route('admin.site-settings.index'), 'icon' => 'network'],
@@ -111,45 +111,71 @@
                             @endforeach
                         </div>
                     </div>
-                    <div class="rounded-2xl border border-blue-100 bg-gradient-to-br from-blue-50 to-white p-5">
-                        <div class="flex items-center justify-between mb-4">
+                    <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                        <div class="mb-4 flex items-start justify-between gap-4">
                             <div>
-                                <div class="text-sm font-bold text-slate-900">生产系统评分</div>
-                                <div class="mt-0.5 text-xs text-slate-400">综合健康度指数</div>
+                                <div class="text-sm font-bold text-slate-900">今日关注</div>
+                                <div class="mt-0.5 text-xs text-slate-400">优先处理会影响发布和分发的事项</div>
                             </div>
-                            <div class="text-right">
-                                <div class="text-3xl font-bold text-blue-600">{{ $systemScore }}</div>
-                                <div class="text-xs text-slate-400">/ 100</div>
-                            </div>
+                            <span class="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-500">待办</span>
                         </div>
-                        <div class="mb-4 h-3 overflow-hidden rounded-full bg-blue-100">
-                            <div class="h-full rounded-full bg-gradient-to-r from-blue-400 to-blue-600 transition-all duration-1000" style="width: {{ $systemScore }}%"></div>
-                        </div>
-                        <div class="grid grid-cols-3 gap-2 text-center">
-                            <div class="rounded-lg bg-white border border-blue-100 px-2 py-3">
-                                <span class="block text-lg font-bold text-blue-600">{{ (int) ($todayStats['today_articles'] ?? 0) }}</span>
-                                <span class="text-xs text-slate-400">今日新增</span>
-                            </div>
-                            <div class="rounded-lg bg-white border border-blue-100 px-2 py-3">
-                                <span class="block text-lg font-bold text-amber-600">{{ (int) ($taskHealth['pending_jobs'] ?? 0) }}</span>
-                                <span class="text-xs text-slate-400">队列等待</span>
-                            </div>
-                            <div class="rounded-lg bg-white border border-blue-100 px-2 py-3">
-                                <span class="block text-lg font-bold text-red-500">{{ (int) ($taskHealth['failed_jobs'] ?? 0) }}</span>
-                                <span class="text-xs text-slate-400">失败任务</span>
-                            </div>
-                        </div>
-                        <div class="mt-4 pt-3 border-t border-blue-100/50 grid grid-cols-3 gap-2 text-center text-xs text-slate-400">
-                            <div>发布 {{ $publishedRate }}%</div>
-                            <div>队列 {{ number_format($queueSuccessRate, 1) }}%</div>
-                            <div>模型 {{ $modelCount }}</div>
+                        <div class="space-y-3">
+                            <a href="{{ route('admin.articles.index', ['review_status' => 'pending']) }}" class="flex items-center justify-between rounded-xl border border-amber-100 bg-amber-50/70 px-4 py-3 transition hover:bg-amber-50">
+                                <span class="flex items-center gap-3 text-sm font-medium text-slate-700">
+                                    <i data-lucide="clipboard-check" class="h-4 w-4 text-amber-600"></i>
+                                    待审核文章
+                                </span>
+                                <span class="text-lg font-bold text-amber-700">{{ $pendingReview }}</span>
+                            </a>
+                            <a href="{{ route('admin.tasks.index') }}" class="flex items-center justify-between rounded-xl border border-blue-100 bg-blue-50/70 px-4 py-3 transition hover:bg-blue-50">
+                                <span class="flex items-center gap-3 text-sm font-medium text-slate-700">
+                                    <i data-lucide="list-checks" class="h-4 w-4 text-blue-600"></i>
+                                    队列等待
+                                </span>
+                                <span class="text-lg font-bold text-blue-700">{{ (int) ($taskHealth['pending_jobs'] ?? 0) }}</span>
+                            </a>
+                            <a href="{{ route('admin.tasks.index') }}" class="flex items-center justify-between rounded-xl border border-red-100 bg-red-50/70 px-4 py-3 transition hover:bg-red-50">
+                                <span class="flex items-center gap-3 text-sm font-medium text-slate-700">
+                                    <i data-lucide="circle-alert" class="h-4 w-4 text-red-600"></i>
+                                    失败任务
+                                </span>
+                                <span class="text-lg font-bold text-red-600">{{ (int) ($taskHealth['failed_jobs'] ?? 0) }}</span>
+                            </a>
+                            <a href="{{ route('admin.articles.index') }}" class="flex items-center justify-between rounded-xl border border-emerald-100 bg-emerald-50/70 px-4 py-3 transition hover:bg-emerald-50">
+                                <span class="flex items-center gap-3 text-sm font-medium text-slate-700">
+                                    <i data-lucide="file-plus-2" class="h-4 w-4 text-emerald-600"></i>
+                                    今日新增
+                                </span>
+                                <span class="text-lg font-bold text-emerald-700">{{ (int) ($todayStats['today_articles'] ?? 0) }}</span>
+                            </a>
                         </div>
                     </div>
                 </div>
             </div>
         </section>
 
-        <section class="grid gap-6 xl:grid-cols-[minmax(0,1.45fr)_minmax(22rem,0.8fr)]">
+        <section class="rounded-2xl border border-slate-200 bg-white/95 p-2 shadow-sm backdrop-blur" data-dashboard-tabs>
+            <div class="grid gap-2 md:grid-cols-4">
+                <button type="button" class="admin-tab-button is-active" data-dashboard-tab="guide" aria-pressed="true">
+                    <i data-lucide="mouse-pointer-click" class="h-4 w-4"></i>
+                    新手常用
+                </button>
+                <button type="button" class="admin-tab-button" data-dashboard-tab="overview" aria-pressed="false">
+                    <i data-lucide="chart-no-axes-combined" class="h-4 w-4"></i>
+                    生产概览
+                </button>
+                <button type="button" class="admin-tab-button" data-dashboard-tab="materials" aria-pressed="false">
+                    <i data-lucide="database" class="h-4 w-4"></i>
+                    素材文章
+                </button>
+                <button type="button" class="admin-tab-button" data-dashboard-tab="advanced" aria-pressed="false">
+                    <i data-lucide="settings-2" class="h-4 w-4"></i>
+                    高级入口
+                </button>
+            </div>
+        </section>
+
+        <section class="hidden grid gap-6 xl:grid-cols-[minmax(0,1.45fr)_minmax(22rem,0.8fr)]" data-dashboard-panel="overview" aria-hidden="true">
             <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div class="flex items-start justify-between gap-4">
                     <div>
@@ -191,7 +217,7 @@
             </div>
         </section>
 
-        <section class="grid gap-4 xl:grid-cols-3">
+        <section class="hidden grid gap-4 xl:grid-cols-3" data-dashboard-panel="overview" aria-hidden="true">
             @foreach ($healthCards as $card)
                 <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm hover:shadow-md transition-shadow">
                     <div class="flex items-start justify-between gap-4">
@@ -214,7 +240,7 @@
             @endforeach
         </section>
 
-        <section class="grid min-w-0 gap-6 2xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+        <section class="hidden grid min-w-0 gap-6 2xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]" data-dashboard-panel="materials" aria-hidden="true">
             <div class="min-w-0 rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
                 <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-gradient-to-r from-indigo-50/40 to-white">
                     <div class="flex items-center gap-3">
@@ -281,7 +307,7 @@
             </div>
         </section>
 
-        <section class="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <section class="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden" data-dashboard-panel="guide" aria-hidden="false">
             <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-gradient-to-r from-blue-50/50 to-white">
                 <div class="flex items-center gap-3">
                     <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-100 text-blue-600">
@@ -308,7 +334,7 @@
             </div>
         </section>
 
-        <section class="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <section class="hidden rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden" data-dashboard-panel="advanced" aria-hidden="true">
             <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white">
                 <div class="flex items-center gap-3">
                     <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
@@ -344,6 +370,41 @@
     @vite('resources/js/dashboard-charts.js')
     <script>
         (() => {
+            const dashboardTabs = [...document.querySelectorAll('[data-dashboard-tab]')];
+            const dashboardPanels = [...document.querySelectorAll('[data-dashboard-panel]')];
+            const dashboardTabStorageKey = 'geoflow.dashboardTab';
+
+            const activateDashboardTab = (nextTab) => {
+                if (dashboardTabs.length === 0 || dashboardPanels.length === 0) {
+                    return;
+                }
+
+                const selected = dashboardTabs.some((tab) => tab.dataset.dashboardTab === nextTab)
+                    ? nextTab
+                    : 'guide';
+
+                dashboardTabs.forEach((tab) => {
+                    const active = tab.dataset.dashboardTab === selected;
+                    tab.classList.toggle('is-active', active);
+                    tab.setAttribute('aria-pressed', active ? 'true' : 'false');
+                });
+
+                dashboardPanels.forEach((panel) => {
+                    const active = panel.dataset.dashboardPanel === selected;
+                    panel.classList.toggle('hidden', !active);
+                    panel.setAttribute('aria-hidden', active ? 'false' : 'true');
+                });
+
+                sessionStorage.setItem(dashboardTabStorageKey, selected);
+                window.dispatchEvent(new Event('resize'));
+            };
+
+            dashboardTabs.forEach((tab) => {
+                tab.addEventListener('click', () => activateDashboardTab(tab.dataset.dashboardTab || 'guide'));
+            });
+
+            activateDashboardTab(sessionStorage.getItem(dashboardTabStorageKey) || 'guide');
+
             const boot = () => {
             const echarts = window.echarts;
 

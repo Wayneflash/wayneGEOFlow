@@ -14,6 +14,7 @@ use App\Models\UrlImportJob;
 use App\Models\UrlImportJobLog;
 use App\Support\GeoFlow\ApiKeyCrypto;
 use App\Support\GeoFlow\OpenAiRuntimeProvider;
+use App\Support\Tenancy\AdminTenant;
 use DOMDocument;
 use DOMXPath;
 use Illuminate\Support\Collection;
@@ -58,10 +59,10 @@ final class UrlImportProcessingService
         ];
     }
 
-    public function assertAnalysisModelReady(): AiModel
+    public function assertAnalysisModelReady(?int $tenantId = null): AiModel
     {
         $lastException = null;
-        foreach ($this->resolveAnalysisModels() as $model) {
+        foreach ($this->resolveAnalysisModels($tenantId) as $model) {
             try {
                 $this->prepareAiRuntime($model);
 
@@ -81,9 +82,9 @@ final class UrlImportProcessingService
     /**
      * @return Collection<int, AiModel>
      */
-    private function assertAnalysisModelsReady(): Collection
+    private function assertAnalysisModelsReady(?int $tenantId = null): Collection
     {
-        $models = $this->resolveAnalysisModels();
+        $models = $this->resolveAnalysisModels($tenantId);
         if ($models->isEmpty()) {
             throw new \RuntimeException(__('admin.url_import.error.ai_model_required'));
         }
@@ -108,10 +109,10 @@ final class UrlImportProcessingService
         return $ready;
     }
 
-    public function hasReadyAnalysisModel(): bool
+    public function hasReadyAnalysisModel(?int $tenantId = null): bool
     {
         try {
-            $this->assertAnalysisModelReady();
+            $this->assertAnalysisModelReady($tenantId);
 
             return true;
         } catch (Throwable) {
@@ -219,8 +220,11 @@ final class UrlImportProcessingService
             throw new \RuntimeException(__('admin.url_import.error.ai_titles_missing'));
         }
 
-        $summary = DB::transaction(function () use ($baseName, $knowledgeContent, $analysis, $keywords, $titles): array {
+        $tenantId = (int) ($job->tenant_id ?? 0) ?: null;
+
+        $summary = DB::transaction(function () use ($baseName, $knowledgeContent, $analysis, $keywords, $titles, $tenantId): array {
             $knowledgeBase = KnowledgeBase::query()->create([
+                'tenant_id' => $tenantId,
                 'name' => $baseName.' 知识库',
                 'description' => (string) ($analysis['summary'] ?? ''),
                 'content' => $knowledgeContent,
@@ -233,6 +237,7 @@ final class UrlImportProcessingService
             ]);
 
             $keywordLibrary = KeywordLibrary::query()->create([
+                'tenant_id' => $tenantId,
                 'name' => $baseName.' 关键词库',
                 'description' => 'URL智能采集自动生成',
                 'keyword_count' => 0,
@@ -246,6 +251,7 @@ final class UrlImportProcessingService
             $keywordLibrary->update(['keyword_count' => Keyword::query()->where('library_id', (int) $keywordLibrary->id)->count()]);
 
             $titleLibrary = TitleLibrary::query()->create([
+                'tenant_id' => $tenantId,
                 'name' => $baseName.' 标题库',
                 'description' => 'URL智能采集自动生成',
                 'title_count' => 0,
@@ -425,7 +431,7 @@ final class UrlImportProcessingService
         $libraryName = $this->safeName($title !== '' ? $title : (string) $job->source_domain);
         $pageJson = $this->buildPageJson($parsed, $job);
 
-        $models = $this->assertAnalysisModelsReady();
+        $models = $this->assertAnalysisModelsReady((int) ($job->tenant_id ?? 0) ?: null);
         $errors = [];
 
         foreach ($models as $model) {
@@ -543,9 +549,9 @@ final class UrlImportProcessingService
     /**
      * @return Collection<int, AiModel>
      */
-    private function resolveAnalysisModels(): Collection
+    private function resolveAnalysisModels(?int $tenantId = null): Collection
     {
-        return AiModel::query()
+        $query = AiModel::query()
             ->where('status', 'active')
             ->where(function ($query): void {
                 $query->whereNull('model_type')
@@ -558,8 +564,17 @@ final class UrlImportProcessingService
                     ->orWhereColumn('used_today', '<', 'daily_limit');
             })
             ->orderBy('failover_priority')
-            ->orderBy('id')
-            ->get();
+            ->orderBy('id');
+
+        $tenantId ??= AdminTenant::currentTenantId();
+        if ($tenantId !== null && ! AdminTenant::canSeeAll()) {
+            $query->where(function ($scoped) use ($tenantId): void {
+                $scoped->where('tenant_id', $tenantId)
+                    ->orWhereNull('tenant_id');
+            });
+        }
+
+        return $query->get();
     }
 
     /**
@@ -883,11 +898,20 @@ PROMPT;
 
     private function latestPromptContent(string $type): string
     {
-        return (string) (Prompt::query()
+        $query = Prompt::query()
             ->where('type', $type)
             ->orderByDesc('updated_at')
-            ->orderByDesc('id')
-            ->value('content') ?? '');
+            ->orderByDesc('id');
+
+        $tenantId = AdminTenant::currentTenantId();
+        if ($tenantId !== null && ! AdminTenant::canSeeAll()) {
+            $query->where(function ($scoped) use ($tenantId): void {
+                $scoped->where('tenant_id', $tenantId)
+                    ->orWhereNull('tenant_id');
+            });
+        }
+
+        return (string) ($query->value('content') ?? '');
     }
 
     /**

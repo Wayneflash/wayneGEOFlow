@@ -2,15 +2,19 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToTenant;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class UrlImportJob extends Model
 {
+    use BelongsToTenant;
+
     protected $table = 'url_import_jobs';
 
     protected $fillable = [
         'url',
+        'tenant_id',
         'normalized_url',
         'source_domain',
         'page_title',
@@ -29,6 +33,7 @@ class UrlImportJob extends Model
     {
         return [
             'progress_percent' => 'integer',
+            'tenant_id' => 'integer',
             'started_at' => 'datetime',
             'finished_at' => 'datetime',
         ];

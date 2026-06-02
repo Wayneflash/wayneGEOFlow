@@ -7,6 +7,7 @@ use App\Models\Prompt;
 use App\Models\Task;
 use App\Support\AdminWeb;
 use App\Support\GeoFlow\PromptGuide;
+use App\Support\Tenancy\AdminTenant;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -47,12 +48,12 @@ class AiPromptController extends Controller
             'content.required' => __('admin.ai_prompts.error.required'),
         ]);
 
-        Prompt::query()->create([
+        Prompt::query()->create(AdminTenant::stamp([
             'name' => trim((string) $payload['name']),
             'type' => 'content',
             'content' => trim((string) $payload['content']),
             'variables' => '',
-        ]);
+        ]));
 
         return redirect()->route('admin.ai-prompts')->with('message', __('admin.ai_prompts.message.create_success'));
     }
@@ -63,6 +64,7 @@ class AiPromptController extends Controller
     public function update(Request $request, int $promptId): RedirectResponse
     {
         $prompt = Prompt::query()
+            ->visibleToAdmin()
             ->whereKey($promptId)
             ->where('type', 'content')
             ->firstOrFail();
@@ -89,11 +91,12 @@ class AiPromptController extends Controller
     public function destroy(int $promptId): RedirectResponse
     {
         $prompt = Prompt::query()
+            ->visibleToAdmin()
             ->whereKey($promptId)
             ->where('type', 'content')
             ->firstOrFail();
 
-        $usageCount = Task::query()->where('prompt_id', $promptId)->count();
+        $usageCount = Task::query()->visibleToAdmin()->where('prompt_id', $promptId)->count();
         if ($usageCount > 0) {
             return back()->withErrors(__('admin.ai_prompts.error.in_use', ['count' => $usageCount]));
         }
@@ -118,6 +121,7 @@ class AiPromptController extends Controller
         return Prompt::query()
             ->select(['id', 'name', 'type', 'content', 'created_at'])
             ->where('type', 'content')
+            ->visibleToAdmin(includeGlobal: true)
             ->withCount('tasks')
             ->orderByDesc('created_at')
             ->get()

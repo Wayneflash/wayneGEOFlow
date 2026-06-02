@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Site;
 use App\Http\Controllers\Controller;
 use App\Models\Article;
 use App\Support\Site\ArticleHtmlPresenter;
+use App\Support\Site\PublicSiteTenant;
 use App\Support\Site\SiteSettingsBag;
 use App\Support\Site\SiteThemeViewResolver;
 use Carbon\Carbon;
@@ -19,23 +20,27 @@ class ArchiveController extends Controller
 {
     public function index(): View
     {
-        $map = SiteSettingsBag::all();
+        $tenantId = PublicSiteTenant::currentTenantId();
+        $map = SiteSettingsBag::all($tenantId);
         $siteTitle = (string) ($map['site_name'] ?? config('geoflow.site_name', config('app.name')));
         $siteDescription = (string) ($map['site_description'] ?? config('geoflow.site_description', ''));
 
         $driver = DB::getDriverName();
         $archives = [];
         if ($driver === 'pgsql') {
+            $tenantSql = PublicSiteTenant::includeGlobalRows($tenantId)
+                ? 'AND (tenant_id = ? OR tenant_id IS NULL)'
+                : 'AND tenant_id = ?';
             $rows = DB::select("
                 SELECT
                     EXTRACT(YEAR FROM COALESCE(published_at, created_at))::int AS y,
                     LPAD(EXTRACT(MONTH FROM COALESCE(published_at, created_at))::text, 2, '0') AS m,
                     COUNT(*)::int AS cnt
                 FROM articles
-                WHERE status = 'published' AND deleted_at IS NULL
+                WHERE status = 'published' AND deleted_at IS NULL {$tenantSql}
                 GROUP BY y, m
                 ORDER BY y DESC, m DESC
-            ");
+            ", [(int) $tenantId]);
             foreach ($rows as $row) {
                 $archives[] = [
                     'year' => (string) ($row->y ?? ''),
@@ -56,6 +61,7 @@ class ArchiveController extends Controller
             'pageTitle' => $pageTitle,
             'pageDescription' => $siteDescription,
             'canonicalUrl' => route('site.archive'),
+            'publicTenantId' => $tenantId,
         ]);
     }
 
@@ -65,7 +71,8 @@ class ArchiveController extends Controller
             throw new NotFoundHttpException;
         }
 
-        $map = SiteSettingsBag::all();
+        $tenantId = PublicSiteTenant::currentTenantId();
+        $map = SiteSettingsBag::all($tenantId);
         $perPage = max(1, min(200, (int) ($map['per_page'] ?? config('geoflow.items_per_page', 12))));
         $siteTitle = (string) ($map['site_name'] ?? config('geoflow.site_name', config('app.name')));
         $siteDescription = (string) ($map['site_description'] ?? config('geoflow.site_description', ''));
@@ -73,7 +80,7 @@ class ArchiveController extends Controller
         $start = Carbon::createFromDate((int) $year, (int) $month, 1)->startOfDay();
         $end = (clone $start)->copy()->endOfMonth()->endOfDay();
 
-        $articles = Article::query()
+        $articles = PublicSiteTenant::scopeTenantColumn(Article::query(), $tenantId)
             ->with(['category', 'author'])
             ->published()
             ->where(function ($q) use ($start, $end): void {
@@ -113,6 +120,7 @@ class ArchiveController extends Controller
             'pageTitle' => $pageTitle,
             'pageDescription' => $pageTitle,
             'canonicalUrl' => route('site.archive.month', ['year' => $year, 'month' => $month]),
+            'publicTenantId' => $tenantId,
         ]);
     }
 }

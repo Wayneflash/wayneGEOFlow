@@ -13,6 +13,7 @@
                         <div>
                             <div class="text-xs font-medium text-blue-500 uppercase tracking-widest">GEO AI OPS</div>
                             <h1 class="text-xl font-bold text-slate-900 tracking-tight">{{ __('admin.analytics.heading') }}</h1>
+                            <p class="mt-1 text-sm text-slate-500">{{ __('admin.analytics.subtitle') }}</p>
                         </div>
                     </div>
                     <div class="flex flex-wrap items-center gap-3">
@@ -28,6 +29,73 @@
 
         @include('admin.analytics._filters', ['filters' => $filters, 'filterOptions' => $filterOptions])
         @include('admin.analytics._global-overview', ['globalOverview' => $globalOverview])
-        @include('admin.analytics._content-section')
+
+        <section class="sticky top-0 z-10 rounded-2xl border border-slate-200 bg-white/95 p-2 shadow-sm backdrop-blur" data-analytics-tabs>
+            <div class="grid gap-2 md:grid-cols-3">
+                <button type="button" class="admin-tab-button is-active" data-analytics-tab="content" aria-pressed="true">
+                    <i data-lucide="bar-chart-3" class="h-4 w-4"></i>
+                    内容分析
+                </button>
+                <button type="button" class="admin-tab-button" data-analytics-tab="distribution" aria-pressed="false">
+                    <i data-lucide="send" class="h-4 w-4"></i>
+                    分发与渠道
+                </button>
+                <button type="button" class="admin-tab-button" data-analytics-tab="logs" aria-pressed="false">
+                    <i data-lucide="activity" class="h-4 w-4"></i>
+                    访问日志
+                </button>
+            </div>
+        </section>
+
+        <div data-analytics-panel="content">
+            @include('admin.analytics._content-section')
+        </div>
+        <div data-analytics-panel="distribution" class="hidden">
+            @include('admin.analytics._distribution-section', ['distributionSummary' => $distributionSummary])
+        </div>
+        <div data-analytics-panel="logs" class="hidden">
+            @include('admin.analytics._log-section', ['logSummary' => $logSummary])
+        </div>
     </div>
 @endsection
+
+@push('scripts')
+    <script>
+        (() => {
+            const storageKey = 'geoflow.analyticsTab';
+            const tabs = [...document.querySelectorAll('[data-analytics-tab]')];
+            const panels = [...document.querySelectorAll('[data-analytics-panel]')];
+
+            if (tabs.length === 0 || panels.length === 0) {
+                return;
+            }
+
+            const activate = (nextTab) => {
+                const selected = tabs.some((tab) => tab.dataset.analyticsTab === nextTab)
+                    ? nextTab
+                    : 'content';
+
+                tabs.forEach((tab) => {
+                    const active = tab.dataset.analyticsTab === selected;
+                    tab.classList.toggle('is-active', active);
+                    tab.setAttribute('aria-pressed', active ? 'true' : 'false');
+                });
+
+                panels.forEach((panel) => {
+                    const active = panel.dataset.analyticsPanel === selected;
+                    panel.classList.toggle('hidden', !active);
+                    panel.setAttribute('aria-hidden', active ? 'false' : 'true');
+                });
+
+                sessionStorage.setItem(storageKey, selected);
+                window.dispatchEvent(new Event('resize'));
+            };
+
+            tabs.forEach((tab) => {
+                tab.addEventListener('click', () => activate(tab.dataset.analyticsTab || 'content'));
+            });
+
+            activate(sessionStorage.getItem(storageKey) || 'content');
+        })();
+    </script>
+@endpush

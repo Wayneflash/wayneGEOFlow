@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Admin;
 use App\Models\SensitiveWord;
 use App\Support\AdminWeb;
+use App\Support\Tenancy\AdminTenant;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -67,16 +68,17 @@ class SecuritySettingsController extends Controller
             }
 
             $existingWords = SensitiveWord::query()
+                ->visibleToAdmin()
                 ->whereIn('word', $submittedWords->all())
                 ->pluck('word')
                 ->all();
 
             $wordsToInsert = $submittedWords
                 ->reject(static fn (string $word): bool => in_array($word, $existingWords, true))
-                ->map(static fn (string $word): array => [
+                ->map(static fn (string $word): array => AdminTenant::stamp([
                     'word' => $word,
                     'created_at' => now(),
-                ])
+                ]))
                 ->values()
                 ->all();
 
@@ -102,7 +104,7 @@ class SecuritySettingsController extends Controller
         }
 
         try {
-            $deleted = SensitiveWord::query()->whereKey($wordId)->delete();
+            $deleted = SensitiveWord::query()->visibleToAdmin()->whereKey($wordId)->delete();
             if ($deleted <= 0) {
                 return back()->withErrors(__('admin.security.message.word_delete_failed'));
             }
@@ -164,6 +166,7 @@ class SecuritySettingsController extends Controller
     private function loadSensitiveWords(): array
     {
         return SensitiveWord::query()
+            ->visibleToAdmin()
             ->select(['id', 'word', 'created_at'])
             ->orderBy('word')
             ->get()

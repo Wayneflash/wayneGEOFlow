@@ -9,6 +9,7 @@ use App\Models\SiteSetting;
 use App\Support\Site\ArticleHtmlPresenter;
 use App\Support\Site\SiteSettingsBag;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class SiteArticleMarkdownRenderTest extends TestCase
@@ -222,5 +223,145 @@ MD);
             ->assertSee('深联云GEO Feed')
             ->assertSee('深联云GEO Demo')
             ->assertSee('Demo homepage description');
+    }
+
+    public function test_public_home_uses_default_tenant_for_localhost_and_hides_other_tenants(): void
+    {
+        $defaultTenantId = $this->defaultTenantId();
+        $otherTenantId = DB::table('tenants')->insertGetId([
+            'name' => 'Other Tenant',
+            'slug' => 'other-tenant',
+            'status' => 'active',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $defaultCategory = Category::query()->create([
+            'tenant_id' => $defaultTenantId,
+            'name' => 'Default Tenant Category',
+            'slug' => 'default-tenant-category',
+        ]);
+        $defaultAuthor = Author::query()->create([
+            'tenant_id' => $defaultTenantId,
+            'name' => 'Default Tenant Author',
+        ]);
+        $otherCategory = Category::query()->create([
+            'tenant_id' => $otherTenantId,
+            'name' => 'Other Tenant Category',
+            'slug' => 'other-tenant-category',
+        ]);
+        $otherAuthor = Author::query()->create([
+            'tenant_id' => $otherTenantId,
+            'name' => 'Other Tenant Author',
+        ]);
+
+        Article::query()->create([
+            'tenant_id' => $defaultTenantId,
+            'title' => 'Default Tenant Article',
+            'slug' => 'default-tenant-article',
+            'excerpt' => 'default excerpt',
+            'content' => 'default content',
+            'category_id' => $defaultCategory->id,
+            'author_id' => $defaultAuthor->id,
+            'status' => 'published',
+            'review_status' => 'approved',
+            'published_at' => now(),
+        ]);
+        Article::query()->create([
+            'tenant_id' => $otherTenantId,
+            'title' => 'Other Tenant Article',
+            'slug' => 'other-tenant-article',
+            'excerpt' => 'other excerpt',
+            'content' => 'other content',
+            'category_id' => $otherCategory->id,
+            'author_id' => $otherAuthor->id,
+            'status' => 'published',
+            'review_status' => 'approved',
+            'published_at' => now(),
+        ]);
+
+        $this->withServerVariables(['HTTP_HOST' => '127.0.0.1:18080'])
+            ->get(route('site.home'))
+            ->assertOk()
+            ->assertSee('Default Tenant Article')
+            ->assertDontSee('Other Tenant Article');
+    }
+
+    public function test_public_home_resolves_tenant_from_bound_distribution_domain(): void
+    {
+        $defaultTenantId = $this->defaultTenantId();
+        $domainTenantId = DB::table('tenants')->insertGetId([
+            'name' => 'Domain Tenant',
+            'slug' => 'domain-tenant',
+            'status' => 'active',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('distribution_channels')->insert([
+            'tenant_id' => $domainTenantId,
+            'name' => 'Domain Tenant Site',
+            'domain' => 'domain-tenant.test',
+            'endpoint_url' => 'https://domain-tenant.test/geoflow',
+            'channel_type' => 'geoflow_agent',
+            'status' => 'active',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $defaultCategory = Category::query()->create([
+            'tenant_id' => $defaultTenantId,
+            'name' => 'Default Domain Category',
+            'slug' => 'default-domain-category',
+        ]);
+        $defaultAuthor = Author::query()->create([
+            'tenant_id' => $defaultTenantId,
+            'name' => 'Default Domain Author',
+        ]);
+        $domainCategory = Category::query()->create([
+            'tenant_id' => $domainTenantId,
+            'name' => 'Domain Tenant Category',
+            'slug' => 'domain-tenant-category',
+        ]);
+        $domainAuthor = Author::query()->create([
+            'tenant_id' => $domainTenantId,
+            'name' => 'Domain Tenant Author',
+        ]);
+
+        Article::query()->create([
+            'tenant_id' => $defaultTenantId,
+            'title' => 'Default Domain Article',
+            'slug' => 'default-domain-article',
+            'excerpt' => 'default excerpt',
+            'content' => 'default content',
+            'category_id' => $defaultCategory->id,
+            'author_id' => $defaultAuthor->id,
+            'status' => 'published',
+            'review_status' => 'approved',
+            'published_at' => now(),
+        ]);
+        Article::query()->create([
+            'tenant_id' => $domainTenantId,
+            'title' => 'Domain Tenant Article',
+            'slug' => 'domain-tenant-article',
+            'excerpt' => 'domain excerpt',
+            'content' => 'domain content',
+            'category_id' => $domainCategory->id,
+            'author_id' => $domainAuthor->id,
+            'status' => 'published',
+            'review_status' => 'approved',
+            'published_at' => now(),
+        ]);
+
+        $this->get('http://domain-tenant.test/')
+            ->assertOk()
+            ->assertSee('Domain Tenant Article')
+            ->assertDontSee('Default Domain Article');
+    }
+
+    private function defaultTenantId(): int
+    {
+        $tenantId = DB::table('tenants')->where('slug', 'default')->value('id')
+            ?? DB::table('tenants')->orderBy('id')->value('id');
+
+        return (int) $tenantId;
     }
 }
