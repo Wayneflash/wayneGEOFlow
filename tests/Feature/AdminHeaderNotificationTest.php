@@ -20,7 +20,8 @@ class AdminHeaderNotificationTest extends TestCase
             ->get(route('admin.dashboard'))
             ->assertOk()
             ->assertDontSee('hidden xl:block text-right leading-tight', false)
-            ->assertSee('toggleUserMenu()', false);
+            ->assertSee('data-admin-menu-button="user"', false)
+            ->assertSee('window.toggleUserMenu', false);
     }
 
     public function test_admin_header_shows_update_indicator_when_github_version_is_newer(): void

@@ -176,14 +176,14 @@
 
     <div id="create-admin-modal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden z-50">
         <div class="flex items-center justify-center min-h-screen p-4">
-            <div class="bg-white rounded-lg shadow-xl max-w-lg w-full">
+            <div class="bg-white rounded-lg shadow-xl max-w-xl w-full">
                 <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
                     <h3 class="text-lg font-medium text-gray-900">{{ __('admin.admin_users.modal_create') }}</h3>
                     <button type="button" onclick="hideCreateAdminModal()" class="text-gray-400 hover:text-gray-600">
                         <i data-lucide="x" class="w-5 h-5"></i>
                     </button>
                 </div>
-                <form method="POST" action="{{ route('admin.admin-users.store') }}" class="px-6 py-5 space-y-4">
+                <form method="POST" action="{{ route('admin.admin-users.store') }}" enctype="multipart/form-data" class="px-6 py-5 space-y-4">
                     @csrf
                     <div>
                         <label for="username" class="block text-sm font-medium text-gray-700 mb-1">{{ __('admin.admin_users.field_username') }}</label>
@@ -198,6 +198,27 @@
                     <div>
                         <label for="email" class="block text-sm font-medium text-gray-700 mb-1">{{ __('admin.admin_users.field_email') }}</label>
                         <input type="email" name="email" id="email" class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500" placeholder="{{ __('admin.admin_users.placeholder_email') }}" value="{{ old('email') }}">
+                    </div>
+
+                    <div class="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                        <div class="flex items-start gap-4">
+                            <div class="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-white text-slate-400">
+                                <img src="" alt="客户 LOGO 预览" class="hidden h-full w-full object-contain p-2" data-tenant-logo-preview>
+                                <i data-lucide="image-plus" class="h-6 w-6" data-tenant-logo-placeholder></i>
+                            </div>
+                            <div class="min-w-0 flex-1">
+                                <label for="tenant_logo" class="block text-sm font-medium text-gray-700 mb-1">客户 LOGO</label>
+                                <input
+                                    type="file"
+                                    name="tenant_logo"
+                                    id="tenant_logo"
+                                    accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                                    class="block w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-indigo-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-indigo-700 hover:file:bg-indigo-100"
+                                    data-tenant-logo-input
+                                >
+                                <p class="mt-2 text-xs leading-5 text-slate-500">用于该租户的公开站点和后台品牌展示，建议 PNG/WebP/SVG，最大 2MB。</p>
+                            </div>
+                        </div>
                     </div>
 
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -296,6 +317,28 @@
         function hideCreateAdminModal() {
             document.getElementById('create-admin-modal').classList.add('hidden');
         }
+
+        document.querySelector('[data-tenant-logo-input]')?.addEventListener('change', (event) => {
+            const file = event.target.files?.[0];
+            const preview = document.querySelector('[data-tenant-logo-preview]');
+            const placeholder = document.querySelector('[data-tenant-logo-placeholder]');
+
+            if (!preview || !placeholder) {
+                return;
+            }
+
+            if (!file) {
+                preview.classList.add('hidden');
+                preview.removeAttribute('src');
+                placeholder.classList.remove('hidden');
+                return;
+            }
+
+            preview.src = URL.createObjectURL(file);
+            preview.onload = () => URL.revokeObjectURL(preview.src);
+            preview.classList.remove('hidden');
+            placeholder.classList.add('hidden');
+        });
 
         function showEditAdminModal(admin) {
             const form = document.getElementById('edit-admin-form');

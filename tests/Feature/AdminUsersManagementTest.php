@@ -3,9 +3,13 @@
 namespace Tests\Feature;
 
 use App\Models\Admin;
+use App\Models\SiteSetting;
 use App\Models\Tenant;
+use App\Support\Site\SiteSettingsBag;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class AdminUsersManagementTest extends TestCase
@@ -106,6 +110,37 @@ class AdminUsersManagementTest extends TestCase
         $this->assertSame('Tenant Editor', $tenant->name);
         $this->assertSame((int) $createdAdmin->id, (int) $tenant->owner_admin_id);
         $this->assertNotSame((int) $superAdmin->tenant_id, (int) $createdAdmin->tenant_id);
+    }
+
+    public function test_super_admin_can_upload_tenant_logo_when_creating_standard_admin(): void
+    {
+        Storage::fake('public');
+        $superAdmin = $this->createAdmin('root_admin', 'super_admin');
+
+        $this->actingAs($superAdmin, 'admin')
+            ->post(route('admin.admin-users.store'), [
+                'username' => 'tenant_logo_admin',
+                'display_name' => 'Tenant Logo Admin',
+                'email' => 'tenant-logo-admin@example.com',
+                'password' => 'tenant-secret-123',
+                'confirm_password' => 'tenant-secret-123',
+                'tenant_logo' => UploadedFile::fake()->image('tenant-logo.png', 240, 120),
+            ])
+            ->assertRedirect(route('admin.admin-users.index'));
+
+        $createdAdmin = Admin::query()->where('username', 'tenant_logo_admin')->firstOrFail();
+        $tenantId = (int) $createdAdmin->tenant_id;
+        $logoUrl = (string) SiteSetting::query()
+            ->where('setting_key', 'tenant:'.$tenantId.':site_logo')
+            ->value('setting_value');
+
+        $this->assertStringStartsWith('/storage/tenant-logos/', $logoUrl);
+        Storage::disk('public')->assertExists(str_replace('/storage/', '', $logoUrl));
+        $this->assertSame($logoUrl, SiteSettingsBag::get('site_logo', '', $tenantId));
+        $this->assertDatabaseHas('site_settings', [
+            'setting_key' => 'tenant:'.$tenantId.':site_name',
+            'setting_value' => 'Tenant Logo Admin',
+        ]);
     }
 
     public function test_created_tenant_slug_is_unique_for_duplicate_display_names(): void

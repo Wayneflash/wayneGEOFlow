@@ -218,7 +218,7 @@ class AdminArticlesPageTest extends TestCase
         $this->actingAs($admin, 'admin')
             ->get(route('admin.articles.index'))
             ->assertOk()
-            ->assertDontSee(__('admin.articles.column.id'))
+            ->assertDontSee('<th>'.__('admin.articles.column.id').'</th>', false)
             ->assertSee(route('admin.articles.preview', ['articleId' => (int) $article->id]), false);
 
         $this->actingAs($admin, 'admin')

@@ -145,8 +145,8 @@
 
 </aside>
 
-<div id="admin-mobile-sidebar" class="fixed inset-0 z-[90] hidden lg:hidden">
-    <button type="button" class="absolute inset-0 bg-slate-950/35" onclick="toggleAdminMobileSidebar()" aria-label="{{ __('admin.common.close') }}"></button>
+<div id="admin-mobile-sidebar" class="fixed inset-0 z-[90] hidden lg:hidden" data-admin-mobile-sidebar aria-hidden="true">
+    <button type="button" class="absolute inset-0 bg-slate-950/35" data-admin-mobile-sidebar-close aria-label="{{ __('admin.common.close') }}"></button>
     <aside class="relative flex h-full w-80 max-w-[86vw] flex-col border-r border-slate-200 bg-white shadow-2xl">
         <div class="flex h-16 items-center justify-between border-b border-slate-200 px-5">
             <div class="flex min-w-0 items-center gap-3">
@@ -155,7 +155,7 @@
                 @endif
                 <span class="truncate text-base font-semibold text-slate-950">{{ $adminBrandName }}</span>
             </div>
-            <button type="button" onclick="toggleAdminMobileSidebar()" class="rounded-lg p-2 text-slate-500 hover:bg-slate-100">
+            <button type="button" data-admin-mobile-sidebar-close class="rounded-lg p-2 text-slate-500 hover:bg-slate-100">
                 <i data-lucide="x" class="h-5 w-5"></i>
             </button>
         </div>
@@ -165,7 +165,7 @@
                     <div class="mb-2 px-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">{{ $group['label'] }}</div>
                     <div class="space-y-1">
                         @foreach ($group['items'] as $key => $item)
-                            <a href="{{ route($item['route']) }}"
+                            <a href="{{ route($item['route']) }}" data-admin-mobile-nav-link
                                class="@if($resolvedActive === $key) bg-blue-50 text-blue-700 ring-1 ring-blue-100 @else text-slate-600 hover:bg-blue-50 hover:text-blue-700 @endif flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium">
                                 <i data-lucide="{{ $item['icon'] ?? 'circle' }}" class="h-4 w-4"></i>
                                 {{ $item['name'] }}
@@ -181,7 +181,7 @@
 <header class="admin-shell-topbar">
     <div class="flex h-16 items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
         <div class="flex min-w-0 items-center gap-3">
-            <button type="button" onclick="toggleAdminMobileSidebar()" class="rounded-lg border border-slate-200 bg-white p-2 text-slate-600 shadow-sm hover:bg-slate-50 lg:hidden">
+            <button type="button" data-admin-mobile-sidebar-toggle aria-expanded="false" aria-controls="admin-mobile-sidebar" class="rounded-lg border border-slate-200 bg-white p-2 text-slate-600 shadow-sm hover:bg-slate-50 lg:hidden">
                 <i data-lucide="menu" class="h-5 w-5"></i>
             </button>
             <div class="min-w-0">
@@ -192,13 +192,13 @@
 
         <div class="flex shrink-0 items-center gap-2">
             <div class="relative">
-                <button onclick="toggleAdminNotifications()" class="relative rounded-lg border border-slate-200 bg-white p-2 text-slate-500 shadow-sm hover:bg-slate-50 hover:text-slate-700" type="button" aria-label="{{ __('admin.header.notifications.label') }}">
+                <button data-admin-menu-button="notifications" class="relative rounded-lg border border-slate-200 bg-white p-2 text-slate-500 shadow-sm hover:bg-slate-50 hover:text-slate-700" type="button" aria-expanded="false" aria-controls="admin-notification-menu" aria-label="{{ __('admin.header.notifications.label') }}">
                     <i data-lucide="bell" class="h-5 w-5"></i>
                     @if($hasVersionUpdate)
                         <span data-update-indicator class="absolute right-1.5 top-1.5 h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white"></span>
                     @endif
                 </button>
-                <div id="admin-notification-menu" class="hidden absolute right-0 mt-3 w-80 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
+                <div id="admin-notification-menu" data-admin-menu="notifications" class="hidden absolute right-0 mt-3 w-80 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
                     <div class="border-b border-slate-100 px-4 py-3 text-sm font-semibold text-slate-950">{{ __('admin.header.notifications.title') }}</div>
                     <div class="px-4 py-4">
                         @if($hasVersionUpdate)
@@ -233,13 +233,13 @@
                 </select>
             </div>
             <div class="relative">
-                <button onclick="toggleUserMenu()" class="flex items-center gap-2 rounded-lg border border-slate-200 bg-white p-1.5 pr-2 text-sm text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950" type="button">
+                <button data-admin-menu-button="user" class="flex items-center gap-2 rounded-lg border border-slate-200 bg-white p-1.5 pr-2 text-sm text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950" type="button" aria-expanded="false" aria-controls="user-menu">
                     <span class="flex h-7 w-7 items-center justify-center rounded-md bg-blue-50 text-blue-700">
                         <i data-lucide="user" class="h-4 w-4"></i>
                     </span>
                     <i data-lucide="chevron-down" class="h-4 w-4"></i>
                 </button>
-                <div id="user-menu" class="hidden absolute right-0 mt-3 w-60 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-xl">
+                <div id="user-menu" data-admin-menu="user" class="hidden absolute right-0 mt-3 w-60 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-xl">
                     <div class="border-b border-slate-100 px-4 py-3">
                         <div class="text-sm font-medium text-slate-900">{{ __('admin.header.welcome', ['name' => $currentAdmin->username ?? '']) }}</div>
                         <div class="text-xs text-slate-400">{{ $adminRoleLabel }}</div>
@@ -268,26 +268,64 @@
 </header>
 
 <script>
-    function toggleUserMenu() {
-        document.getElementById('user-menu')?.classList.toggle('hidden');
-    }
+    (() => {
+        const mobileSidebar = document.querySelector('[data-admin-mobile-sidebar]');
+        const mobileToggle = document.querySelector('[data-admin-mobile-sidebar-toggle]');
+        const menuButtons = document.querySelectorAll('[data-admin-menu-button]');
+        const menus = document.querySelectorAll('[data-admin-menu]');
 
-    function toggleAdminNotifications() {
-        document.getElementById('admin-notification-menu')?.classList.toggle('hidden');
-    }
+        const setMobileSidebar = (open) => {
+            if (!mobileSidebar) return;
+            mobileSidebar.classList.toggle('hidden', !open);
+            mobileSidebar.setAttribute('aria-hidden', open ? 'false' : 'true');
+            mobileToggle?.setAttribute('aria-expanded', open ? 'true' : 'false');
+            document.documentElement.classList.toggle('admin-mobile-nav-open', open);
+        };
 
-    function toggleAdminMobileSidebar() {
-        document.getElementById('admin-mobile-sidebar')?.classList.toggle('hidden');
-    }
+        const closeMenus = (except = '') => {
+            menus.forEach((menu) => {
+                const key = menu.dataset.adminMenu || '';
+                const open = except !== '' && key === except;
+                menu.classList.toggle('hidden', !open);
+                document.querySelector(`[data-admin-menu-button="${key}"]`)?.setAttribute('aria-expanded', open ? 'true' : 'false');
+            });
+        };
 
-    document.addEventListener('click', function (event) {
-        const userMenu = document.getElementById('user-menu');
-        const notificationMenu = document.getElementById('admin-notification-menu');
-        if (userMenu && !event.target.closest('[onclick="toggleUserMenu()"]') && !userMenu.contains(event.target)) {
-            userMenu.classList.add('hidden');
-        }
-        if (notificationMenu && !event.target.closest('[onclick="toggleAdminNotifications()"]') && !notificationMenu.contains(event.target)) {
-            notificationMenu.classList.add('hidden');
-        }
-    });
+        mobileToggle?.addEventListener('click', () => setMobileSidebar(mobileSidebar?.classList.contains('hidden') ?? true));
+        document.querySelectorAll('[data-admin-mobile-sidebar-close], [data-admin-mobile-nav-link]').forEach((el) => {
+            el.addEventListener('click', () => setMobileSidebar(false));
+        });
+
+        menuButtons.forEach((button) => {
+            button.addEventListener('click', (event) => {
+                event.stopPropagation();
+                const key = button.dataset.adminMenuButton || '';
+                const menu = document.querySelector(`[data-admin-menu="${key}"]`);
+                const shouldOpen = menu?.classList.contains('hidden') ?? false;
+                closeMenus(shouldOpen ? key : '');
+            });
+        });
+
+        document.addEventListener('click', (event) => {
+            if (!event.target.closest('[data-admin-menu], [data-admin-menu-button]')) {
+                closeMenus();
+            }
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key !== 'Escape') return;
+            closeMenus();
+            setMobileSidebar(false);
+        });
+
+        window.toggleAdminMobileSidebar = () => setMobileSidebar(mobileSidebar?.classList.contains('hidden') ?? true);
+        window.toggleUserMenu = () => {
+            const menu = document.querySelector('[data-admin-menu="user"]');
+            closeMenus(menu?.classList.contains('hidden') ? 'user' : '');
+        };
+        window.toggleAdminNotifications = () => {
+            const menu = document.querySelector('[data-admin-menu="notifications"]');
+            closeMenus(menu?.classList.contains('hidden') ? 'notifications' : '');
+        };
+    })();
 </script>

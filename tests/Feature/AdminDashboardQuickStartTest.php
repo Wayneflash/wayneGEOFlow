@@ -32,7 +32,7 @@ class AdminDashboardQuickStartTest extends TestCase
             ->assertSee('生产漏斗')
             ->assertSee('任务与队列')
             ->assertSee('采集与素材')
-            ->assertSee('AI 配置健康度')
+            ->assertSee('AI 模型配置')
             ->assertSee('最近文章')
             ->assertSee(__('admin.dashboard.quick_start.title'))
             ->assertSee(__('admin.dashboard.navigation.single_site_title'))

@@ -217,18 +217,22 @@
             startProgress();
         });
 
-        document.addEventListener('mouseover', (event) => {
+        const handlePrefetchIntent = (event) => {
             const link = event.target?.closest?.('a[href]');
             if (!link || link.target || link.hasAttribute('download')) return;
             const href = link.getAttribute('href') || '';
             if (href === '' || href.startsWith('#') || href.startsWith('javascript:')) return;
             prefetchUrl(href);
-        }, { passive: true });
+        };
+
+        document.addEventListener('mouseover', handlePrefetchIntent, { passive: true });
+        document.addEventListener('focusin', handlePrefetchIntent);
 
         window.addEventListener('pageshow', () => {
             resetSubmittingForms();
             stopProgress();
             document.documentElement.classList.add('admin-page-ready');
+            window.setTimeout(() => document.documentElement.classList.remove('admin-page-ready'), 260);
         });
     })();
 </script>

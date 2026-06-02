@@ -56,13 +56,33 @@
                     </a>
                 </div>
             </div>
+            <div class="sticky top-16 z-30 mb-6 rounded-xl border border-slate-200 bg-white/92 p-2 shadow-sm backdrop-blur" data-task-tabs role="tablist" aria-label="{{ $isEdit ? $t('task_edit.page_heading') : $t('task_create.page_heading') }}">
+                <div class="flex gap-2 overflow-x-auto">
+                    <button type="button" class="admin-tab-button is-active" data-task-tab="foundation" role="tab" aria-selected="true">
+                        <i data-lucide="settings-2" class="h-4 w-4"></i>
+                        基础与模型
+                    </button>
+                    <button type="button" class="admin-tab-button" data-task-tab="delivery" role="tab" aria-selected="false">
+                        <i data-lucide="send" class="h-4 w-4"></i>
+                        图片与分发
+                    </button>
+                    <button type="button" class="admin-tab-button" data-task-tab="taxonomy" role="tab" aria-selected="false">
+                        <i data-lucide="folder-tree" class="h-4 w-4"></i>
+                        分类与 SEO
+                    </button>
+                    <button type="button" class="admin-tab-button" data-task-tab="advanced" role="tab" aria-selected="false">
+                        <i data-lucide="sliders-horizontal" class="h-4 w-4"></i>
+                        高级限制
+                    </button>
+                </div>
+            </div>
             <form method="POST" action="{{ $isEdit ? route('admin.tasks.update', ['taskId' => $taskId]) : route('admin.tasks.store') }}" class="grid grid-cols-1 gap-6 xl:grid-cols-12">
                 @csrf
                 @if ($isEdit)
                     @method('PUT')
                 @endif
 
-                <div class="bg-white shadow rounded-lg xl:col-span-12">
+                <div class="admin-form-section xl:col-span-12" data-task-section="foundation">
                     <div class="px-6 py-4 border-b border-gray-200">
                         <h3 class="text-lg font-medium text-gray-900">{{ $t('task_create.section.basic_title') }}</h3>
                         <p class="mt-1 text-sm text-gray-600">{{ $t('task_create.section.basic_desc') }}</p>
@@ -97,7 +117,7 @@
                     </div>
                 </div>
 
-                <div class="bg-white shadow rounded-lg xl:col-span-12">
+                <div class="admin-form-section xl:col-span-12" data-task-section="foundation">
                     <div class="px-6 py-4 border-b border-gray-200">
                         <h3 class="text-lg font-medium text-gray-900">{{ $t('task_create.section.content_title') }}</h3>
                         <p class="mt-1 text-sm text-gray-600">{{ $t('task_create.section.content_desc') }}</p>
@@ -153,7 +173,7 @@
                     </div>
                 </div>
 
-                <div class="bg-white shadow rounded-lg xl:col-span-6">
+                <div class="admin-form-section xl:col-span-6" data-task-section="delivery">
                     <div class="px-6 py-4 border-b border-gray-200">
                         <h3 class="text-lg font-medium text-gray-900">{{ $t('task_create.section.image_title') }}</h3>
                         <p class="mt-1 text-sm text-gray-600">{{ $t('task_create.section.image_desc') }}</p>
@@ -188,7 +208,7 @@
                     </div>
                 </div>
 
-                <div class="bg-white shadow rounded-lg xl:col-span-6">
+                <div class="admin-form-section xl:col-span-6" data-task-section="delivery">
                     <div class="px-6 py-4 border-b border-gray-200">
                         <h3 class="text-lg font-medium text-gray-900">{{ $t('task_create.section.publish_title') }}</h3>
                         <p class="mt-1 text-sm text-gray-600">{{ $t('task_create.section.publish_desc') }}</p>
@@ -213,7 +233,7 @@
                     </div>
                 </div>
 
-                <div class="bg-white shadow rounded-lg xl:col-span-12">
+                <div class="admin-form-section xl:col-span-12" data-task-section="delivery">
                     <div class="px-6 py-4 border-b border-gray-200">
                         <h3 class="text-lg font-medium text-gray-900">{{ $t('task_create.section.distribution_title') }}</h3>
                         <p class="mt-1 text-sm text-gray-600">{{ $t('task_create.section.distribution_desc') }}</p>
@@ -275,7 +295,7 @@
                     </div>
                 </div>
 
-                <div class="bg-white shadow rounded-lg xl:col-span-12">
+                <div class="admin-form-section xl:col-span-12" data-task-section="taxonomy">
                     <div class="px-6 py-4 border-b border-gray-200">
                         <h3 class="text-lg font-medium text-gray-900">{{ $t('task_create.section.seo_title') }}</h3>
                         <p class="mt-1 text-sm text-gray-600">{{ $t('task_create.section.seo_desc') }}</p>
@@ -302,7 +322,7 @@
                     </div>
                 </div>
 
-                <div class="bg-white shadow rounded-lg xl:col-span-8">
+                <div class="admin-form-section xl:col-span-8" data-task-section="taxonomy">
                     <div class="px-6 py-4 border-b border-gray-200">
                         <h3 class="text-lg font-medium text-gray-900">{{ $t('task_create.section.category_title') }}</h3>
                         <p class="mt-1 text-sm text-gray-600">{{ $t('task_create.section.category_desc') }}</p>
@@ -370,7 +390,7 @@
                     </div>
                 </div>
 
-                <div class="bg-white shadow rounded-lg xl:col-span-4">
+                <div class="admin-form-section xl:col-span-4" data-task-section="advanced">
                     <div class="px-6 py-4 border-b border-gray-200">
                         <h3 class="text-lg font-medium text-gray-900">{{ $t('task_create.section.advanced_title') }}</h3>
                         <p class="mt-1 text-sm text-gray-600">{{ $t('task_create.section.advanced_desc') }}</p>
@@ -401,11 +421,12 @@
                     </div>
                 </div>
 
-                <div class="flex justify-end space-x-4 xl:col-span-12">
-                    <a href="{{ route('admin.tasks.index') }}" class="px-6 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
+                <div class="admin-sticky-actions flex justify-end gap-3 xl:col-span-12">
+                    <a href="{{ route('admin.tasks.index') }}" class="admin-btn-secondary">
                         {{ __('admin.button.cancel') }}
                     </a>
-                    <button type="submit" data-loading-label="{{ __('admin.message.processing') }}" class="px-6 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700">
+                    <button type="submit" data-loading-label="{{ __('admin.message.processing') }}" class="admin-btn-primary">
+                        <i data-lucide="{{ $isEdit ? 'save' : 'plus' }}" class="h-4 w-4"></i>
                         {{ $isEdit ? __('admin.task_edit.button.save_changes') : __('admin.button.create_task') }}
                     </button>
                 </div>
@@ -438,6 +459,8 @@
             const promptSelect = document.getElementById('prompt_id');
             const promptHelp = document.getElementById('prompt-help');
             const form = document.querySelector('form');
+            const tabButtons = document.querySelectorAll('[data-task-tab]');
+            const sections = document.querySelectorAll('[data-task-section]');
 
             if (!form) {
                 return;
@@ -522,17 +545,47 @@
                 promptHelp.textContent = option ? (option.dataset.description || '') : '';
             }
 
+            function showTaskTab(tabName, scrollToTabs = false) {
+                const targetTab = tabName || 'foundation';
+
+                tabButtons.forEach((button) => {
+                    const isActive = button.dataset.taskTab === targetTab;
+                    button.classList.toggle('is-active', isActive);
+                    button.setAttribute('aria-selected', isActive ? 'true' : 'false');
+                });
+
+                sections.forEach((section) => {
+                    section.classList.toggle('hidden', section.dataset.taskSection !== targetTab);
+                });
+
+                window.sessionStorage?.setItem('geoflow.taskFormTab', targetTab);
+                if (scrollToTabs) {
+                    document.querySelector('[data-task-tabs]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            }
+
+            function revealElementSection(element) {
+                const section = element?.closest?.('[data-task-section]');
+                if (section?.dataset?.taskSection) {
+                    showTaskTab(section.dataset.taskSection, true);
+                }
+            }
+
             function showFormError(message, element) {
                 if (window.AdminUtils && typeof window.AdminUtils.showToast === 'function') {
                     window.AdminUtils.showToast(message, 'error');
                 }
 
                 if (element && typeof element.focus === 'function') {
+                    revealElementSection(element);
                     element.focus({ preventScroll: true });
                     element.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 }
             }
 
+            tabButtons.forEach((button) => {
+                button.addEventListener('click', () => showTaskTab(button.dataset.taskTab || 'foundation'));
+            });
             imageLibrarySelect.addEventListener('change', toggleImageCountByLibrary);
             needReviewCheckbox.addEventListener('change', togglePublishInterval);
             articleLimitInput.addEventListener('input', syncDraftLimitMax);
@@ -576,11 +629,13 @@
                     return;
                 }
 
-                if (!isEditMode && !confirm(@json(__('admin.task_create.confirm.create')))) {
-                    event.preventDefault();
-                }
             });
 
+            form.addEventListener('invalid', function (event) {
+                revealElementSection(event.target);
+            }, true);
+
+            showTaskTab(window.sessionStorage?.getItem('geoflow.taskFormTab') || 'foundation');
             toggleImageCountByLibrary();
             togglePublishInterval();
             handleCategoryModeChange();

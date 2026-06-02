@@ -67,9 +67,10 @@ final class SiteSettingsBag
 
     public static function storageKey(string $key, ?int $tenantId = null): string
     {
+        $explicitTenant = $tenantId !== null;
         $tenantId ??= AdminTenant::currentTenantId();
 
-        if ($tenantId === null || $tenantId <= 0 || $tenantId === AdminTenant::defaultTenantId() || AdminTenant::canSeeAll()) {
+        if ($tenantId === null || $tenantId <= 0 || $tenantId === AdminTenant::defaultTenantId() || (! $explicitTenant && AdminTenant::canSeeAll())) {
             return $key;
         }
 
@@ -79,11 +80,11 @@ final class SiteSettingsBag
     /**
      * 站点设置变更后由后台调用，避免前台读到旧缓存。
      */
-    public static function forget(): void
+    public static function forget(?int $tenantId = null): void
     {
         Cache::forget(self::CACHE_KEY.':global');
 
-        $tenantId = AdminTenant::currentTenantId();
+        $tenantId ??= AdminTenant::currentTenantId();
         if ($tenantId !== null) {
             Cache::forget(self::CACHE_KEY.':'.$tenantId);
         }

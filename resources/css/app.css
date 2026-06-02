@@ -74,6 +74,26 @@
         @apply inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition duration-150 hover:bg-slate-50 active:translate-y-px disabled:cursor-wait disabled:opacity-70;
     }
 
+    .admin-icon-btn {
+        @apply inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm transition duration-150 hover:bg-slate-50 hover:text-slate-900 active:translate-y-px;
+    }
+
+    .admin-form-section {
+        @apply rounded-lg border border-slate-200 bg-white shadow-sm shadow-slate-200/60;
+    }
+
+    .admin-tab-button {
+        @apply inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg px-3 text-sm font-semibold text-slate-600 transition duration-150 hover:bg-slate-100 hover:text-slate-950 focus:outline-none focus:ring-2 focus:ring-blue-500/20;
+    }
+
+    .admin-tab-button.is-active {
+        @apply bg-blue-600 text-white shadow-sm shadow-blue-600/20 hover:bg-blue-700 hover:text-white;
+    }
+
+    .admin-sticky-actions {
+        @apply sticky bottom-0 z-20 -mx-4 border-t border-slate-200 bg-white/92 px-4 py-3 shadow-[0_-10px_30px_rgba(15,23,42,0.06)] backdrop-blur sm:-mx-6 sm:px-6 lg:-mx-7 lg:px-7;
+    }
+
     .admin-table {
         @apply w-full divide-y divide-slate-200;
     }
@@ -101,6 +121,10 @@
     .admin-page-loading a,
     .admin-page-loading button {
         @apply cursor-progress;
+    }
+
+    .admin-mobile-nav-open {
+        @apply overflow-hidden;
     }
 }
 
