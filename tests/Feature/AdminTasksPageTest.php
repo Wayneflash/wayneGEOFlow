@@ -332,7 +332,7 @@ class AdminTasksPageTest extends TestCase
             ->assertSee('data-batch-action="stop"', false)
             ->assertSee('id="batch-btn-'.(int) $pausedTask->id.'"', false)
             ->assertSee('data-batch-action="start"', false)
-            ->assertSee('text-green-600 hover:text-green-800 hover:bg-green-50', false);
+            ->assertSee('text-emerald-600 transition-colors hover:bg-emerald-50 hover:text-emerald-800', false);
     }
 
     public function test_task_realtime_auth_endpoint_is_same_origin_relative(): void
