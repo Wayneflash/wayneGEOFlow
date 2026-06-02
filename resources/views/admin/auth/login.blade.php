@@ -1,165 +1,354 @@
 @php
     $localeOptions = \App\Support\AdminWeb::supportedLocales();
     $loginProductName = __('admin.login.product_name');
+    $isChineseLocale = str_starts_with(app()->getLocale(), 'zh');
+    $copy = $isChineseLocale
+        ? [
+            'pageTitle' => '欢迎登录',
+            'eyebrow' => 'AI Visibility OS',
+            'heroTitle' => '让 AI 推荐你',
+            'heroDesc' => '用 GEO 内容、知识资产和分发链路，建立品牌在生成式搜索里的可见性。',
+            'subtitle' => 'GEO 内容与可见性工作台',
+            'loginHeading' => '欢迎登录',
+            'username' => '请输入用户名',
+            'password' => '请输入密码',
+            'remember' => '保持登录 30 天',
+            'submit' => '登录',
+            'metricGeo' => '内容生产',
+            'metricRag' => '知识召回',
+            'metricSync' => '渠道分发',
+        ]
+        : [
+            'pageTitle' => 'Welcome',
+            'eyebrow' => 'AI Visibility OS',
+            'heroTitle' => 'Let AI recommend you',
+            'heroDesc' => 'Build brand visibility in generative search through GEO content, knowledge assets, and distribution workflows.',
+            'subtitle' => 'GEO content and visibility workspace',
+            'loginHeading' => 'Welcome back',
+            'username' => 'Username',
+            'password' => 'Password',
+            'remember' => 'Keep me signed in for 30 days',
+            'submit' => 'Sign in',
+            'metricGeo' => 'Content',
+            'metricRag' => 'Knowledge',
+            'metricSync' => 'Distribution',
+        ];
 @endphp
 <!DOCTYPE html>
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ __('admin.login.title') }} - {{ $loginProductName }}</title>
+    <title>{{ $copy['pageTitle'] }} - {{ $loginProductName }}</title>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     <script src="{{ asset('js/lucide.min.js') }}"></script>
     <style>
-        body {
-            min-height: 100vh;
-            background:
-                linear-gradient(120deg, rgba(37, 99, 235, 0.10) 0%, rgba(37, 99, 235, 0) 34%),
-                linear-gradient(300deg, rgba(20, 184, 166, 0.12) 0%, rgba(20, 184, 166, 0) 32%),
-                #f8fafc;
+        :root {
+            color-scheme: light;
         }
 
-        .login-grid {
+        body {
+            min-height: 100vh;
+            background: #f1f5f9;
+        }
+
+        .brand-panel {
+            background:
+                radial-gradient(circle at 26% 15%, rgba(219, 234, 254, 0.34), transparent 22rem),
+                radial-gradient(circle at 76% 54%, rgba(147, 197, 253, 0.18), transparent 26rem),
+                linear-gradient(135deg, #f8fafc 0%, #eaf2ff 35%, #2563eb 100%);
+        }
+
+        .brand-panel::before {
+            content: '';
+            position: absolute;
+            inset: 0;
             background-image:
-                linear-gradient(rgba(15, 23, 42, 0.045) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(15, 23, 42, 0.045) 1px, transparent 1px);
-            background-size: 40px 40px;
-            mask-image: linear-gradient(180deg, black, transparent 82%);
+                linear-gradient(rgba(37, 99, 235, 0.055) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(37, 99, 235, 0.055) 1px, transparent 1px);
+            background-size: 64px 64px;
+            mask-image: linear-gradient(90deg, rgba(0, 0, 0, 0.72), rgba(0, 0, 0, 0.36));
+        }
+
+        .brand-panel::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background:
+                linear-gradient(90deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.24), rgba(30, 64, 175, 0.20)),
+                radial-gradient(circle at 24% 16%, rgba(255, 255, 255, 0.76), transparent 5rem),
+                radial-gradient(circle at 64% 48%, rgba(147, 197, 253, 0.22), transparent 4rem);
+            pointer-events: none;
+        }
+
+        .hero-orb {
+            position: absolute;
+            width: 28rem;
+            height: 28rem;
+            border-radius: 999px;
+            background:
+                radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.92), transparent 0 24%),
+                radial-gradient(circle at 68% 72%, rgba(37, 99, 235, 0.20), transparent 0 34%),
+                linear-gradient(145deg, rgba(255, 255, 255, 0.70), rgba(219, 234, 254, 0.26));
+            box-shadow:
+                inset 0 1px 0 rgba(255, 255, 255, 0.90),
+                0 40px 110px rgba(37, 99, 235, 0.20);
+            filter: blur(0.2px);
+        }
+
+        .hero-glass {
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.74), rgba(255, 255, 255, 0.34));
+            border: 1px solid rgba(255, 255, 255, 0.78);
+            box-shadow:
+                0 24px 70px rgba(30, 64, 175, 0.16),
+                inset 0 1px 0 rgba(255, 255, 255, 0.80);
+        }
+
+        .signal-line {
+            position: absolute;
+            left: 5%;
+            right: 0;
+            height: 1px;
+            border-top: 1px dashed rgba(37, 99, 235, 0.16);
+            transform: rotate(3deg);
+        }
+
+        .signal-dot {
+            position: absolute;
+            width: 13px;
+            height: 13px;
+            border-radius: 999px;
+            background: #2563eb;
+            box-shadow:
+                0 0 0 12px rgba(37, 99, 235, 0.08),
+                0 0 28px rgba(37, 99, 235, 0.28);
+            animation: floatPulse 4.5s ease-in-out infinite;
+        }
+
+        .signal-dot:nth-child(2n) {
+            animation-delay: -1.6s;
+        }
+
+        .signal-dot:nth-child(3n) {
+            animation-delay: -2.8s;
+        }
+
+        .signal-pill {
+            background: rgba(255, 255, 255, 0.62);
+            border: 1px solid rgba(255, 255, 255, 0.74);
+            box-shadow:
+                0 18px 44px rgba(30, 64, 175, 0.12),
+                inset 0 1px 0 rgba(255, 255, 255, 0.82);
+        }
+
+        .login-input {
+            background: #fff;
+            box-shadow: 0 14px 34px rgba(15, 23, 42, 0.035);
+        }
+
+        .login-surface {
+            background: rgba(255, 255, 255, 0.92);
+            box-shadow:
+                0 28px 88px rgba(15, 23, 42, 0.10),
+                inset 0 1px 0 rgba(255, 255, 255, 0.95);
+        }
+
+        .login-stage::before,
+        .login-stage::after {
+            content: '';
+            position: absolute;
+            border-radius: 999px;
+            pointer-events: none;
+        }
+
+        .login-stage::before {
+            inset: -2.5rem auto auto -3rem;
+            width: 11rem;
+            height: 11rem;
+            background: rgba(219, 234, 254, 0.92);
+            filter: blur(46px);
+        }
+
+        .login-stage::after {
+            right: -3.2rem;
+            bottom: -3.4rem;
+            width: 12rem;
+            height: 12rem;
+            background: rgba(255, 255, 255, 0.92);
+            filter: blur(38px);
+        }
+
+        @keyframes floatPulse {
+            0%, 100% {
+                transform: translateY(0) scale(1);
+                opacity: 0.72;
+            }
+
+            50% {
+                transform: translateY(-10px) scale(1.08);
+                opacity: 1;
+            }
+        }
+
+        @keyframes fadeUp {
+            from {
+                transform: translateY(16px);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        .animate-in {
+            animation: fadeUp 0.75s ease-out both;
+        }
+
+        .animate-delay-1 {
+            animation-delay: 0.08s;
+        }
+
+        .animate-delay-2 {
+            animation-delay: 0.16s;
+        }
+
+        .animate-delay-3 {
+            animation-delay: 0.24s;
         }
     </style>
 </head>
-<body class="min-h-screen overflow-x-hidden text-slate-900 antialiased">
-<main class="relative flex min-h-screen items-center justify-center px-4 py-6 sm:px-6 lg:px-8">
-    <div class="login-grid pointer-events-none absolute inset-0"></div>
-    <div class="pointer-events-none absolute left-1/2 top-10 h-72 w-[42rem] -translate-x-1/2 rounded-full bg-blue-500/10 blur-3xl"></div>
-    <div class="pointer-events-none absolute bottom-8 right-8 h-72 w-72 rounded-full bg-cyan-400/10 blur-3xl"></div>
+<body class="min-h-screen text-slate-950 antialiased">
+<main class="grid min-h-screen lg:grid-cols-[minmax(0,1fr)_500px]">
+    <section class="brand-panel relative hidden overflow-hidden px-10 py-12 text-white lg:flex lg:flex-col lg:items-center lg:justify-center">
+        <div class="hero-orb left-[10%] top-[9%]"></div>
+        <div class="signal-line top-[17%]"></div>
+        <div class="signal-line top-[35%] -rotate-2"></div>
+        <div class="signal-line top-[58%]"></div>
+        <span class="signal-dot left-[16%] top-[18%]"></span>
+        <span class="signal-dot left-[42%] top-[28%]"></span>
+        <span class="signal-dot right-[18%] top-[22%]"></span>
+        <span class="signal-dot left-[23%] bottom-[24%]"></span>
+        <span class="signal-dot right-[25%] bottom-[31%]"></span>
 
-    <div class="relative grid w-full max-w-6xl overflow-hidden rounded-2xl border border-white/80 bg-white/88 shadow-[0_28px_90px_rgba(15,23,42,0.12)] backdrop-blur-xl lg:grid-cols-[minmax(0,1fr)_28rem]">
-        <section class="hidden min-h-[680px] border-r border-slate-200/80 p-10 lg:flex lg:flex-col lg:justify-between">
-            <div>
-                <div class="inline-flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700">
-                    <span class="h-1.5 w-1.5 rounded-full bg-cyan-500"></span>
-                    {{ __('admin.login.hero_badge') }}
+        <div class="relative z-10 w-full max-w-3xl">
+            <div class="hero-glass animate-in rounded-[2rem] p-10 text-slate-950 backdrop-blur-2xl">
+                <div class="inline-flex items-center gap-2 rounded-full border border-blue-100 bg-white/70 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-blue-600 shadow-sm backdrop-blur-xl">
+                    <span class="h-2 w-2 rounded-full bg-blue-600 shadow-[0_0_18px_rgba(37,99,235,0.35)]"></span>
+                    {{ $copy['eyebrow'] }}
                 </div>
-
-                <div class="mt-12 max-w-xl">
-                    <p class="text-sm font-semibold uppercase tracking-[0.24em] text-blue-600">{{ __('admin.login.eyebrow') }}</p>
-                    <h1 class="mt-5 text-4xl font-semibold leading-tight tracking-tight text-slate-950">
-                        {{ __('admin.login.hero_title') }}
-                    </h1>
-                    <p class="mt-5 max-w-lg text-base leading-7 text-slate-600">
-                        {{ __('admin.login.hero_desc') }}
-                    </p>
-                </div>
+                <h1 class="mt-10 max-w-2xl text-7xl font-semibold leading-[1.02] tracking-tight text-slate-950">
+                    {{ $copy['heroTitle'] }}
+                </h1>
+                <p class="mt-6 max-w-lg text-lg leading-8 text-slate-600">
+                    {{ $copy['heroDesc'] }}
+                </p>
             </div>
 
-            <div class="grid gap-3">
-                <div class="grid grid-cols-3 gap-3">
-                    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                        <i data-lucide="building-2" class="h-5 w-5 text-blue-600"></i>
-                        <div class="mt-3 text-sm font-semibold text-slate-900">{{ __('admin.login.card_tenant_title') }}</div>
-                        <div class="mt-1 text-xs leading-5 text-slate-500">{{ __('admin.login.card_tenant_desc') }}</div>
-                    </div>
-                    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                        <i data-lucide="badge-check" class="h-5 w-5 text-cyan-600"></i>
-                        <div class="mt-3 text-sm font-semibold text-slate-900">{{ __('admin.login.card_brand_title') }}</div>
-                        <div class="mt-1 text-xs leading-5 text-slate-500">{{ __('admin.login.card_brand_desc') }}</div>
-                    </div>
-                    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                        <i data-lucide="clipboard-list" class="h-5 w-5 text-slate-700"></i>
-                        <div class="mt-3 text-sm font-semibold text-slate-900">{{ __('admin.login.card_audit_title') }}</div>
-                        <div class="mt-1 text-xs leading-5 text-slate-500">{{ __('admin.login.card_audit_desc') }}</div>
-                    </div>
+            <div class="mt-14 grid max-w-2xl gap-3 sm:grid-cols-3">
+                <div class="signal-pill animate-in animate-delay-1 rounded-2xl px-5 py-4 backdrop-blur-xl">
+                    <div class="text-2xl font-semibold text-slate-950">GEO</div>
+                    <div class="mt-1 text-xs text-slate-500">{{ $copy['metricGeo'] }}</div>
                 </div>
-
-                <div class="rounded-xl border border-blue-100 bg-blue-50/70 px-4 py-3 text-sm leading-6 text-blue-900">
-                    {{ __('admin.login.security_note') }}
+                <div class="signal-pill animate-in animate-delay-2 rounded-2xl px-5 py-4 backdrop-blur-xl">
+                    <div class="text-2xl font-semibold text-slate-950">RAG</div>
+                    <div class="mt-1 text-xs text-slate-500">{{ $copy['metricRag'] }}</div>
+                </div>
+                <div class="signal-pill animate-in animate-delay-3 rounded-2xl px-5 py-4 backdrop-blur-xl">
+                    <div class="text-2xl font-semibold text-slate-950">SYNC</div>
+                    <div class="mt-1 text-xs text-slate-500">{{ $copy['metricSync'] }}</div>
                 </div>
             </div>
-        </section>
+        </div>
+    </section>
 
-        <section class="flex min-h-[680px] flex-col bg-white">
-            <div class="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-4 sm:px-7">
-                <a href="{{ url('/') }}" class="inline-flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm font-medium text-slate-500 transition hover:bg-slate-50 hover:text-slate-900">
-                    <i data-lucide="arrow-left" class="h-4 w-4"></i>
-                    {{ __('admin.login.back_home') }}
-                </a>
-                <select onchange="if (this.value) window.location.href=this.value" class="h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 shadow-sm transition hover:border-slate-300 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20" aria-label="{{ __('admin.login.language_label') }}">
-                    @foreach ($localeOptions as $localeCode => $localeLabel)
-                        <option value="{{ route('admin.locale.switch', ['locale' => $localeCode]) }}" @selected(app()->getLocale() === $localeCode)>
-                            {{ $localeLabel }}
-                        </option>
-                    @endforeach
-                </select>
+    <section class="relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-100 px-6 py-10">
+        <div class="pointer-events-none absolute left-1/2 top-16 h-72 w-72 -translate-x-1/2 rounded-full bg-blue-100/70 blur-3xl"></div>
+        <div class="pointer-events-none absolute bottom-10 right-10 h-52 w-52 rounded-full bg-white/80 blur-3xl"></div>
+
+        <div class="absolute right-6 top-6">
+            <select onchange="if (this.value) window.location.href=this.value"
+                    class="h-10 rounded-lg border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-blue-500/20"
+                    aria-label="{{ __('admin.login.language_label') }}">
+                @foreach ($localeOptions as $localeCode => $localeLabel)
+                    <option value="{{ route('admin.locale.switch', ['locale' => $localeCode]) }}" @selected(app()->getLocale() === $localeCode)>
+                        {{ $localeLabel }}
+                    </option>
+                @endforeach
+            </select>
+        </div>
+
+        <div class="login-stage relative w-full max-w-[430px]">
+            <div class="mb-10 text-center lg:hidden">
+                <p class="text-xs font-semibold uppercase tracking-[0.22em] text-blue-600">{{ $copy['eyebrow'] }}</p>
+                <h1 class="mt-4 text-5xl font-semibold tracking-tight text-slate-950">{{ $copy['heroTitle'] }}</h1>
+                <p class="mt-4 text-sm text-slate-500">{{ $copy['subtitle'] }}</p>
             </div>
 
-            <div class="flex flex-1 items-center justify-center px-5 py-8 sm:px-8">
-                <div class="w-full max-w-sm">
-                    <div class="mb-8">
-                        <div class="mb-6 flex h-14 w-14 items-center justify-center rounded-2xl border border-blue-100 bg-blue-50 text-blue-700 shadow-sm">
-                            <i data-lucide="scan-face" class="h-7 w-7"></i>
+            <div class="login-surface relative rounded-[1.75rem] border border-white/80 p-7 backdrop-blur-xl sm:p-8">
+                <div class="mb-8">
+                    <p class="text-sm font-medium text-blue-600">{{ $copy['eyebrow'] }}</p>
+                    <h2 class="mt-3 text-4xl font-semibold tracking-tight text-slate-950">{{ $copy['loginHeading'] }}</h2>
+                </div>
+
+                @if (session('message'))
+                    <div class="mb-5 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                        {{ session('message') }}
+                    </div>
+                @endif
+
+                @if ($errors->any())
+                    <div class="mb-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+                        {{ $errors->first() }}
+                    </div>
+                @endif
+
+                <form method="POST" action="{{ route('admin.login.attempt') }}" class="space-y-5">
+                    @csrf
+
+                    <div>
+                        <label for="username" class="sr-only">{{ $copy['username'] }}</label>
+                        <div class="login-input relative rounded-lg border border-slate-200">
+                            <i data-lucide="user-round" class="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"></i>
+                            <input type="text" id="username" name="username" required value="{{ old('username') }}"
+                                   class="block h-[60px] w-full rounded-lg border-0 bg-transparent pl-11 pr-4 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-500/20"
+                                   placeholder="{{ $copy['username'] }}" autocomplete="username" autofocus>
                         </div>
-                        <p class="text-sm font-semibold uppercase tracking-[0.2em] text-blue-600">{{ __('admin.login.panel_eyebrow') }}</p>
-                        <h1 class="mt-3 text-3xl font-semibold tracking-tight text-slate-950">{{ __('admin.login.title') }}</h1>
-                        <p class="mt-3 text-sm leading-6 text-slate-500">{{ __('admin.login.panel_desc') }}</p>
                     </div>
 
-                    @if (session('message'))
-                        <div class="mb-5 flex gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-                            <i data-lucide="circle-check" class="mt-0.5 h-4 w-4 shrink-0"></i>
-                            <span>{{ session('message') }}</span>
+                    <div>
+                        <label for="password" class="sr-only">{{ $copy['password'] }}</label>
+                        <div class="login-input relative rounded-lg border border-slate-200">
+                            <i data-lucide="lock-keyhole" class="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"></i>
+                            <input type="password" id="password" name="password" required
+                                   class="block h-[60px] w-full rounded-lg border-0 bg-transparent pl-11 pr-12 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-500/20"
+                                   placeholder="{{ $copy['password'] }}" autocomplete="current-password">
+                            <button type="button"
+                                    class="absolute right-3 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                                    data-password-toggle
+                                    aria-label="{{ __('admin.login.password_toggle') }}">
+                                <i data-lucide="eye" class="h-4 w-4" data-password-toggle-icon></i>
+                            </button>
                         </div>
-                    @endif
+                    </div>
 
-                    @if ($errors->any())
-                        <div class="mb-5 flex gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                            <i data-lucide="circle-alert" class="mt-0.5 h-4 w-4 shrink-0"></i>
-                            <span>{{ $errors->first() }}</span>
-                        </div>
-                    @endif
+                    <input type="hidden" name="remember" value="0">
+                    <label class="flex items-center justify-between px-1 text-sm text-slate-500">
+                        <span>{{ $copy['remember'] }}</span>
+                        <input type="checkbox" name="remember" value="1" checked class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                    </label>
 
-                    <form method="POST" action="{{ route('admin.login.attempt') }}" class="space-y-5">
-                        @csrf
-                        <div>
-                            <label for="username" class="mb-2 block text-sm font-semibold text-slate-700">{{ __('admin.login.username') }}</label>
-                            <div class="relative">
-                                <i data-lucide="user-round" class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"></i>
-                                <input type="text" id="username" name="username" required value="{{ old('username') }}"
-                                       class="block h-12 w-full rounded-xl border border-slate-300 bg-white pl-10 pr-3 text-sm text-slate-900 shadow-sm transition placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-4 focus:ring-blue-500/10"
-                                       placeholder="{{ __('admin.login.username_placeholder') }}" autocomplete="username" autofocus>
-                            </div>
-                        </div>
+                    <button type="submit"
+                            class="flex h-14 w-full items-center justify-center rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white shadow-sm shadow-blue-600/20 transition hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-500/20">
+                        {{ $copy['submit'] }}
+                    </button>
+                </form>
 
-                        <div>
-                            <label for="password" class="mb-2 block text-sm font-semibold text-slate-700">{{ __('admin.login.password') }}</label>
-                            <div class="relative">
-                                <i data-lucide="lock-keyhole" class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"></i>
-                                <input type="password" id="password" name="password" required
-                                       class="block h-12 w-full rounded-xl border border-slate-300 bg-white pl-10 pr-11 text-sm text-slate-900 shadow-sm transition placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-4 focus:ring-blue-500/10"
-                                       placeholder="{{ __('admin.login.password_placeholder') }}" autocomplete="current-password">
-                                <button type="button" class="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700" data-password-toggle aria-label="{{ __('admin.login.password_toggle') }}">
-                                    <i data-lucide="eye" class="h-4 w-4" data-password-toggle-icon></i>
-                                </button>
-                            </div>
-                        </div>
-
-                        <input type="hidden" name="remember" value="0">
-                        <label class="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                            <span class="flex items-center gap-2">
-                                <input type="checkbox" name="remember" value="1" checked class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500">
-                                <span>{{ __('admin.login.remember_30_days') }}</span>
-                            </span>
-                        </label>
-
-                        <button type="submit" class="group inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white shadow-lg shadow-blue-600/18 transition hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-500/20 active:translate-y-px">
-                            {{ __('admin.login.submit') }}
-                            <i data-lucide="arrow-right" class="h-4 w-4 transition group-hover:translate-x-0.5"></i>
-                        </button>
-                    </form>
-                </div>
+                <p class="mt-8 text-center text-xs text-slate-400">{{ $loginProductName }}</p>
             </div>
-        </section>
-    </div>
+        </div>
+    </section>
 </main>
 <script>
     document.addEventListener('DOMContentLoaded', function () {

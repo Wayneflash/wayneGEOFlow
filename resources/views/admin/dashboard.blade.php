@@ -156,11 +156,11 @@
 
         <section class="rounded-2xl border border-slate-200 bg-white/95 p-2 shadow-sm backdrop-blur" data-dashboard-tabs>
             <div class="grid gap-2 md:grid-cols-4">
-                <button type="button" class="admin-tab-button is-active" data-dashboard-tab="guide" aria-pressed="true">
+                <button type="button" class="admin-tab-button" data-dashboard-tab="guide" aria-pressed="false">
                     <i data-lucide="mouse-pointer-click" class="h-4 w-4"></i>
                     新手常用
                 </button>
-                <button type="button" class="admin-tab-button" data-dashboard-tab="overview" aria-pressed="false">
+                <button type="button" class="admin-tab-button is-active" data-dashboard-tab="overview" aria-pressed="true">
                     <i data-lucide="chart-no-axes-combined" class="h-4 w-4"></i>
                     生产概览
                 </button>
@@ -175,7 +175,7 @@
             </div>
         </section>
 
-        <section class="hidden grid gap-6 xl:grid-cols-[minmax(0,1.45fr)_minmax(22rem,0.8fr)]" data-dashboard-panel="overview" aria-hidden="true">
+        <section class="grid gap-6 xl:grid-cols-[minmax(0,1.45fr)_minmax(22rem,0.8fr)]" data-dashboard-panel="overview" aria-hidden="false">
             <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div class="flex items-start justify-between gap-4">
                     <div>
@@ -217,7 +217,7 @@
             </div>
         </section>
 
-        <section class="hidden grid gap-4 xl:grid-cols-3" data-dashboard-panel="overview" aria-hidden="true">
+        <section class="grid gap-4 xl:grid-cols-3" data-dashboard-panel="overview" aria-hidden="false">
             @foreach ($healthCards as $card)
                 <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm hover:shadow-md transition-shadow">
                     <div class="flex items-start justify-between gap-4">
@@ -307,7 +307,7 @@
             </div>
         </section>
 
-        <section class="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden" data-dashboard-panel="guide" aria-hidden="false">
+        <section class="hidden rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden" data-dashboard-panel="guide" aria-hidden="true">
             <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-gradient-to-r from-blue-50/50 to-white">
                 <div class="flex items-center gap-3">
                     <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-100 text-blue-600">
@@ -381,7 +381,7 @@
 
                 const selected = dashboardTabs.some((tab) => tab.dataset.dashboardTab === nextTab)
                     ? nextTab
-                    : 'guide';
+                    : 'overview';
 
                 dashboardTabs.forEach((tab) => {
                     const active = tab.dataset.dashboardTab === selected;
@@ -400,10 +400,10 @@
             };
 
             dashboardTabs.forEach((tab) => {
-                tab.addEventListener('click', () => activateDashboardTab(tab.dataset.dashboardTab || 'guide'));
+                tab.addEventListener('click', () => activateDashboardTab(tab.dataset.dashboardTab || 'overview'));
             });
 
-            activateDashboardTab(sessionStorage.getItem(dashboardTabStorageKey) || 'guide');
+            activateDashboardTab(sessionStorage.getItem(dashboardTabStorageKey) || 'overview');
 
             const boot = () => {
             const echarts = window.echarts;

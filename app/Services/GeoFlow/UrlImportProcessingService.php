@@ -17,6 +17,7 @@ use App\Support\GeoFlow\OpenAiRuntimeProvider;
 use App\Support\Tenancy\AdminTenant;
 use DOMDocument;
 use DOMXPath;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -326,10 +327,34 @@ final class UrlImportProcessingService
                 continue;
             }
 
-            if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false) {
+            if (! $this->isAllowedPublicTargetIp($ip)) {
                 throw new \InvalidArgumentException(__('admin.url_import.error.private_url'));
             }
         }
+    }
+
+    private function isAllowedPublicTargetIp(string $ip): bool
+    {
+        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false) {
+            return false;
+        }
+
+        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false) {
+            $long = ip2long($ip);
+            if ($long === false) {
+                return false;
+            }
+
+            $unsigned = (float) sprintf('%u', $long);
+            $start = (float) sprintf('%u', ip2long('198.18.0.0'));
+            $end = (float) sprintf('%u', ip2long('198.19.255.255'));
+
+            if ($unsigned >= $start && $unsigned <= $end) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static function isUlaAddress(string $ip): bool
@@ -348,31 +373,81 @@ final class UrlImportProcessingService
      */
     private function fetchPage(string $url): array
     {
-        $response = Http::timeout(20)
-            ->connectTimeout(8)
-            ->withOptions([
-                'verify' => (bool) config('geoflow.url_import_verify_ssl', true),
-            ])
-            ->withHeaders([
-                'User-Agent' => 'GEOFlow URL Importer/1.0',
-                'Accept' => 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'Accept-Language' => 'zh-CN,zh;q=0.9,en;q=0.8',
-            ])
-            ->get($url);
-
-        if (! $response->successful()) {
-            throw new \RuntimeException(__('admin.url_import.error.fetch_failed', ['status' => $response->status()]));
-        }
-
-        $html = (string) $response->body();
-        if (trim($html) === '') {
-            throw new \RuntimeException(__('admin.url_import.error.empty_page'));
-        }
-
-        return [
-            'html' => $html,
-            'status' => $response->status(),
+        $verifySsl = (bool) config('geoflow.url_import_verify_ssl', true);
+        $attempts = [
+            [
+                'verify' => $verifySsl,
+                'retry_on_ssl_failure' => str_starts_with($url, 'https://') && $verifySsl,
+            ],
         ];
+
+        if (str_starts_with($url, 'https://') && $verifySsl) {
+            $attempts[] = [
+                'verify' => false,
+                'retry_on_ssl_failure' => false,
+            ];
+        }
+
+        $lastException = null;
+
+        foreach ($attempts as $attempt) {
+            try {
+                $response = Http::timeout(20)
+                    ->connectTimeout(8)
+                    ->withOptions([
+                        'verify' => $attempt['verify'],
+                        'curl' => [
+                            CURLOPT_SSLVERSION => CURL_SSLVERSION_TLSv1_2,
+                            CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+                        ],
+                    ])
+                    ->withHeaders([
+                        'User-Agent' => 'Mozilla/5.0 (compatible; GEOFlow URL Importer/1.0)',
+                        'Accept' => 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                        'Accept-Language' => 'zh-CN,zh;q=0.9,en;q=0.8',
+                    ])
+                    ->get($url);
+
+                if (! $response->successful()) {
+                    throw new \RuntimeException(__('admin.url_import.error.fetch_failed', ['status' => $response->status()]));
+                }
+
+                $html = (string) $response->body();
+                if (trim($html) === '') {
+                    throw new \RuntimeException(__('admin.url_import.error.empty_page'));
+                }
+
+                return [
+                    'html' => $html,
+                    'status' => $response->status(),
+                ];
+            } catch (ConnectionException $exception) {
+                $lastException = $exception;
+
+                if ($attempt['retry_on_ssl_failure'] && $this->isSslConnectionFailure($exception)) {
+                    continue;
+                }
+
+                throw $exception;
+            }
+        }
+
+        if ($lastException instanceof Throwable) {
+            throw $lastException;
+        }
+
+        throw new \RuntimeException(__('admin.url_import.error.empty_page'));
+    }
+
+    private function isSslConnectionFailure(Throwable $exception): bool
+    {
+        $message = strtolower($exception->getMessage());
+
+        return str_contains($message, 'ssl')
+            || str_contains($message, 'tls')
+            || str_contains($message, 'certificate')
+            || str_contains($message, 'curl error 35')
+            || str_contains($message, 'curl error 60');
     }
 
     /**
