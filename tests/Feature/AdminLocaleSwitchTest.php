@@ -32,6 +32,17 @@ class AdminLocaleSwitchTest extends TestCase
             ->assertSessionHas('locale', 'zh_CN');
     }
 
+    public function test_login_page_renders_selected_language_copy(): void
+    {
+        $this->withSession(['locale' => 'en'])
+            ->get(route('admin.login'))
+            ->assertOk()
+            ->assertSee('Admin Login')
+            ->assertSee('A unified entry for multi-tenant content operations')
+            ->assertSee('Tenant isolation')
+            ->assertDontSee('登录前可先切换语言');
+    }
+
     public function test_admin_dashboard_renders_english_core_copy(): void
     {
         $admin = Admin::query()->create([

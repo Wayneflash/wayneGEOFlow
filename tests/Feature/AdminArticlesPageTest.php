@@ -229,7 +229,7 @@ class AdminArticlesPageTest extends TestCase
             ->assertSee('article-preview-content', false);
     }
 
-    public function test_admin_brand_stays_shenlian_geo_when_public_site_name_changes(): void
+    public function test_admin_brand_stays_neutral_when_public_site_name_changes_without_logo(): void
     {
         $admin = Admin::query()->create([
             'username' => 'admin_brand_admin',
@@ -248,7 +248,7 @@ class AdminArticlesPageTest extends TestCase
         $this->actingAs($admin, 'admin')
             ->get(route('admin.dashboard'))
             ->assertOk()
-            ->assertSee('深联云GEO')
+            ->assertSee(__('admin.brand.console'))
             ->assertDontSee('Public Frontend Name');
     }
 }

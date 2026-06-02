@@ -24,6 +24,7 @@ use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 return Application::configure(basePath: dirname(__DIR__))
@@ -57,6 +58,21 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        $exceptions->respond(function (Response $response) {
+            if ($response->getStatusCode() !== 419 || request()->is('api/*')) {
+                return $response;
+            }
+
+            $adminPrefix = trim((string) config('geoflow.admin_base_path', '/geo_admin'), '/');
+            if (! request()->is($adminPrefix) && ! request()->is($adminPrefix.'/*')) {
+                return $response;
+            }
+
+            return redirect()
+                ->route('admin.login')
+                ->withErrors(['username' => __('admin.login.error.page_expired')]);
+        });
+
         /**
          * 后台 firstOrFail 友好错误页：
          * Laravel 渲染流程里 ModelNotFoundException 可能会先包装为 NotFoundHttpException，

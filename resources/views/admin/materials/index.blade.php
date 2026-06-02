@@ -52,7 +52,7 @@
     <div class="space-y-6">
         <section class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div>
-                <div class="text-sm font-semibold text-slate-500">深联云GEO</div>
+                <div class="text-sm font-semibold text-slate-500">GEO OPERATIONS</div>
                 <h1 class="mt-2 text-3xl font-semibold tracking-tight text-slate-950">{{ __('admin.materials.heading') }}</h1>
                 <p class="mt-2 max-w-3xl text-sm leading-6 text-slate-600">{{ __('admin.materials.subtitle') }}</p>
             </div>

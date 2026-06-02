@@ -77,8 +77,8 @@
                             <i data-lucide="cpu" class="h-5 w-5 text-blue-500"></i>
                         </div>
                         <div>
-                            <div class="text-xs font-medium text-blue-500 uppercase tracking-widest">深联云GEO 控制台</div>
-                            <h2 class="text-xl font-bold text-slate-900 tracking-tight">深联云GEO 运营驾驶舱</h2>
+                            <div class="text-xs font-medium text-blue-500 uppercase tracking-widest">GEO OPERATIONS</div>
+                            <h2 class="text-xl font-bold text-slate-900 tracking-tight">内容运营首页</h2>
                         </div>
                     </div>
                     <div class="flex items-center gap-4">
@@ -95,7 +95,7 @@
                 </div>
                 <div class="grid gap-8 xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-center">
                     <div>
-                        <p class="text-sm text-slate-500 max-w-2xl">围绕"知识沉淀、内容生产、审核发布、AI 收录"建立可观测闭环，让团队一眼判断今天的 GEO 内容资产是否在稳定增长。</p>
+                        <p class="text-sm text-slate-500 max-w-2xl">围绕知识沉淀、内容生产、审核发布和分发触达建立工作闭环，让团队先处理最常用、最影响结果的事项。</p>
                         <div class="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                             @foreach ($signalCards as $card)
                                 <div class="group relative rounded-xl border border-slate-200 bg-slate-50/80 p-4 transition-all hover:border-blue-200 hover:bg-blue-50/50 hover:shadow-md hover:shadow-blue-500/5">

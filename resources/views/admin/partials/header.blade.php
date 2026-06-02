@@ -1,7 +1,11 @@
 @php
     $currentAdmin = auth('admin')->user();
-    $adminBrandName = $adminBrandName ?? \App\Support\AdminWeb::siteName();
-    $adminBrandLogo = \App\Support\Site\SiteSettingsBag::get('site_logo');
+    $tenantBrandName = trim(\App\Support\Site\SiteSettingsBag::get('site_name'));
+    $adminBrandLogo = trim(\App\Support\Site\SiteSettingsBag::get('site_logo'));
+    $adminBrandName = $adminBrandLogo !== '' && $tenantBrandName !== ''
+        ? $tenantBrandName
+        : __('admin.brand.console');
+    $localeOptions = \App\Support\AdminWeb::supportedLocales();
     $isSuperAdmin = $currentAdmin && method_exists($currentAdmin, 'isSuperAdmin') && $currentAdmin->isSuperAdmin();
     $adminRoleLabel = $isSuperAdmin ? __('admin.header.super_admin') : __('admin.header.admin');
     $updateNotification = is_array($adminUpdateNotificationPayload ?? null) ? $adminUpdateNotificationPayload : [];
@@ -227,7 +231,7 @@
             <div class="hidden items-center rounded-lg border border-slate-200 bg-white px-2 py-1 shadow-sm md:flex">
                 <i data-lucide="languages" class="mr-1.5 h-4 w-4 text-slate-400"></i>
                 <select class="bg-transparent pr-1 text-sm font-medium text-slate-700 outline-none" aria-label="{{ __('admin.header.language') }}" onchange="if (this.value) window.location.href = this.value">
-                    @foreach (['zh_CN' => '简体中文', 'en' => 'English'] as $localeCode => $localeLabel)
+                    @foreach ($localeOptions as $localeCode => $localeLabel)
                         <option value="{{ route('admin.locale.switch', ['locale' => $localeCode]) }}" @selected(app()->getLocale() === $localeCode)>{{ $localeLabel }}</option>
                     @endforeach
                 </select>

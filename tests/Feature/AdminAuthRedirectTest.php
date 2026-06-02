@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Admin;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Route;
 use Tests\TestCase;
 
 class AdminAuthRedirectTest extends TestCase
@@ -34,6 +35,17 @@ class AdminAuthRedirectTest extends TestCase
                 'password' => 'secret-123',
             ])
             ->assertRedirect($intended);
+    }
+
+    public function test_expired_admin_login_form_redirects_back_to_login_with_message(): void
+    {
+        Route::middleware('web')->get('/geo_admin/_test_419', fn () => abort(419));
+
+        $this->get('/geo_admin/_test_419')
+            ->assertRedirect(route('admin.login'))
+            ->assertSessionHasErrors([
+                'username' => __('admin.login.error.page_expired'),
+            ]);
     }
 
     private function createAdmin(): Admin

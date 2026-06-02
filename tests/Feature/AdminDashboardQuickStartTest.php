@@ -26,8 +26,8 @@ class AdminDashboardQuickStartTest extends TestCase
 
         $response
             ->assertOk()
-            ->assertSee('深联云GEO 控制台')
-            ->assertSee('深联云GEO 运营驾驶舱')
+            ->assertSee('GEO OPERATIONS')
+            ->assertSee('内容运营首页')
             ->assertSee('内容生产趋势')
             ->assertSee('生产漏斗')
             ->assertSee('任务与队列')
