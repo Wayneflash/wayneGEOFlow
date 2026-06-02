@@ -1,96 +1,124 @@
 @extends('admin.layouts.app')
 
 @section('content')
-    <div class="px-4 sm:px-0">
-        <div class="mb-8">
-            <div class="flex items-center justify-between">
+    @php
+        $categories = is_array($categories ?? null) ? $categories : [];
+    @endphp
+    <div class="space-y-6">
+        <div class="admin-panel">
+            <div class="admin-panel-header">
                 <div>
-                    <h1 class="text-2xl font-bold text-gray-900">{{ __('admin.categories.heading') }}</h1>
-                    <p class="mt-1 text-sm text-gray-600">{{ __('admin.categories.subtitle') }}</p>
+                    <div class="text-xs font-medium uppercase tracking-widest text-slate-400">{{ __('admin.categories.eyebrow') }}</div>
+                    <h1 class="mt-1 text-xl font-semibold tracking-tight text-slate-950">{{ __('admin.categories.heading') }}</h1>
+                    <p class="mt-1 text-sm text-slate-500">{{ __('admin.categories.subtitle') }}</p>
                 </div>
-                <div class="flex space-x-3">
-                    <a href="{{ route('admin.categories.create') }}" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">
-                        <i data-lucide="plus" class="w-4 h-4 mr-2"></i>
-                        {{ __('admin.categories.add') }}
-                    </a>
-                    <a href="{{ route('admin.articles.index') }}" class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
-                        <i data-lucide="arrow-left" class="w-4 h-4 mr-2"></i>
+                <div class="flex flex-wrap items-center gap-2">
+                    <a href="{{ route('admin.articles.index') }}" class="admin-btn-secondary">
+                        <i data-lucide="arrow-left" class="h-4 w-4"></i>
                         {{ __('admin.categories.back_to_articles') }}
+                    </a>
+                    <a href="{{ route('admin.categories.create') }}" class="admin-btn-primary">
+                        <i data-lucide="plus" class="h-4 w-4"></i>
+                        {{ __('admin.categories.add') }}
                     </a>
                 </div>
             </div>
         </div>
-        <div class="bg-white shadow rounded-lg">
-            <div class="px-6 py-4 border-b border-gray-200">
-                <h3 class="text-lg font-medium text-gray-900">{{ __('admin.categories.list_title') }}</h3>
-            </div>
-            <div class="overflow-hidden">
-                @if (empty($categories))
-                    <div class="px-6 py-12 text-center">
-                        <i data-lucide="folder-x" class="w-12 h-12 mx-auto text-gray-400 mb-4"></i>
-                        <h3 class="text-lg font-medium text-gray-900 mb-2">{{ __('admin.categories.empty') }}</h3>
-                        <p class="text-gray-500 mb-4">{{ __('admin.categories.empty_desc') }}</p>
-                        <a href="{{ route('admin.categories.create') }}" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">
-                            <i data-lucide="plus" class="w-4 h-4 mr-2"></i>
-                            {{ __('admin.categories.add_first') }}
-                        </a>
-                    </div>
-                @else
-                    <table class="min-w-full divide-y divide-gray-200">
-                        <thead class="bg-gray-50">
-                        <tr>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ __('admin.categories.column_info') }}</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ __('admin.categories.column_article_count') }}</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ __('admin.categories.column_sort_order') }}</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ __('admin.categories.column_created_at') }}</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ __('admin.tasks.column.actions') }}</th>
-                        </tr>
-                        </thead>
-                        <tbody class="bg-white divide-y divide-gray-200">
-                        @foreach ($categories as $category)
-                            @php
-                                $articleCount = (int) ($category['article_count'] ?? 0);
-                            @endphp
-                            <tr class="hover:bg-gray-50">
-                                <td class="px-6 py-4">
-                                    <div class="text-sm font-medium text-gray-900">{{ $category['name'] }}</div>
-                                    <div class="text-xs text-gray-500 mt-1">{{ __('admin.categories.url_label') }}: {{ $category['slug'] }}</div>
-                                    @if ((string) ($category['description'] ?? '') !== '')
-                                        <div class="text-xs text-gray-500 mt-1">{{ $category['description'] }}</div>
-                                    @endif
-                                </td>
-                                <td class="px-6 py-4 text-sm text-gray-700">
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">{{ __('admin.categories.article_count_badge', ['count' => $articleCount]) }}</span>
-                                </td>
-                                <td class="px-6 py-4 text-sm text-gray-700">{{ (int) ($category['sort_order'] ?? 0) }}</td>
-                                <td class="px-6 py-4 text-sm text-gray-500">{{ !empty($category['created_at']) ? \Illuminate\Support\Carbon::parse($category['created_at'])->format('Y-m-d H:i') : '-' }}</td>
-                                <td class="px-6 py-4 text-sm">
-                                    <div class="flex items-center gap-2">
-                                        <a href="{{ route('admin.categories.edit', ['categoryId' => (int) $category['id']]) }}" class="text-blue-600 hover:text-blue-800" title="{{ __('admin.button.edit') }}">
-                                            <i data-lucide="edit" class="w-4 h-4"></i>
-                                        </a>
 
-                                        @if ($articleCount === 0)
-                                            <form method="POST" action="{{ route('admin.categories.delete', ['categoryId' => (int) $category['id']]) }}" class="inline" onsubmit="return confirm(@js(__('admin.categories.confirm_delete')));">
-                                                @csrf
-                                                <button type="submit" class="text-red-600 hover:text-red-800" title="{{ __('admin.button.delete') }}">
-                                                    <i data-lucide="trash-2" class="w-4 h-4"></i>
-                                                </button>
-                                            </form>
-                                        @else
-                                            <span class="text-gray-400" title="{{ __('admin.categories.delete_disabled') }}">
-                                                <i data-lucide="lock" class="w-4 h-4"></i>
-                                            </span>
-                                        @endif
-                                    </div>
-                                </td>
+        <div class="admin-panel">
+            <div class="admin-panel-header">
+                <div>
+                    <h2 class="text-base font-semibold text-slate-950">{{ __('admin.categories.list_title') }}</h2>
+                    <p class="mt-1 text-sm text-slate-500">{{ __('admin.categories.list_subtitle') }}</p>
+                </div>
+                <div class="flex items-center gap-2 text-xs text-slate-500">
+                    <i data-lucide="folder-tree" class="h-4 w-4 text-slate-400"></i>
+                    {{ __('admin.categories.count', ['count' => count($categories)]) }}
+                </div>
+            </div>
+            @if (empty($categories))
+                <div class="px-6 py-16 text-center">
+                    <div class="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
+                        <i data-lucide="folder-x" class="h-6 w-6"></i>
+                    </div>
+                    <div class="mt-4 text-sm font-semibold text-slate-700">{{ __('admin.categories.empty') }}</div>
+                    <p class="mt-1 text-sm text-slate-500">{{ __('admin.categories.empty_desc') }}</p>
+                    <a href="{{ route('admin.categories.create') }}" class="admin-btn-primary mt-5">
+                        <i data-lucide="plus" class="h-4 w-4"></i>
+                        {{ __('admin.categories.add_first') }}
+                    </a>
+                </div>
+            @else
+                <div class="overflow-x-auto">
+                    <table class="admin-table">
+                        <thead>
+                            <tr>
+                                <th>{{ __('admin.categories.column_info') }}</th>
+                                <th>{{ __('admin.categories.column_article_count') }}</th>
+                                <th>{{ __('admin.categories.column_sort_order') }}</th>
+                                <th>{{ __('admin.categories.column_created_at') }}</th>
+                                <th class="text-right">{{ __('admin.tasks.column.actions') }}</th>
                             </tr>
-                        @endforeach
+                        </thead>
+                        <tbody>
+                            @foreach ($categories as $category)
+                                @php
+                                    $articleCount = (int) ($category['article_count'] ?? 0);
+                                @endphp
+                                <tr class="transition hover:bg-slate-50/70">
+                                    <td>
+                                        <div class="flex items-center gap-3">
+                                            <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+                                                <i data-lucide="folder" class="h-4 w-4"></i>
+                                            </span>
+                                            <div class="min-w-0">
+                                                <div class="text-sm font-semibold text-slate-900">{{ $category['name'] }}</div>
+                                                <div class="mt-0.5 inline-flex items-center gap-1 text-xs text-slate-500">
+                                                    <i data-lucide="link-2" class="h-3 w-3"></i>
+                                                    <span>{{ __('admin.categories.url_label') }}: {{ $category['slug'] }}</span>
+                                                </div>
+                                                @if ((string) ($category['description'] ?? '') !== '')
+                                                    <div class="mt-0.5 text-xs text-slate-500">{{ $category['description'] }}</div>
+                                                @endif
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <span class="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-blue-700">
+                                            <i data-lucide="file-text" class="h-3 w-3"></i>
+                                            {{ __('admin.categories.article_count_badge', ['count' => $articleCount]) }}
+                                        </span>
+                                    </td>
+                                    <td class="text-sm text-slate-600">
+                                        <span class="inline-flex items-center justify-center rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700">{{ (int) ($category['sort_order'] ?? 0) }}</span>
+                                    </td>
+                                    <td class="text-sm text-slate-600">{{ !empty($category['created_at']) ? \Illuminate\Support\Carbon::parse($category['created_at'])->format('Y-m-d H:i') : '-' }}</td>
+                                    <td class="text-right">
+                                        <div class="inline-flex items-center gap-2">
+                                            <a href="{{ route('admin.categories.edit', ['categoryId' => (int) $category['id']]) }}" class="admin-icon-btn h-8 w-8" title="{{ __('admin.button.edit') }}" aria-label="{{ __('admin.button.edit') }}">
+                                                <i data-lucide="pencil" class="h-4 w-4"></i>
+                                            </a>
+
+                                            @if ($articleCount === 0)
+                                                <form method="POST" action="{{ route('admin.categories.delete', ['categoryId' => (int) $category['id']]) }}" class="inline" onsubmit="return confirm(@js(__('admin.categories.confirm_delete')));">
+                                                    @csrf
+                                                    <button type="submit" class="admin-icon-btn h-8 w-8 text-red-600 hover:bg-red-50 hover:text-red-700" title="{{ __('admin.button.delete') }}" aria-label="{{ __('admin.button.delete') }}">
+                                                        <i data-lucide="trash-2" class="h-4 w-4"></i>
+                                                    </button>
+                                                </form>
+                                            @else
+                                                <span class="admin-icon-btn h-8 w-8 cursor-not-allowed text-slate-300" title="{{ __('admin.categories.delete_disabled') }}">
+                                                    <i data-lucide="lock" class="h-4 w-4"></i>
+                                                </span>
+                                            @endif
+                                        </div>
+                                    </td>
+                                </tr>
+                            @endforeach
                         </tbody>
                     </table>
-                @endif
-            </div>
+                </div>
+            @endif
         </div>
     </div>
 @endsection
-
