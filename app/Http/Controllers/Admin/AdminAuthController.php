@@ -67,6 +67,15 @@ class AdminAuthController extends Controller
 
         /** @var Admin $admin */
         $admin = Auth::guard('admin')->user();
+        if ($admin->isExpired()) {
+            Auth::guard('admin')->logout();
+            $request->session()->regenerateToken();
+
+            return back()->withErrors([
+                'username' => __('admin.login.error.account_expired'),
+            ])->onlyInput('username');
+        }
+
         $request->session()->regenerate();
         $this->adminLoginLockService->clearFailedAttempts((string) $admin->username);
 

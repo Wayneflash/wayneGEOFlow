@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Admin;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Route;
 use Tests\TestCase;
 
@@ -46,6 +47,28 @@ class AdminAuthRedirectTest extends TestCase
             ->assertSessionHasErrors([
                 'username' => __('admin.login.error.page_expired'),
             ]);
+    }
+
+    public function test_expired_admin_cannot_login(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-06-03 10:00:00'));
+
+        $admin = $this->createAdmin();
+        $admin->forceFill(['expires_at' => now()->subDay()])->save();
+
+        $this->from(route('admin.login'))
+            ->post(route('admin.login.attempt'), [
+                'username' => 'admin',
+                'password' => 'secret-123',
+            ])
+            ->assertRedirect(route('admin.login'))
+            ->assertSessionHasErrors([
+                'username' => __('admin.login.error.account_expired'),
+            ]);
+
+        $this->assertGuest('admin');
+
+        Carbon::setTestNow();
     }
 
     private function createAdmin(): Admin

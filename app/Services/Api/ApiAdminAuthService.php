@@ -65,6 +65,10 @@ class ApiAdminAuthService
             throw new ApiException('invalid_credentials', '用户名或密码错误，或账号已被停用', 401);
         }
 
+        if ($admin->isExpired()) {
+            throw new ApiException('account_expired', '用户已经过期，请联系管理员续期', 403);
+        }
+
         $tokenResult = DB::transaction(function () use ($admin, $username, $throttleKey) {
             $admin->forceFill(['last_login' => now()])->save();
             $this->loginLockService->clearFailedAttempts($username);

@@ -35,6 +35,7 @@ class Admin extends Authenticatable
         'status',
         'created_by',
         'last_login',
+        'expires_at',
         'welcome_seen_version',
         'welcome_dismissed_at',
     ];
@@ -43,6 +44,7 @@ class Admin extends Authenticatable
     {
         return [
             'last_login' => 'datetime',
+            'expires_at' => 'datetime',
             'tenant_id' => 'integer',
             'welcome_dismissed_at' => 'datetime',
             'created_by' => 'integer',
@@ -82,6 +84,11 @@ class Admin extends Authenticatable
         $role = trim(strtolower((string) ($this->role ?? '')));
 
         return in_array($role, ['super_admin', 'superadmin'], true);
+    }
+
+    public function isExpired(): bool
+    {
+        return $this->expires_at !== null && $this->expires_at->isPast();
     }
 
     public function creator(): BelongsTo

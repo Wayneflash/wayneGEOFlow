@@ -93,6 +93,7 @@
                             <th>{{ __('admin.admin_users.column_account') }}</th>
                             <th>{{ __('admin.admin_users.column_role') }}</th>
                             <th>{{ __('admin.admin_users.column_status') }}</th>
+                            <th>{{ __('admin.admin_users.column_expires_at') }}</th>
                             <th>{{ __('admin.admin_users.column_last_login') }}</th>
                             <th>{{ __('admin.admin_users.column_created') }}</th>
                             <th>{{ __('admin.admin_users.column_activity') }}</th>
@@ -130,7 +131,12 @@
                                     @endif
                                 </td>
                                 <td>
-                                    @if ($admin['status'] === 'active')
+                                    @if ($admin['is_expired'])
+                                        <span class="inline-flex items-center gap-1 rounded-full border border-red-200 bg-red-50 px-2.5 py-0.5 text-xs font-semibold text-red-700">
+                                            <span class="h-1.5 w-1.5 rounded-full bg-red-500"></span>
+                                            {{ __('admin.admin_users.status_expired') }}
+                                        </span>
+                                    @elseif ($admin['status'] === 'active')
                                         <span class="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">
                                             <span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
                                             {{ __('admin.admin_users.status_active') }}
@@ -141,6 +147,9 @@
                                             {{ __('admin.admin_users.status_inactive') }}
                                         </span>
                                     @endif
+                                </td>
+                                <td class="text-sm text-slate-600">
+                                    {{ $admin['expires_at'] !== '' ? $admin['expires_at'] : __('admin.admin_users.no_expiry') }}
                                 </td>
                                 <td class="text-sm text-slate-600">
                                     {{ $admin['last_login'] !== '' ? $admin['last_login'] : __('admin.admin_users.none_last_login') }}
@@ -193,7 +202,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="7" class="px-6 py-16 text-center">
+                                <td colspan="8" class="px-6 py-16 text-center">
                                     <div class="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
                                         <i data-lucide="user-round-x" class="h-6 w-6"></i>
                                     </div>
@@ -243,6 +252,12 @@
                 <div class="admin-field">
                     <label for="email" class="admin-label">{{ __('admin.admin_users.field_email') }}</label>
                     <input type="email" name="email" id="email" class="admin-input" placeholder="{{ __('admin.admin_users.placeholder_email') }}" value="{{ old('email') }}">
+                </div>
+
+                <div class="admin-field">
+                    <label for="expires_at" class="admin-label">{{ __('admin.admin_users.field_expires_at') }}</label>
+                    <input type="date" name="expires_at" id="expires_at" class="admin-input" value="{{ old('expires_at', now()->addYear()->format('Y-m-d')) }}">
+                    <p class="mt-1 text-xs text-slate-500">{{ __('admin.admin_users.expires_at_help') }}</p>
                 </div>
 
                 <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
@@ -334,6 +349,12 @@
                     </select>
                 </div>
 
+                <div class="admin-field">
+                    <label for="edit_expires_at" class="admin-label">{{ __('admin.admin_users.field_expires_at') }}</label>
+                    <input type="date" name="expires_at" id="edit_expires_at" class="admin-input">
+                    <p class="mt-1 text-xs text-slate-500">{{ __('admin.admin_users.edit_expires_at_help') }}</p>
+                </div>
+
                 <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div class="admin-field">
                         <label for="edit_password" class="admin-label">{{ __('admin.admin_users.field_new_password') }}</label>
@@ -407,6 +428,7 @@
             document.getElementById('edit_username').value = admin.username || '';
             document.getElementById('edit_display_name').value = admin.display_name || '';
             document.getElementById('edit_email').value = admin.email || '';
+            document.getElementById('edit_expires_at').value = admin.expires_at_input || '';
             statusSelect.value = admin.status || 'active';
             statusSelect.disabled = isSelf;
             statusHidden.disabled = !isSelf;

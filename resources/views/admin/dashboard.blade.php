@@ -156,13 +156,13 @@
 
         <section class="rounded-2xl border border-slate-200 bg-white/95 p-2 shadow-sm backdrop-blur" data-dashboard-tabs>
             <div class="grid gap-2 md:grid-cols-4">
-                <button type="button" class="admin-tab-button" data-dashboard-tab="guide" aria-pressed="false">
-                    <i data-lucide="mouse-pointer-click" class="h-4 w-4"></i>
-                    新手常用
-                </button>
                 <button type="button" class="admin-tab-button is-active" data-dashboard-tab="overview" aria-pressed="true">
                     <i data-lucide="chart-no-axes-combined" class="h-4 w-4"></i>
                     生产概览
+                </button>
+                <button type="button" class="admin-tab-button" data-dashboard-tab="guide" aria-pressed="false">
+                    <i data-lucide="mouse-pointer-click" class="h-4 w-4"></i>
+                    新手常用
                 </button>
                 <button type="button" class="admin-tab-button" data-dashboard-tab="materials" aria-pressed="false">
                     <i data-lucide="database" class="h-4 w-4"></i>

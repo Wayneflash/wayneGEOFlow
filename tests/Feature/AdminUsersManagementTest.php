@@ -8,6 +8,7 @@ use App\Models\Tenant;
 use App\Support\Site\SiteSettingsBag;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
@@ -110,6 +111,37 @@ class AdminUsersManagementTest extends TestCase
         $this->assertSame('Tenant Editor', $tenant->name);
         $this->assertSame((int) $createdAdmin->id, (int) $tenant->owner_admin_id);
         $this->assertNotSame((int) $superAdmin->tenant_id, (int) $createdAdmin->tenant_id);
+    }
+
+    public function test_super_admin_can_create_standard_admin_with_expiry_date(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-06-03 10:00:00'));
+
+        $superAdmin = $this->createAdmin('root_admin', 'super_admin');
+
+        $this->actingAs($superAdmin, 'admin')
+            ->post(route('admin.admin-users.store'), [
+                'username' => 'tenant_expiring_editor',
+                'display_name' => 'Tenant Expiring Editor',
+                'email' => 'tenant-expiring-editor@example.com',
+                'expires_at' => '2026-12-31',
+                'password' => 'tenant-secret-123',
+                'confirm_password' => 'tenant-secret-123',
+            ])
+            ->assertRedirect(route('admin.admin-users.index'));
+
+        $createdAdmin = Admin::query()->where('username', 'tenant_expiring_editor')->firstOrFail();
+
+        $this->assertSame('2026-12-31 23:59:59', $createdAdmin->expires_at?->format('Y-m-d H:i:s'));
+
+        $this->actingAs($superAdmin, 'admin')
+            ->get(route('admin.admin-users.index'))
+            ->assertOk()
+            ->assertSee(__('admin.admin_users.add_admin'))
+            ->assertSee(__('admin.admin_users.column_expires_at'))
+            ->assertSee('2026-12-31 23:59:59');
+
+        Carbon::setTestNow();
     }
 
     public function test_super_admin_can_upload_tenant_logo_when_creating_standard_admin(): void

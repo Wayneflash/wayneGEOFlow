@@ -24,6 +24,8 @@ class AdminDashboardQuickStartTest extends TestCase
         $response = $this->actingAs($admin, 'admin')
             ->get(route('admin.dashboard'));
 
+        $html = $response->getContent();
+
         $response
             ->assertOk()
             ->assertSee('GEO OPERATIONS')
@@ -59,6 +61,11 @@ class AdminDashboardQuickStartTest extends TestCase
             ->assertSee(route('admin.distribution.jobs'), false)
             ->assertSee(route('admin.url-import'), false)
             ->assertDontSee('https://github.com/'.str_rot13('lnbwvatnat'), false);
+
+        $this->assertLessThan(
+            strpos($html, 'data-dashboard-tab="guide"'),
+            strpos($html, 'data-dashboard-tab="overview"')
+        );
     }
 
     public function test_welcome_modal_dismiss_url_is_relative_when_app_url_differs_from_origin(): void

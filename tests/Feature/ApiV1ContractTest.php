@@ -126,6 +126,20 @@ class ApiV1ContractTest extends TestCase
         $this->assertContains('materials:write', $response->json('data.scopes'));
     }
 
+    public function test_login_rejects_expired_admin(): void
+    {
+        $admin = $this->createActiveAdmin('expired_api_admin', 'good-pass');
+        $admin->forceFill(['expires_at' => now()->subDay()])->save();
+
+        $this->postJson('/api/v1/auth/login', [
+            'username' => 'expired_api_admin',
+            'password' => 'good-pass',
+        ])
+            ->assertStatus(403)
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('error.code', 'account_expired');
+    }
+
     public function test_login_locks_account_after_repeated_password_failures(): void
     {
         $admin = $this->createActiveAdmin('lock_me', 'right-pass');

@@ -13,6 +13,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
@@ -42,7 +43,7 @@ class AdminUserController extends Controller
             'admins' => $admins,
             'stats' => [
                 'total_admins' => count($admins),
-                'active_admins' => count(array_filter($admins, static fn (array $admin): bool => $admin['status'] === 'active')),
+                'active_admins' => count(array_filter($admins, static fn (array $admin): bool => $admin['status'] === 'active' && ! $admin['is_expired'])),
                 'super_admins' => count(array_filter($admins, static fn (array $admin): bool => $admin['is_super_admin'])),
             ],
             'currentAdminId' => (int) (auth('admin')->id() ?? 0),
@@ -75,6 +76,7 @@ class AdminUserController extends Controller
             'display_name' => ['nullable', 'string', 'max:100'],
             'email' => ['nullable', 'email', 'max:191'],
             'status' => ['required', Rule::in(['active', 'inactive'])],
+            'expires_at' => ['nullable', 'date'],
             'password' => ['nullable', 'string', 'min:8', 'same:confirm_password'],
             'confirm_password' => ['nullable', 'string', 'min:8'],
         ], [
@@ -94,6 +96,7 @@ class AdminUserController extends Controller
                 'display_name' => trim((string) ($payload['display_name'] ?? '')),
                 'email' => trim((string) ($payload['email'] ?? '')),
                 'status' => $isSelf ? (string) $targetAdmin->status : (string) $payload['status'],
+                'expires_at' => $this->normalizeExpiresAt($payload['expires_at'] ?? null, false),
             ];
 
             if (filled($payload['password'] ?? null)) {
@@ -117,6 +120,7 @@ class AdminUserController extends Controller
             'username' => ['required', 'string', 'regex:/^[A-Za-z0-9_.-]{3,50}$/', 'unique:admins,username'],
             'display_name' => ['nullable', 'string', 'max:100'],
             'email' => ['nullable', 'email', 'max:191'],
+            'expires_at' => ['nullable', 'date'],
             'password' => ['required', 'string', 'min:8', 'same:confirm_password'],
             'confirm_password' => ['required', 'string', 'min:8'],
             'tenant_logo' => ['nullable', 'file', 'mimetypes:image/jpeg,image/png,image/webp,image/svg+xml', 'max:2048'],
@@ -152,6 +156,7 @@ class AdminUserController extends Controller
                     'password' => (string) $payload['password'],
                     'role' => 'admin',
                     'status' => 'active',
+                    'expires_at' => $this->normalizeExpiresAt($payload['expires_at'] ?? null, true),
                     'created_by' => (int) (auth('admin')->id() ?? 0),
                 ]);
 
@@ -272,6 +277,9 @@ class AdminUserController extends Controller
      *   status:string,
      *   is_super_admin:bool,
      *   last_login:string,
+     *   expires_at:string,
+     *   expires_at_input:string,
+     *   is_expired:bool,
      *   created_at:string,
      *   creator_username:string,
      *   activity_count:int
@@ -288,6 +296,7 @@ class AdminUserController extends Controller
                 'role',
                 'status',
                 'last_login',
+                'expires_at',
                 'created_at',
                 'created_by',
                 'tenant_id',
@@ -314,6 +323,9 @@ class AdminUserController extends Controller
                 'status' => (string) ($admin->status ?? 'active'),
                 'is_super_admin' => $admin->isSuperAdmin(),
                 'last_login' => $admin->last_login?->format('Y-m-d H:i:s') ?? '',
+                'expires_at' => $admin->expires_at?->format('Y-m-d H:i:s') ?? '',
+                'expires_at_input' => $admin->expires_at?->format('Y-m-d') ?? '',
+                'is_expired' => $admin->isExpired(),
                 'created_at' => $admin->created_at?->format('Y-m-d H:i:s') ?? '',
                 'creator_username' => (string) ($admin->creator?->username ?? ''),
                 'tenant_name' => (string) ($admin->tenant?->name ?? ''),
@@ -337,5 +349,15 @@ class AdminUserController extends Controller
         }
 
         return $slug;
+    }
+
+    private function normalizeExpiresAt(mixed $value, bool $defaultOneYear): ?Carbon
+    {
+        $value = trim((string) ($value ?? ''));
+        if ($value === '') {
+            return $defaultOneYear ? now()->addYear()->endOfDay() : null;
+        }
+
+        return Carbon::parse($value)->endOfDay();
     }
 }
