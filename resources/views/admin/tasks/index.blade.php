@@ -60,31 +60,36 @@
         <div class="admin-panel">
             <div class="admin-panel-header">
                 <div class="flex items-start gap-3">
-                    <span class="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
-                        <i data-lucide="factory" class="h-5 w-5"></i>
+                    <span class="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
+                        <i data-lucide="workflow" class="h-5 w-5"></i>
                     </span>
                     <div>
                         <div class="text-xs font-medium uppercase tracking-widest text-slate-400">{{ __('admin.tasks.eyebrow') }}</div>
                         <h1 class="mt-1 text-xl font-semibold tracking-tight text-slate-950">{{ __('admin.tasks.page_title') }}</h1>
-                        <p class="mt-1 max-w-3xl text-sm leading-6 text-slate-600">{{ __('admin.tasks.page_subtitle') }}</p>
+                        <p class="hidden">{{ __('admin.tasks.page_subtitle') }}</p>
                     </div>
                 </div>
-                <div class="flex flex-wrap items-center gap-2">
-                    <button onclick="executeAllActiveTasks()" class="admin-btn-secondary">
-                        <i data-lucide="play" class="h-4 w-4"></i>
-                        {{ __('admin.button.run_all_tasks') }}
-                    </button>
+                <div class="flex items-center gap-2">
                     <a href="{{ route('admin.tasks.create') }}" class="admin-btn-primary">
                         <i data-lucide="plus" class="h-4 w-4"></i>
                         {{ __('admin.button.create_task') }}
                     </a>
+                    <details class="relative">
+                        <summary class="admin-icon-btn cursor-pointer list-none" aria-label="{{ __('admin.common.more') }}">
+                            <i data-lucide="more-horizontal" class="h-4 w-4"></i>
+                        </summary>
+                        <div class="absolute right-0 z-20 mt-2 w-56 overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-xl shadow-slate-200/70">
+                            <button type="button" onclick="executeAllActiveTasks(); this.closest('details')?.removeAttribute('open')" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-50">
+                                <i data-lucide="play" class="h-4 w-4 text-slate-400"></i>
+                                {{ __('admin.button.run_all_tasks') }}
+                            </button>
+                            <a href="{{ route('admin.articles.index') }}" class="flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50">
+                                <i data-lucide="file-text" class="h-4 w-4 text-slate-400"></i>
+                                {{ __('admin.nav.articles') }}
+                            </a>
+                        </div>
+                    </details>
                 </div>
-            </div>
-            <div class="grid border-t border-slate-100 bg-slate-50/70 px-6 py-3 text-sm text-slate-600 md:grid-cols-4">
-                <div class="flex items-center gap-2 py-1"><span class="flex h-6 w-6 items-center justify-center rounded-full bg-slate-900 text-xs font-semibold text-white">1</span> 配标题库与知识库</div>
-                <div class="flex items-center gap-2 py-1"><span class="flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-xs font-semibold text-white">2</span> 创建 AI 生成任务</div>
-                <div class="flex items-center gap-2 py-1"><span class="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-600 text-xs font-semibold text-white">3</span> 审核产出文章</div>
-                <div class="flex items-center gap-2 py-1"><span class="flex h-6 w-6 items-center justify-center rounded-full bg-violet-600 text-xs font-semibold text-white">4</span> 发布与分发</div>
             </div>
         </div>
 

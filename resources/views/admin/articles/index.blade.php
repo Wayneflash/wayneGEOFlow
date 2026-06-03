@@ -1,4 +1,4 @@
-@extends('admin.layouts.app')
+﻿@extends('admin.layouts.app')
 
 @php
     $isTrashView = (bool) ($isTrashView ?? false);
@@ -22,6 +22,15 @@
     $trashUrl = route('admin.articles.index', ['trashed' => 1]);
     $articlesIndexUrl = route('admin.articles.index');
     $clearTaskFilterUrl = route('admin.articles.index', request()->except(['task_id', 'page']));
+    $activeFilterCount = collect([
+        $selectedTaskId,
+        $selectedAuthorId,
+        $selectedStatus,
+        $selectedReviewStatus,
+        $selectedDateFrom,
+        $selectedDateTo,
+        $selectedSearch,
+    ])->filter(static fn ($value): bool => is_int($value) ? $value > 0 : trim((string) $value) !== '')->count();
 @endphp
 
 @section('content')
@@ -29,56 +38,59 @@
         <div class="admin-panel">
             <div class="admin-panel-header">
                 <div class="flex items-start gap-3">
-                    <span class="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
+                    <span class="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
                         <i data-lucide="library" class="h-5 w-5"></i>
                     </span>
                     <div>
                         <div class="text-xs font-medium uppercase tracking-widest text-slate-400">{{ __('admin.articles.eyebrow') }}</div>
                         <h1 class="mt-1 text-xl font-semibold tracking-tight text-slate-950">{{ $pageTitle }}</h1>
-                        <p class="mt-1 text-sm text-slate-500">{{ $isTrashView ? __('admin.articles.trash.subtitle') : __('admin.articles.page_subtitle') }}</p>
+                        <p class="hidden">{{ $isTrashView ? __('admin.articles.trash.subtitle') : __('admin.articles.page_subtitle') }}</p>
                     </div>
                 </div>
-                <div class="flex flex-wrap items-center gap-2">
+                <div class="flex items-center gap-2">
                     @if($isTrashView)
                         <a href="{{ $articlesIndexUrl }}" class="admin-btn-secondary">
                             <i data-lucide="arrow-left" class="h-4 w-4"></i>
                             {{ __('admin.articles.trash.back') }}
                         </a>
-                        <button type="button" onclick="submitEmptyTrash()" class="admin-btn-danger h-9 px-3 text-sm">
-                            <i data-lucide="trash-2" class="h-4 w-4"></i>
-                            {{ __('admin.articles.trash.empty') }}
-                        </button>
                     @else
                         <a href="{{ route('admin.tasks.create') }}" class="admin-btn-primary">
-                            <i data-lucide="bot" class="h-4 w-4"></i>
+                            <i data-lucide="sparkles" class="h-4 w-4"></i>
                             {{ __('admin.button.generate_articles') }}
                         </a>
-                        <a href="{{ route('admin.articles.create') }}" class="admin-btn-secondary">
-                            <i data-lucide="file-plus" class="h-4 w-4"></i>
-                            {{ __('admin.button.create_article') }}
-                        </a>
-                        <a href="{{ $categoryManageUrl }}" class="admin-btn-secondary">
-                            <i data-lucide="folder-tree" class="h-4 w-4"></i>
-                            {{ __('admin.categories.page_title') }}
-                        </a>
                     @endif
-                    <a href="{{ $isTrashView ? $articlesIndexUrl : $trashUrl }}" class="admin-btn-secondary">
-                        <i data-lucide="trash-2" class="h-4 w-4"></i>
-                        {{ $isTrashView ? __('admin.articles.page_title') : __('admin.button.trash') }}
-                    </a>
-                    <button type="button" onclick="toggleBatchActions()" class="admin-btn-secondary">
-                        <i data-lucide="check-square" class="h-4 w-4"></i>
-                        {{ __('admin.button.bulk_actions') }}
-                    </button>
+                    <details class="relative">
+                        <summary class="admin-icon-btn cursor-pointer list-none" aria-label="{{ __('admin.common.more') }}">
+                            <i data-lucide="more-horizontal" class="h-4 w-4"></i>
+                        </summary>
+                        <div class="absolute right-0 z-20 mt-2 w-56 overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-xl shadow-slate-200/70">
+                            @if($isTrashView)
+                                <button type="button" onclick="submitEmptyTrash(); this.closest('details')?.removeAttribute('open')" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-rose-600 transition hover:bg-rose-50">
+                                    <i data-lucide="trash-2" class="h-4 w-4"></i>
+                                    {{ __('admin.articles.trash.empty') }}
+                                </button>
+                            @else
+                                <a href="{{ route('admin.articles.create') }}" class="flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50">
+                                    <i data-lucide="file-plus" class="h-4 w-4 text-slate-400"></i>
+                                    {{ __('admin.button.create_article') }}
+                                </a>
+                                <a href="{{ $categoryManageUrl }}" class="flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50">
+                                    <i data-lucide="folder-tree" class="h-4 w-4 text-slate-400"></i>
+                                    {{ __('admin.categories.page_title') }}
+                                </a>
+                            @endif
+                            <a href="{{ $isTrashView ? $articlesIndexUrl : $trashUrl }}" class="flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50">
+                                <i data-lucide="trash-2" class="h-4 w-4 text-slate-400"></i>
+                                {{ $isTrashView ? __('admin.articles.page_title') : __('admin.button.trash') }}
+                            </a>
+                            <button type="button" onclick="toggleBatchActions(); this.closest('details')?.removeAttribute('open')" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-50">
+                                <i data-lucide="check-square" class="h-4 w-4 text-slate-400"></i>
+                                {{ __('admin.button.bulk_actions') }}
+                            </button>
+                        </div>
+                    </details>
                 </div>
             </div>
-            @if(!$isTrashView)
-                <div class="grid border-t border-slate-100 bg-slate-50/70 px-6 py-3 text-sm text-slate-600 md:grid-cols-3">
-                    <div class="flex items-center gap-2 py-1"><span class="flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-xs font-semibold text-white">AI</span> 从任务批量生成文章</div>
-                    <div class="flex items-center gap-2 py-1"><span class="flex h-6 w-6 items-center justify-center rounded-full bg-slate-900 text-xs font-semibold text-white">审</span> 筛选、审核、编辑正文</div>
-                    <div class="flex items-center gap-2 py-1"><span class="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-600 text-xs font-semibold text-white">发</span> 发布到本地站点或分发渠道</div>
-                </div>
-            @endif
         </div>
 
         @if($isTrashView)
@@ -157,13 +169,23 @@
             <div class="admin-panel-header">
                 <div>
                     <h3 class="text-base font-semibold text-slate-950">{{ __('admin.articles.filters.title') }}</h3>
-                    <p class="mt-1 text-xs text-slate-500">优先一行完成筛选，空间不足时自动换行。</p>
                 </div>
-                <span class="inline-flex w-fit items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
-                    {{ __('admin.articles.list_total', ['count' => $articles->total()]) }}
-                </span>
+                <div class="flex flex-wrap items-center gap-2">
+                    <span class="inline-flex w-fit items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
+                        {{ __('admin.articles.list_total', ['count' => $articles->total()]) }}
+                    </span>
+                    @if($activeFilterCount > 0)
+                        <span class="inline-flex w-fit items-center rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
+                            {{ $activeFilterCount }}
+                        </span>
+                    @endif
+                    <button type="button" class="admin-btn-secondary h-9 px-3 text-xs" data-article-filter-toggle aria-expanded="false">
+                        <i data-lucide="sliders-horizontal" class="h-4 w-4"></i>
+                        {{ __('admin.button.filter') }}
+                    </button>
+                </div>
             </div>
-            <div class="px-5 py-4">
+            <div class="hidden px-5 py-4" data-article-filter-panel>
                 @if($selectedTaskId > 0)
                     <div class="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
                         <div class="inline-flex items-center gap-2">
@@ -173,7 +195,7 @@
                         <div class="flex flex-wrap items-center gap-2">
                             <a href="{{ route('admin.tasks.edit', ['taskId' => $selectedTaskId]) }}" class="admin-btn-secondary h-7 px-3 text-xs">
                                 <i data-lucide="settings" class="h-3.5 w-3.5"></i>
-                                任务设置
+                                {{ __('admin.tasks.action.settings') }}
                             </a>
                             <a href="{{ $clearTaskFilterUrl }}" class="admin-btn-secondary h-7 px-3 text-xs">
                                 <i data-lucide="x" class="h-3.5 w-3.5"></i>
@@ -284,7 +306,7 @@
                             </a>
                             <a href="{{ route('admin.articles.create') }}" class="admin-btn-secondary">
                                 <i data-lucide="file-plus" class="h-4 w-4"></i>
-                                手动写单篇文章
+                                {{ __('admin.button.create_article') }}
                             </a>
                         </div>
                     @endif
@@ -359,7 +381,7 @@
                                 <th class="batch-checkbox hidden px-6 py-3 text-left">
                                     <input type="checkbox" id="select-all" class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500">
                                 </th>
-                                <th class="whitespace-nowrap">序号</th>
+                                <th class="whitespace-nowrap">鎼村繐褰?/th>
                                 <th>{{ __('admin.articles.column.info') }}</th>
                                 <th>{{ __('admin.articles.column.task_author') }}</th>
                                 @if(!$isTrashView)
@@ -515,7 +537,7 @@
                                                 <a href="{{ route('admin.articles.edit', ['articleId' => (int) $article->id]) }}" class="admin-icon-btn h-8 w-8" title="{{ __('admin.button.edit') }}" aria-label="{{ __('admin.button.edit') }}">
                                                     <i data-lucide="pencil" class="h-4 w-4"></i>
                                                 </a>
-                                                <a href="{{ route('admin.articles.preview', ['articleId' => (int) $article->id]) }}" target="_blank" rel="noopener" class="admin-icon-btn h-8 w-8 text-blue-600 hover:bg-blue-50 hover:text-blue-700" title="预览" aria-label="预览">
+                                                <a href="{{ route('admin.articles.preview', ['articleId' => (int) $article->id]) }}" target="_blank" rel="noopener" class="admin-icon-btn h-8 w-8 text-blue-600 hover:bg-blue-50 hover:text-blue-700" title="妫板嫯顫? aria-label="妫板嫯顫?>
                                                     <i data-lucide="eye" class="h-4 w-4"></i>
                                                 </a>
                                                 @if((string) $article->review_status === 'pending')
@@ -658,7 +680,24 @@
             submitAction('batch_update_review', articleId, { review_status: status });
         }
 
+        function toggleArticleFilters() {
+            const panel = document.querySelector('[data-article-filter-panel]');
+            const button = document.querySelector('[data-article-filter-toggle]');
+            if (!panel || !button) {
+                return;
+            }
+
+            const shouldOpen = panel.classList.contains('hidden');
+            panel.classList.toggle('hidden', !shouldOpen);
+            button.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+            button.classList.toggle('border-blue-200', shouldOpen);
+            button.classList.toggle('bg-blue-50', shouldOpen);
+            button.classList.toggle('text-blue-700', shouldOpen);
+        }
+
         document.addEventListener('DOMContentLoaded', function() {
+            document.querySelector('[data-article-filter-toggle]')?.addEventListener('click', toggleArticleFilters);
+
             const selectAll = document.getElementById('select-all');
             if (selectAll) {
                 selectAll.addEventListener('change', function() {

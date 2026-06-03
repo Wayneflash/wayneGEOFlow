@@ -75,16 +75,11 @@
     ];
 @endphp
 
-<section class="mb-6" data-analytics-global-overview>
-    <div class="mb-4">
-        <h2 class="text-lg font-bold text-slate-900">{{ __('admin.analytics.overall_title') }}</h2>
-        <p class="mt-0.5 text-sm text-slate-400">{{ __('admin.analytics.overall_desc') }}</p>
-    </div>
-
-    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+<section data-analytics-global-overview>
+    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         @foreach ($cards as $card)
-            <a href="{{ $card['href'] }}" class="group relative flex items-start gap-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition-all hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md hover:shadow-blue-500/5">
-                <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl {{ $card['bg'] }}">
+            <a href="{{ $card['href'] }}" class="group relative flex items-start gap-4 rounded-lg border border-slate-200/80 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition hover:border-slate-300">
+                <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-50">
                     <i data-lucide="{{ $card['icon'] }}" class="h-5 w-5 {{ $card['tone'] }}"></i>
                 </div>
                 <div class="min-w-0 flex-1">
@@ -92,8 +87,8 @@
                         <span class="text-xs font-medium text-slate-400">{{ $card['label'] }}</span>
                         <i data-lucide="arrow-up-right" class="h-3.5 w-3.5 text-slate-300 transition group-hover:text-blue-500"></i>
                     </div>
-                    <div class="mt-1 text-2xl font-bold text-slate-900 tracking-tight">{{ is_numeric($card['value']) ? number_format((int) $card['value']) : $card['value'] }}</div>
-                    <div class="mt-0.5 text-xs text-slate-400">{{ $card['hint'] }}</div>
+                    <div class="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{{ is_numeric($card['value']) ? number_format((int) $card['value']) : $card['value'] }}</div>
+                    <div class="mt-0.5 truncate text-xs text-slate-400">{{ $card['hint'] }}</div>
                 </div>
             </a>
         @endforeach

@@ -20,7 +20,7 @@
     <script src="{{ asset('js/lucide.min.js') }}"></script>
     @stack('styles')
 </head>
-<body class="min-h-screen overflow-x-hidden bg-slate-100 text-slate-900 antialiased">
+<body class="min-h-screen overflow-x-hidden bg-[#f4f8ff] text-slate-900 antialiased">
 <div id="admin-page-progress" class="fixed left-0 top-0 z-[80] hidden h-0.5 w-full bg-blue-100">
     <div class="h-full w-1/3 rounded-r-full bg-blue-600 shadow-[0_0_12px_rgba(37,99,235,0.45)] transition-all duration-700" data-admin-progress-bar></div>
 </div>
@@ -31,7 +31,7 @@
     'activeMenu' => $activeMenu ?? '',
 ])
     <main id="admin-main-content" class="admin-shell-main">
-        <div class="mx-auto w-full max-w-[104rem]">
+        <div class="mx-auto w-full max-w-[86rem]">
         @if (session('message'))
             <div class="admin-flash-alert mb-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 shadow-sm">
                 <span class="block sm:inline">{{ session('message') }}</span>

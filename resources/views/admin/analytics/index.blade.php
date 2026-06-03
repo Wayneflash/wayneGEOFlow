@@ -2,19 +2,11 @@
 
 @section('content')
     <div class="space-y-5">
-        <section class="overflow-hidden rounded-2xl border border-blue-100 bg-white shadow-sm">
-            <div class="relative px-6 py-6 lg:px-8">
-                <div class="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-blue-400 to-transparent opacity-60"></div>
+        <section class="admin-panel">
+            <div class="px-5 py-4">
                 <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-                    <div class="flex items-center gap-3">
-                        <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 border border-blue-100">
-                            <i data-lucide="chart-no-axes-combined" class="h-5 w-5 text-blue-500"></i>
-                        </div>
-                        <div>
-                            <div class="text-xs font-medium text-blue-500 uppercase tracking-widest">GEO AI OPS</div>
-                            <h1 class="text-xl font-bold text-slate-900 tracking-tight">{{ __('admin.analytics.heading') }}</h1>
-                            <p class="mt-1 text-sm text-slate-500">{{ __('admin.analytics.subtitle') }}</p>
-                        </div>
+                    <div>
+                        <h1 class="text-xl font-semibold tracking-tight text-slate-950">{{ __('admin.analytics.heading') }}</h1>
                     </div>
                     <div class="flex flex-wrap items-center gap-3">
                         <span class="text-xs text-slate-400">{{ now()->format('Y-m-d H:i:s') }}</span>
@@ -28,11 +20,15 @@
         </section>
 
         @include('admin.analytics._filters', ['filters' => $filters, 'filterOptions' => $filterOptions])
-        @include('admin.analytics._global-overview', ['globalOverview' => $globalOverview])
 
-        <section class="sticky top-0 z-10 rounded-2xl border border-slate-200 bg-white/95 p-2 shadow-sm backdrop-blur" data-analytics-tabs>
-            <div class="grid gap-2 md:grid-cols-3">
-                <button type="button" class="admin-tab-button is-active" data-analytics-tab="content" aria-pressed="true">
+
+        <section class="sticky top-16 z-10 rounded-lg border border-slate-200 bg-white/95 p-1.5 shadow-sm backdrop-blur" data-analytics-tabs>
+            <div class="grid gap-1.5 md:grid-cols-4">
+                <button type="button" class="admin-tab-button is-active" data-analytics-tab="overview" aria-pressed="true">
+                    <i data-lucide="layout-dashboard" class="h-4 w-4"></i>
+                    总览
+                </button>
+                <button type="button" class="admin-tab-button" data-analytics-tab="content" aria-pressed="false">
                     <i data-lucide="bar-chart-3" class="h-4 w-4"></i>
                     内容分析
                 </button>
@@ -47,7 +43,10 @@
             </div>
         </section>
 
-        <div data-analytics-panel="content">
+        <div data-analytics-panel="overview">
+            @include('admin.analytics._global-overview', ['globalOverview' => $globalOverview])
+        </div>
+        <div data-analytics-panel="content" class="hidden">
             @include('admin.analytics._content-section')
         </div>
         <div data-analytics-panel="distribution" class="hidden">
@@ -73,7 +72,7 @@
             const activate = (nextTab) => {
                 const selected = tabs.some((tab) => tab.dataset.analyticsTab === nextTab)
                     ? nextTab
-                    : 'content';
+                    : 'overview';
 
                 tabs.forEach((tab) => {
                     const active = tab.dataset.analyticsTab === selected;
@@ -92,10 +91,10 @@
             };
 
             tabs.forEach((tab) => {
-                tab.addEventListener('click', () => activate(tab.dataset.analyticsTab || 'content'));
+                tab.addEventListener('click', () => activate(tab.dataset.analyticsTab || 'overview'));
             });
 
-            activate(sessionStorage.getItem(storageKey) || 'content');
+            activate(sessionStorage.getItem(storageKey) || 'overview');
         })();
     </script>
 @endpush

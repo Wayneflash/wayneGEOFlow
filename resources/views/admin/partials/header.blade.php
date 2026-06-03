@@ -32,10 +32,10 @@
         [
             'label' => '生产',
             'items' => [
-                'tasks' => ['route' => 'admin.tasks.index', 'name' => __('admin.nav.tasks'), 'icon' => 'workflow'],
-                'articles' => ['route' => 'admin.articles.index', 'name' => __('admin.nav.articles'), 'icon' => 'file-text'],
+                'ai_config' => ['route' => 'admin.ai.configurator', 'name' => __('admin.nav.ai_config'), 'icon' => 'sparkles'],
                 'materials' => ['route' => 'admin.materials.index', 'name' => __('admin.nav.materials'), 'icon' => 'database'],
-                'ai_config' => ['route' => 'admin.ai.configurator', 'name' => __('admin.nav.ai_config'), 'icon' => 'bot'],
+                'articles' => ['route' => 'admin.articles.index', 'name' => __('admin.nav.articles'), 'icon' => 'file-text'],
+                'tasks' => ['route' => 'admin.tasks.index', 'name' => __('admin.nav.tasks'), 'icon' => 'workflow'],
             ],
         ],
         [
@@ -136,7 +136,7 @@
                 <div class="space-y-1">
                     @foreach ($group['items'] as $key => $item)
                         <a href="{{ route($item['route']) }}"
-                           class="@if($resolvedActive === $key) bg-blue-50 text-blue-700 shadow-sm ring-1 ring-blue-100 @else text-slate-600 hover:bg-blue-50 hover:text-blue-700 @endif admin-sidebar-link"
+                           class="@if($resolvedActive === $key) bg-blue-50 text-blue-700 ring-1 ring-blue-100 @else text-slate-600 hover:bg-blue-50 hover:text-blue-700 @endif admin-sidebar-link"
                            title="{{ $item['name'] }}">
                             <i data-lucide="{{ $item['icon'] ?? 'circle' }}" class="h-4 w-4 shrink-0"></i>
                             <span class="sidebar-label truncate">{{ $item['name'] }}</span>

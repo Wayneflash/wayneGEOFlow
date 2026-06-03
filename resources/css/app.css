@@ -15,7 +15,7 @@
 
 @layer components {
     .admin-shell-sidebar {
-        @apply fixed inset-y-0 left-0 z-50 hidden w-64 flex-col border-r border-slate-200 bg-white/95 shadow-[8px_0_30px_rgba(15,23,42,0.04)] backdrop-blur transition-all duration-200 lg:flex;
+        @apply fixed inset-y-0 left-0 z-50 hidden w-64 flex-col border-r border-slate-200 bg-white/95 backdrop-blur transition-all duration-200 lg:flex;
     }
 
     .admin-shell-topbar {
@@ -23,7 +23,7 @@
     }
 
     .admin-shell-main {
-        @apply px-4 py-6 transition-all duration-300 sm:px-6 lg:ml-64 lg:px-7;
+        @apply px-4 py-6 transition-all duration-300 sm:px-6 lg:ml-64 lg:px-8;
     }
 
     .admin-sidebar-link {
@@ -35,11 +35,19 @@
     }
 
     .admin-panel {
-        @apply overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm shadow-slate-200/60 transition duration-200;
+        @apply overflow-hidden rounded-lg border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition duration-200;
     }
 
     .admin-panel-header {
-        @apply flex flex-col gap-3 border-b border-slate-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between;
+        @apply flex flex-col gap-3 border-b border-slate-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between;
+    }
+
+    .admin-panel-header .uppercase.tracking-widest {
+        @apply hidden;
+    }
+
+    .admin-panel-header > .flex.items-start.gap-3 > span:first-child {
+        @apply hidden;
     }
 
     .admin-filter-bar {
@@ -71,11 +79,11 @@
     }
 
     .admin-btn-secondary {
-        @apply inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition duration-150 hover:bg-slate-50 active:translate-y-px disabled:cursor-wait disabled:opacity-70;
+        @apply inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition duration-150 hover:bg-slate-50 active:translate-y-px disabled:cursor-wait disabled:opacity-70;
     }
 
     .admin-icon-btn {
-        @apply inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm transition duration-150 hover:bg-slate-50 hover:text-slate-900 active:translate-y-px;
+        @apply inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition duration-150 hover:bg-slate-50 hover:text-slate-900 active:translate-y-px;
     }
 
     .admin-form-section {
@@ -99,11 +107,11 @@
     }
 
     .admin-table thead {
-        @apply bg-slate-50;
+        @apply bg-slate-50/70;
     }
 
     .admin-table th {
-        @apply px-3 py-3 text-left text-xs font-semibold uppercase text-slate-500;
+        @apply px-3 py-3 text-left text-xs font-semibold uppercase text-slate-400;
     }
 
     .admin-table td {
