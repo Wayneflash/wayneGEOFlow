@@ -240,7 +240,7 @@ final class UrlImportProcessingService
             $keywordLibrary = KeywordLibrary::query()->create([
                 'tenant_id' => $tenantId,
                 'name' => $baseName.' 关键词库',
-                'description' => 'URL智能采集自动生成',
+                'description' => '网址采集自动生成',
                 'keyword_count' => 0,
             ]);
             foreach ($keywords as $keyword) {
@@ -254,7 +254,7 @@ final class UrlImportProcessingService
             $titleLibrary = TitleLibrary::query()->create([
                 'tenant_id' => $tenantId,
                 'name' => $baseName.' 标题库',
-                'description' => 'URL智能采集自动生成',
+                'description' => '网址采集自动生成',
                 'title_count' => 0,
                 'generation_type' => 'url_import',
                 'generation_rounds' => 1,

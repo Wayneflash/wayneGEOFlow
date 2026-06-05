@@ -56,7 +56,7 @@ class UrlImportController extends Controller
             return redirect()
                 ->route('admin.ai-models.index')
                 ->withInput()
-                ->withErrors(['ai_model' => $exception->getMessage()]);
+                ->withErrors(['ai_model' => '采集能力还没有准备好，请先完成基础配置。']);
         }
 
         $job = UrlImportJob::query()->create(AdminTenant::stamp([
@@ -100,7 +100,7 @@ class UrlImportController extends Controller
                 $job->update([
                     'status' => 'failed',
                     'progress_percent' => max(1, (int) $job->progress_percent),
-                    'error_message' => $exception->getMessage(),
+                    'error_message' => '采集能力还没有准备好，请先完成基础配置。',
                     'finished_at' => now(),
                 ]);
 
@@ -108,7 +108,7 @@ class UrlImportController extends Controller
                     'job_id' => $job->id,
                     'step' => $job->current_step ?: 'queued',
                     'level' => 'error',
-                    'message' => __('admin.url_import.log.failed', ['message' => $exception->getMessage()]),
+                    'message' => '采集能力还没有准备好，请先完成基础配置。',
                 ]);
 
                 return response()->json($this->statusPayload($job->refresh()), 422);
@@ -133,7 +133,7 @@ class UrlImportController extends Controller
                     'job_id' => $job->id,
                     'step' => $job->current_step ?: 'queued',
                     'level' => 'info',
-                    'message' => 'URL import job queued for background processing.',
+                    'message' => '采集任务已开始在后台处理。',
                 ]);
             }
         }
@@ -171,14 +171,11 @@ class UrlImportController extends Controller
     {
         $job = UrlImportJob::query()->visibleToAdmin()->whereKey($jobId)->firstOrFail();
 
-        $job->load(['logs' => fn ($query) => $query->oldest()->limit(120)]);
-
         return view('admin.url-import.show', [
             'pageTitle' => __('admin.url_import.page_title'),
             'activeMenu' => 'materials',
             'job' => $job,
             'result' => $this->decodeJson((string) $job->result_json),
-            'logs' => $job->logs,
         ]);
     }
 
@@ -225,12 +222,10 @@ class UrlImportController extends Controller
      */
     private function statusPayload(UrlImportJob $job): array
     {
-        $logs = UrlImportJobLog::query()
+        $latestLogStep = (string) UrlImportJobLog::query()
             ->where('job_id', (int) $job->id)
-            ->oldest()
-            ->limit(120)
-            ->get();
-        $latestLogStep = (string) ($logs->last()?->step ?: '');
+            ->latest('id')
+            ->value('step');
         $storedStep = (string) $job->current_step;
         $currentStep = $latestLogStep !== '' && ! ($latestLogStep === 'queued' && $storedStep !== 'queued')
             ? $latestLogStep
@@ -239,21 +234,37 @@ class UrlImportController extends Controller
         return [
             'id' => (int) $job->id,
             'status' => (string) $job->status,
-            'status_label' => __('admin.url_import_history.status.' . $job->status),
+            'status_label' => $this->publicStatusLabel((string) $job->status),
             'current_step' => $currentStep,
             'stored_step' => $storedStep,
             'progress_percent' => (int) $job->progress_percent,
-            'error_message' => (string) $job->error_message,
+            'error_message' => $this->publicErrorMessage($job),
             'result_ready' => (string) $job->result_json !== '',
             'finished_at' => optional($job->finished_at)->format('Y-m-d H:i:s'),
-            'logs' => $logs
-                ->map(fn (UrlImportJobLog $log): array => [
-                    'step' => (string) ($log->step ?: ''),
-                    'level' => (string) $log->level,
-                    'message' => (string) $log->message,
-                    'created_at' => optional($log->created_at)->format('Y-m-d H:i:s'),
-                ])
-                ->all(),
+            'logs' => [],
         ];
+    }
+
+    private function publicStatusLabel(string $status): string
+    {
+        return [
+            'queued' => '等待中',
+            'running' => '采集中',
+            'completed' => '已完成',
+            'failed' => '失败',
+        ][$status] ?? $status;
+    }
+
+    private function publicErrorMessage(UrlImportJob $job): string
+    {
+        if ((string) $job->error_message === '') {
+            return '';
+        }
+
+        if ((string) $job->error_message === '采集能力还没有准备好，请先完成基础配置。') {
+            return (string) $job->error_message;
+        }
+
+        return '采集失败，请确认网址可以正常打开，页面不是登录后才能访问，再重新采集。';
     }
 }

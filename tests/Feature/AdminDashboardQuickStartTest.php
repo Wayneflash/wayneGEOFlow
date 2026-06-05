@@ -49,16 +49,15 @@ class AdminDashboardQuickStartTest extends TestCase
             ->assertSee(__('admin.dashboard.navigation.special_prompt_label'))
             ->assertSee(__('admin.dashboard.navigation.distribution_channels_title'))
             ->assertSee(__('admin.dashboard.navigation.distribution_jobs_title'))
-            ->assertSee(route('admin.ai-models.index'), false)
+            ->assertSee(route('admin.ai.configurator'), false)
             ->assertSee(route('admin.materials.index'), false)
-            ->assertSee(route('admin.tasks.create'), false)
             ->assertSee(route('admin.articles.index'), false)
+            ->assertSee(route('admin.tasks.index'), false)
             ->assertSee(route('admin.analytics'), false)
             ->assertSee(route('admin.ai-prompts'), false)
             ->assertSee(route('admin.ai-special-prompts'), false)
             ->assertSee(route('admin.distribution.index'), false)
             ->assertSee(route('admin.distribution.jobs'), false)
-            ->assertSee(route('admin.url-import'), false)
             ->assertDontSee('https://github.com/'.str_rot13('lnbwvatnat'), false);
 
         $this->assertLessThan(

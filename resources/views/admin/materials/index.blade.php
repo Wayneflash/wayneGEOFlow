@@ -5,7 +5,7 @@
         $assetCards = [
             [
                 'title' => __('admin.materials.keyword_libraries'),
-                'desc' => __('admin.materials.manage_keywords_short'),
+                'desc' => '维护常用主题词，供任务生成时调用。',
                 'count' => (int) $stats['keyword_libraries'],
                 'meta' => __('admin.materials.keyword_count', ['count' => (int) $stats['total_keywords']]),
                 'icon' => 'key-round',
@@ -14,7 +14,7 @@
             ],
             [
                 'title' => __('admin.materials.title_libraries'),
-                'desc' => __('admin.materials.manage_titles_short'),
+                'desc' => '整理标题方向，减少重复选题。',
                 'count' => (int) $stats['title_libraries'],
                 'meta' => __('admin.materials.title_count', ['count' => (int) $stats['total_titles']]),
                 'icon' => 'text-cursor-input',
@@ -23,7 +23,7 @@
             ],
             [
                 'title' => __('admin.materials.image_libraries'),
-                'desc' => __('admin.materials.manage_images_short'),
+                'desc' => '管理文章配图和素材图片。',
                 'count' => (int) $stats['image_libraries'],
                 'meta' => __('admin.materials.image_count', ['count' => (int) $stats['total_images']]),
                 'icon' => 'image',
@@ -32,7 +32,7 @@
             ],
             [
                 'title' => __('admin.materials.knowledge_bases'),
-                'desc' => __('admin.materials.manage_knowledge_short'),
+                'desc' => '沉淀可复用的业务知识。',
                 'count' => (int) $stats['knowledge_bases'],
                 'meta' => __('admin.materials.author_count', ['count' => (int) $stats['authors']]),
                 'icon' => 'brain-circuit',
@@ -90,8 +90,8 @@
         <section class="grid grid-cols-1 gap-5 xl:grid-cols-[1fr_360px]">
             <div class="rounded-2xl border border-slate-200 bg-white shadow-sm">
                 <div class="border-b border-slate-100 p-5">
-                    <h2 class="text-lg font-semibold text-slate-950">{{ __('admin.materials.quick_actions') }}</h2>
-                    <p class="mt-1 text-sm text-slate-500">常用素材库入口集中在这里，减少页面跳转成本。</p>
+                    <h2 class="text-lg font-semibold text-slate-950">常用入口</h2>
+                    <p class="mt-1 text-sm text-slate-500">把素材库入口集中在这里，日常维护不用来回找。</p>
                 </div>
                 <div class="grid grid-cols-1 divide-y divide-slate-100 md:grid-cols-2 md:divide-x md:divide-y-0">
                     <div class="space-y-3 p-5">
@@ -123,17 +123,13 @@
                         <i data-lucide="scan-search" class="h-5 w-5"></i>
                     </span>
                     <div>
-                        <h2 class="font-semibold text-slate-950">{{ __('admin.materials.url_import') }}</h2>
-                        <p class="text-sm text-slate-600">{{ __('admin.materials.url_import_short') }}</p>
+                        <h2 class="font-semibold text-slate-950">网址采集</h2>
+                        <p class="text-sm text-slate-600">粘贴一个页面，整理成可预览素材。</p>
                     </div>
                 </div>
                 <div class="mt-5 rounded-xl bg-white p-4 text-sm leading-6 text-slate-600 shadow-sm ring-1 ring-blue-100">
-                    {{ __('admin.materials.url_import_description') }}
+                    适合采集文章页、报告页和产品介绍页。采集结果会先进入预览，确认后再写入素材库。
                 </div>
-                <a href="{{ route('admin.url-import') }}" class="mt-5 inline-flex h-11 w-full items-center justify-center rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white shadow-sm shadow-blue-600/20 transition hover:bg-blue-700">
-                    <i data-lucide="arrow-right" class="mr-2 h-4 w-4"></i>
-                    {{ __('admin.materials.url_import_start') }}
-                </a>
             </div>
         </section>
     </div>

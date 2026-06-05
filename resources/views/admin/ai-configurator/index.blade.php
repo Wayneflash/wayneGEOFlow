@@ -5,31 +5,25 @@
         $stats = is_array($stats ?? null) ? $stats : [];
         $quickActions = [
             [
-                'title' => __('admin.ai_configurator.models_title'),
-                'desc' => __('admin.ai_configurator.models_desc'),
-                'action' => __('admin.ai_configurator.models_action'),
+                'title' => '模型配置',
+                'desc' => '维护生成、理解和检索时使用的能力配置。',
                 'href' => route('admin.ai-models.index'),
                 'icon' => 'cpu',
                 'tone' => 'bg-blue-50 text-blue-600',
-                'primary' => true,
             ],
             [
-                'title' => __('admin.ai_configurator.prompts_title'),
-                'desc' => __('admin.ai_configurator.prompts_desc'),
-                'action' => __('admin.ai_configurator.prompts_action'),
+                'title' => '正文提示词',
+                'desc' => '管理文章正文生成时使用的表达规则。',
                 'href' => route('admin.ai-prompts'),
                 'icon' => 'message-square-text',
                 'tone' => 'bg-emerald-50 text-emerald-600',
-                'primary' => false,
             ],
             [
-                'title' => __('admin.ai_configurator.special_title'),
-                'desc' => __('admin.ai_configurator.special_desc'),
-                'action' => __('admin.ai_configurator.special_action'),
+                'title' => '辅助提示词',
+                'desc' => '维护关键词、摘要和标题等辅助生成规则。',
                 'href' => route('admin.ai-special-prompts'),
                 'icon' => 'wrench',
                 'tone' => 'bg-amber-50 text-amber-600',
-                'primary' => false,
             ],
         ];
         $statCards = [
@@ -48,10 +42,6 @@
                     <h1 class="mt-1 text-xl font-semibold tracking-tight text-slate-950">{{ __('admin.ai_configurator.heading') }}</h1>
                     <p class="mt-1 text-sm text-slate-500">{{ __('admin.ai_configurator.subtitle') }}</p>
                 </div>
-                <a href="{{ route('admin.ai-models.index') }}" class="admin-btn-primary">
-                    <i data-lucide="cpu" class="h-4 w-4"></i>
-                    {{ __('admin.ai_configurator.models_action') }}
-                </a>
             </div>
         </div>
 
@@ -91,8 +81,7 @@
                                     <div class="mt-0.5 truncate text-sm text-slate-500">{{ $action['desc'] }}</div>
                                 </div>
                             </div>
-                            <span class="{{ $action['primary'] ? 'admin-btn-primary' : 'admin-btn-secondary' }} shrink-0">
-                                {{ $action['action'] }}
+                            <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-300 transition group-hover:bg-blue-50 group-hover:text-blue-600">
                                 <i data-lucide="arrow-right" class="h-4 w-4"></i>
                             </span>
                         </a>

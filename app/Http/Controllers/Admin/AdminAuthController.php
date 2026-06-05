@@ -89,7 +89,7 @@ class AdminAuthController extends Controller
         $intendedPath = $intendedUrl !== '' ? '/'.ltrim((string) parse_url($intendedUrl, PHP_URL_PATH), '/') : '';
         if ($intendedPath !== '' && str_starts_with($intendedPath, $adminBasePath.'/') && $intendedPath !== $adminBasePath.'/login') {
             $query = parse_url($intendedUrl, PHP_URL_QUERY);
-            $targetUrl = rtrim((string) config('app.url'), '/').$intendedPath.($query ? '?'.$query : '');
+            $targetUrl = $request->getScheme().'://'.$request->getHttpHost().$intendedPath.($query ? '?'.$query : '');
 
             return redirect()->to($targetUrl);
         }
