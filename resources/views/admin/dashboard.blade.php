@@ -51,6 +51,12 @@
             ['label' => '分发管理', 'desc' => '多站点分发', 'href' => route('admin.distribution.index'), 'icon' => 'radio-tower', 'gradient' => 'from-rose-500 via-pink-500 to-fuchsia-600', 'shadow' => 'shadow-rose-500/20'],
         ];
 
+        $healthColors = [
+            'emerald' => ['icon' => 'from-emerald-400 to-teal-600', 'bar' => 'from-emerald-400 to-teal-500'],
+            'blue' => ['icon' => 'from-blue-400 to-indigo-600', 'bar' => 'from-blue-400 to-indigo-500'],
+            'violet' => ['icon' => 'from-violet-400 to-fuchsia-600', 'bar' => 'from-violet-400 to-fuchsia-500'],
+            'amber' => ['icon' => 'from-amber-400 to-orange-600', 'bar' => 'from-amber-400 to-orange-500'],
+        ];
         $healthCards = [
             ['label' => '发布率', 'value' => $publishedRate.'%', 'sub' => '已发布/总文章', 'icon' => 'trending-up', 'color' => 'emerald', 'bar' => $publishedRate, 'detail' => "草稿 {$draftArticles} · 待审 {$pendingReview}"],
             ['label' => '队列健康', 'value' => number_format($queueSuccessRate, 1).'%', 'sub' => '任务成功率', 'icon' => 'workflow', 'color' => 'blue', 'bar' => $queueSuccessRate, 'detail' => "失败 {$failedJobs} · 等待 {$pendingJobs}"],
@@ -206,26 +212,12 @@
                             <div class="mt-2 text-3xl font-bold leading-none text-slate-900 tracking-tight">{{ $card['value'] }}</div>
                             <div class="mt-1 text-[11px] text-slate-400">{{ $card['sub'] }}</div>
                         </div>
-                        <span class="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br
-                            @switch($card['color'])
-                                @case('emerald') from-emerald-400 to-teal-600
-                                @case('blue') from-blue-400 to-indigo-600
-                                @case('violet') from-violet-400 to-fuchsia-600
-                                @case('amber') from-amber-400 to-orange-600
-                            @endswitch
-                            text-white shadow-md">
+                        <span class="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br {{ $healthColors[$card['color']]['icon'] ?? 'from-slate-400 to-slate-600' }} text-white shadow-md">
                             <i data-lucide="{{ $card['icon'] }}" class="h-4 w-4"></i>
                         </span>
                     </div>
                     <div class="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100">
-                        <div class="h-full rounded-full bg-gradient-to-r
-                            @switch($card['color'])
-                                @case('emerald') from-emerald-400 to-teal-500
-                                @case('blue') from-blue-400 to-indigo-500
-                                @case('violet') from-violet-400 to-fuchsia-500
-                                @case('amber') from-amber-400 to-orange-500
-                            @endswitch"
-                            style="width: {{ min(100, max(0, (float) $card['bar'])) }}%"></div>
+                        <div class="h-full rounded-full bg-gradient-to-r {{ $healthColors[$card['color']]['bar'] ?? 'from-slate-400 to-slate-500' }}" style="width: {{ min(100, max(0, (float) $card['bar'])) }}%"></div>
                     </div>
                     <div class="mt-1.5 text-[10px] text-slate-400">{{ $card['detail'] }}</div>
                 </div>
