@@ -29,109 +29,252 @@
         $materialTotal = (int) ($stats['total_keywords'] ?? 0) + (int) ($stats['total_titles'] ?? 0) + (int) ($stats['total_images'] ?? 0);
         $reviewTotal = max(1, $draftArticles + $pendingReview + $publishedArticles);
         $publishedRate = round(($publishedArticles / $reviewTotal) * 100);
-        $reviewRate = round(($pendingReview / $reviewTotal) * 100);
         $queueSuccessRate = (float) ($performanceStats['success_rate'] ?? 0);
         $modelCount = (int) ($aiHealth['chat_models'] ?? 0) + (int) ($aiHealth['embedding_models'] ?? 0);
         $todayAdded = (int) ($todayStats['today_articles'] ?? 0);
         $pendingJobs = (int) ($taskHealth['pending_jobs'] ?? 0);
         $failedJobs = (int) ($taskHealth['failed_jobs'] ?? 0);
-        $todayPendingReview = (int) ($todayStats['today_pending_review'] ?? $pendingReview);
         $vectorizedChunks = (int) ($materialHealth['vectorized_chunks'] ?? 0);
         $knowledgeChunks = (int) ($materialHealth['knowledge_chunks'] ?? 0);
+        $activeTasks = (int) ($taskHealth['active_tasks'] ?? $stats['active_tasks'] ?? 0);
 
-        // 计算 sparkline 数据（用文章趋势模拟，没数据时回退到等差占位）
-        $sparkPoints = $articleTrendRows !== [] ? array_column($articleTrendRows, 'count') : [3, 5, 4, 7, 6, 8, 10];
-        $sparkMax = max(1, max($sparkPoints));
-        $sparkPath = '';
-        $sparkDots = [];
-        foreach (array_values($sparkPoints) as $i => $v) {
-            $x = ($i / max(1, count($sparkPoints) - 1)) * 100;
-            $y = 30 - ($v / $sparkMax) * 26 - 2;
-            $sparkPath .= ($i === 0 ? 'M' : 'L').sprintf('%.1f,%.1f', $x, $y).' ';
-            $sparkDots[] = [$x, $y];
-        }
-        $sparkArea = $sparkPath.'L100,30 L0,30 Z';
+        $hour = (int) now()->format('G');
+        $greeting = $hour < 6 ? '夜深了' : ($hour < 12 ? '早上好' : ($hour < 14 ? '中午好' : ($hour < 18 ? '下午好' : '晚上好')));
+        $trendMax = max(1, max(array_column($articleTrendRows, 'count') ?: [1]));
 
-        $signalCards = [
-            ['label' => '内容资产', 'value' => $totalArticles, 'hint' => '今日 +'.$todayAdded, 'icon' => 'layers-3', 'tone' => 'bg-blue-50 text-blue-600', 'accent' => 'text-blue-500'],
-            ['label' => '已发布', 'value' => $publishedArticles, 'hint' => '发布率 '.$publishedRate.'%', 'icon' => 'radio-tower', 'tone' => 'bg-emerald-50 text-emerald-600', 'accent' => 'text-emerald-500'],
-            ['label' => '运行任务', 'value' => (int) ($taskHealth['active_tasks'] ?? $stats['active_tasks'] ?? 0), 'hint' => '队列 '.$pendingJobs.' · 失败 '.$failedJobs, 'icon' => 'activity', 'tone' => 'bg-indigo-50 text-indigo-600', 'accent' => 'text-indigo-500'],
-            ['label' => '素材资产', 'value' => $materialTotal, 'hint' => '知识块 '.$knowledgeChunks.' / 向量 '.$vectorizedChunks, 'icon' => 'database', 'tone' => 'bg-sky-50 text-sky-600', 'accent' => 'text-sky-500'],
-        ];
-        $healthCards = [
-            ['label' => '审核发布', 'value' => $publishedRate.'%', 'hint' => '草稿 '.$draftArticles.' / 待审 '.$pendingReview, 'icon' => 'shield-check', 'bar' => $publishedRate, 'tone' => 'bg-emerald-500'],
-            ['label' => '任务队列', 'value' => number_format($queueSuccessRate, 1).'%', 'hint' => '失败 '.$failedJobs.' / 等待 '.$pendingJobs, 'icon' => 'workflow', 'bar' => $queueSuccessRate, 'tone' => 'bg-blue-600'],
-            ['label' => 'AI 模型', 'value' => $modelCount, 'hint' => '聊天 '.(int) ($aiHealth['chat_models'] ?? 0).' / 向量 '.(int) ($aiHealth['embedding_models'] ?? 0), 'icon' => 'bot', 'bar' => min(100, ($modelCount / 3) * 100), 'tone' => 'bg-indigo-600'],
-        ];
         $quickActions = [
-            ['label' => '新建任务', 'href' => route('admin.tasks.create'), 'icon' => 'plus-circle', 'tone' => 'from-blue-600 to-indigo-600'],
-            ['label' => '素材管理', 'href' => route('admin.materials.index'), 'icon' => 'database', 'tone' => 'from-emerald-500 to-teal-600'],
-            ['label' => 'AI 配置', 'href' => route('admin.ai.configurator'), 'icon' => 'sparkles', 'tone' => 'from-violet-500 to-purple-600'],
-            ['label' => '数据分析', 'href' => route('admin.analytics'), 'icon' => 'chart-no-axes-combined', 'tone' => 'from-amber-500 to-orange-600'],
+            ['label' => '新建任务', 'desc' => '创建内容生产任务', 'href' => route('admin.tasks.create'), 'icon' => 'plus-circle', 'gradient' => 'from-blue-500 via-indigo-500 to-violet-600', 'shadow' => 'shadow-blue-500/20'],
+            ['label' => '素材管理', 'desc' => '知识/标题/图片库', 'href' => route('admin.materials.index'), 'icon' => 'database', 'gradient' => 'from-emerald-500 via-teal-500 to-cyan-600', 'shadow' => 'shadow-emerald-500/20'],
+            ['label' => 'AI 配置', 'desc' => '模型与提示词', 'href' => route('admin.ai.configurator'), 'icon' => 'sparkles', 'gradient' => 'from-violet-500 via-purple-500 to-fuchsia-600', 'shadow' => 'shadow-violet-500/20'],
+            ['label' => '数据分析', 'desc' => '运营总览', 'href' => route('admin.analytics'), 'icon' => 'chart-no-axes-combined', 'gradient' => 'from-amber-500 via-orange-500 to-red-500', 'shadow' => 'shadow-amber-500/20'],
+            ['label' => '文章列表', 'desc' => '管理已生成文章', 'href' => route('admin.articles.index'), 'icon' => 'file-text', 'gradient' => 'from-sky-500 via-blue-500 to-indigo-600', 'shadow' => 'shadow-sky-500/20'],
+            ['label' => '分发管理', 'desc' => '多站点分发', 'href' => route('admin.distribution.index'), 'icon' => 'radio-tower', 'gradient' => 'from-rose-500 via-pink-500 to-fuchsia-600', 'shadow' => 'shadow-rose-500/20'],
         ];
+
+        $healthCards = [
+            ['label' => '发布率', 'value' => $publishedRate.'%', 'sub' => '已发布/总文章', 'icon' => 'trending-up', 'color' => 'emerald', 'bar' => $publishedRate, 'detail' => "草稿 {$draftArticles} · 待审 {$pendingReview}"],
+            ['label' => '队列健康', 'value' => number_format($queueSuccessRate, 1).'%', 'sub' => '任务成功率', 'icon' => 'workflow', 'color' => 'blue', 'bar' => $queueSuccessRate, 'detail' => "失败 {$failedJobs} · 等待 {$pendingJobs}"],
+            ['label' => 'AI 模型', 'value' => $modelCount, 'sub' => '在线模型数', 'icon' => 'bot', 'color' => 'violet', 'bar' => min(100, ($modelCount / 3) * 100), 'detail' => '聊天 '.(int) ($aiHealth['chat_models'] ?? 0).' / 向量 '.(int) ($aiHealth['embedding_models'] ?? 0)],
+            ['label' => '知识向量', 'value' => $vectorizedChunks, 'sub' => '已嵌入片段', 'icon' => 'layers', 'color' => 'amber', 'bar' => $knowledgeChunks > 0 ? min(100, ($vectorizedChunks / $knowledgeChunks) * 100) : 0, 'detail' => "总块 {$knowledgeChunks}"],
+        ];
+
         $navLinks = [
-            ['label' => '任务管理', 'href' => route('admin.tasks.index'), 'icon' => 'workflow'],
-            ['label' => '文章列表', 'href' => route('admin.articles.index'), 'icon' => 'file-text'],
-            ['label' => '提示词', 'href' => route('admin.ai-prompts'), 'icon' => 'message-square-text'],
-            ['label' => '特殊提示词', 'href' => route('admin.ai-special-prompts'), 'icon' => 'wand-sparkles'],
-            ['label' => '分发管理', 'href' => route('admin.distribution.index'), 'icon' => 'radio-tower'],
-            ['label' => '分发队列', 'href' => route('admin.distribution.jobs'), 'icon' => 'list-checks'],
-            ['label' => '网站设置', 'href' => route('admin.site-settings.index'), 'icon' => 'network'],
-            ['label' => 'URL 采集', 'href' => route('admin.url-import'), 'icon' => 'globe'],
+            ['label' => '任务管理', 'href' => route('admin.tasks.index'), 'icon' => 'workflow', 'tint' => 'bg-indigo-50 text-indigo-600'],
+            ['label' => '文章列表', 'href' => route('admin.articles.index'), 'icon' => 'file-text', 'tint' => 'bg-sky-50 text-sky-600'],
+            ['label' => '提示词', 'href' => route('admin.ai-prompts'), 'icon' => 'message-square-text', 'tint' => 'bg-violet-50 text-violet-600'],
+            ['label' => '特殊提示词', 'href' => route('admin.ai-special-prompts'), 'icon' => 'wand-sparkles', 'tint' => 'bg-fuchsia-50 text-fuchsia-600'],
+            ['label' => '分发管理', 'href' => route('admin.distribution.index'), 'icon' => 'radio-tower', 'tint' => 'bg-rose-50 text-rose-600'],
+            ['label' => '分发队列', 'href' => route('admin.distribution.jobs'), 'icon' => 'list-checks', 'tint' => 'bg-pink-50 text-pink-600'],
+            ['label' => '网站设置', 'href' => route('admin.site-settings.index'), 'icon' => 'network', 'tint' => 'bg-emerald-50 text-emerald-600'],
+            ['label' => 'URL 采集', 'href' => route('admin.url-import'), 'icon' => 'globe', 'tint' => 'bg-teal-50 text-teal-600'],
         ];
     @endphp
 
-    <div class="space-y-4">
+    <div class="space-y-5">
 
-        {{-- 1) 顶部欢迎 + 关键指标条 --}}
-        <section class="relative overflow-hidden rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 px-5 py-4 text-white shadow-md">
-            <div class="pointer-events-none absolute -right-12 -top-12 h-40 w-40 rounded-full bg-white/10 blur-2xl"></div>
-            <div class="pointer-events-none absolute -bottom-10 right-1/3 h-32 w-32 rounded-full bg-white/5 blur-xl"></div>
-            <div class="relative flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div class="min-w-0">
-                    <h1 class="text-base font-semibold">运营首页</h1>
-                    <p class="mt-0.5 text-xs text-blue-100">实时概览 · {{ now()->format('Y-m-d H:i') }} · 共 {{ $modelCount }} 个 AI 模型在线</p>
+        {{-- 1) HERO：渐变 + 招呼语 + 关键数字 + 实时 --}}
+        <section class="relative overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-600 via-blue-600 to-violet-700 px-6 py-7 text-white shadow-2xl shadow-indigo-500/30 sm:px-8">
+            <div class="pointer-events-none absolute -right-20 -top-20 h-72 w-72 rounded-full bg-white/10 blur-3xl"></div>
+            <div class="pointer-events-none absolute -bottom-24 left-1/3 h-64 w-64 rounded-full bg-fuchsia-400/20 blur-3xl"></div>
+            <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_30%,rgba(255,255,255,0.15),transparent_50%)]"></div>
+
+            <div class="relative grid gap-6 lg:grid-cols-[1.2fr_1fr] lg:items-center">
+                <div>
+                    <div class="flex items-center gap-2 text-xs font-medium text-blue-100">
+                        <span class="inline-flex h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-300"></span>
+                        实时同步 · {{ now()->format('Y-m-d H:i') }}
+                    </div>
+                    <h1 class="mt-3 text-3xl font-bold leading-tight tracking-tight sm:text-4xl">{{ $greeting }}，欢迎回到 GEOFlow</h1>
+                    <p class="mt-2 max-w-xl text-sm text-blue-100/90 sm:text-base">
+                        今天已经生产 <span class="font-semibold text-white">{{ $todayAdded }}</span> 篇文章，队列里还有 <span class="font-semibold text-white">{{ $pendingJobs }}</span> 个任务在等待，{{ $failedJobs > 0 ? '<span class="font-semibold text-amber-200">'.$failedJobs.'</span> 个失败待处理' : '系统一切正常' }}。
+                    </p>
+                    <div class="mt-5 flex flex-wrap gap-2">
+                        <a href="{{ route('admin.tasks.create') }}" class="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-indigo-700 shadow-lg shadow-indigo-900/20 transition hover:bg-blue-50 hover:shadow-xl">
+                            <i data-lucide="plus" class="h-4 w-4"></i>
+                            新建任务
+                        </a>
+                        <a href="{{ route('admin.ai.configurator') }}" class="inline-flex items-center gap-2 rounded-xl border border-white/30 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white backdrop-blur transition hover:bg-white/20">
+                            <i data-lucide="settings-2" class="h-4 w-4"></i>
+                            AI 配置
+                        </a>
+                    </div>
                 </div>
-                <div class="flex flex-wrap items-center gap-4 text-sm sm:gap-6">
-                    <div class="text-center">
-                        <div class="text-[11px] text-blue-100">今日新增</div>
-                        <div class="text-xl font-bold leading-tight">{{ $todayAdded }}</div>
+
+                <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    <div class="rounded-2xl border border-white/20 bg-white/10 p-4 backdrop-blur-md">
+                        <div class="text-xs text-blue-100">今日新增</div>
+                        <div class="mt-1 text-3xl font-bold leading-none">{{ $todayAdded }}</div>
+                        <div class="mt-1 text-[10px] text-blue-200/80">articles</div>
                     </div>
-                    <div class="h-8 w-px bg-white/20"></div>
-                    <div class="text-center">
-                        <div class="text-[11px] text-blue-100">队列等待</div>
-                        <div class="text-xl font-bold leading-tight">{{ $pendingJobs }}</div>
+                    <div class="rounded-2xl border border-white/20 bg-white/10 p-4 backdrop-blur-md">
+                        <div class="text-xs text-blue-100">待审核</div>
+                        <div class="mt-1 text-3xl font-bold leading-none {{ $pendingReview > 0 ? 'text-amber-200' : '' }}">{{ $pendingReview }}</div>
+                        <div class="mt-1 text-[10px] text-blue-200/80">pending</div>
                     </div>
-                    <div class="h-8 w-px bg-white/20"></div>
-                    <div class="text-center">
-                        <div class="text-[11px] text-blue-100">待审核</div>
-                        <div class="text-xl font-bold leading-tight">{{ $todayPendingReview }}</div>
+                    <div class="rounded-2xl border border-white/20 bg-white/10 p-4 backdrop-blur-md">
+                        <div class="text-xs text-blue-100">运行任务</div>
+                        <div class="mt-1 text-3xl font-bold leading-none">{{ $activeTasks }}</div>
+                        <div class="mt-1 text-[10px] text-blue-200/80">active</div>
                     </div>
-                    <div class="h-8 w-px bg-white/20"></div>
-                    <div class="text-center">
-                        <div class="text-[11px] text-blue-100">失败任务</div>
-                        <div class="text-xl font-bold leading-tight {{ $failedJobs > 0 ? 'text-amber-200' : '' }}">{{ $failedJobs }}</div>
+                    <div class="rounded-2xl border {{ $failedJobs > 0 ? 'border-amber-300/60 bg-amber-500/15' : 'border-white/20 bg-white/10' }} p-4 backdrop-blur-md">
+                        <div class="text-xs {{ $failedJobs > 0 ? 'text-amber-100' : 'text-blue-100' }}">失败</div>
+                        <div class="mt-1 text-3xl font-bold leading-none {{ $failedJobs > 0 ? 'text-amber-100' : '' }}">{{ $failedJobs }}</div>
+                        <div class="mt-1 text-[10px] {{ $failedJobs > 0 ? 'text-amber-200/80' : 'text-blue-200/80' }}">failed</div>
                     </div>
                 </div>
             </div>
         </section>
 
-        {{-- 2) 四大指标卡（含 sparkline） --}}
+        {{-- 2) 6 个快捷操作（渐变大按钮） --}}
+        <section class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+            @foreach ($quickActions as $action)
+                <a href="{{ $action['href'] }}" class="group relative overflow-hidden rounded-2xl bg-gradient-to-br {{ $action['gradient'] }} p-4 text-white shadow-lg {{ $action['shadow'] }} transition hover:-translate-y-0.5 hover:shadow-xl">
+                    <div class="pointer-events-none absolute -right-6 -top-6 h-20 w-20 rounded-full bg-white/15 blur-2xl transition group-hover:bg-white/25"></div>
+                    <div class="relative flex items-start justify-between">
+                        <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-white/20 backdrop-blur">
+                            <i data-lucide="{{ $action['icon'] }}" class="h-4 w-4"></i>
+                        </span>
+                        <i data-lucide="arrow-up-right" class="h-4 w-4 opacity-60 transition group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5"></i>
+                    </div>
+                    <div class="relative mt-3 text-sm font-bold">{{ $action['label'] }}</div>
+                    <div class="relative text-[11px] text-white/75">{{ $action['desc'] }}</div>
+                </a>
+            @endforeach
+        </section>
+
+        {{-- 3) 趋势图 + 生产漏斗 --}}
+        <section class="grid gap-4 lg:grid-cols-3">
+            <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:col-span-2">
+                <div class="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+                    <div class="flex items-center gap-3">
+                        <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white">
+                            <i data-lucide="trending-up" class="h-4 w-4"></i>
+                        </span>
+                        <div>
+                            <div class="text-sm font-bold text-slate-900">内容生产趋势</div>
+                            <div class="text-xs text-slate-400">最近 7 天新增文章</div>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-2xl font-bold text-slate-900 leading-none">{{ (int) ($articleTrendChart['total_trend_count'] ?? array_sum(array_column($articleTrendRows, 'count'))) }}</div>
+                        <div class="text-[10px] text-slate-400">7日累计</div>
+                    </div>
+                </div>
+                <div class="p-3">
+                    <div data-dashboard-trend-chart data-series='@json($articleTrendRows)' class="h-64 w-full" role="img" aria-label="content production trend"></div>
+                </div>
+            </div>
+
+            <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                <div class="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+                    <div class="flex items-center gap-3">
+                        <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-600 text-white">
+                            <i data-lucide="git-branch" class="h-4 w-4"></i>
+                        </span>
+                        <div>
+                            <div class="text-sm font-bold text-slate-900">生产漏斗</div>
+                            <div class="text-xs text-slate-400">从标题到发布</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="space-y-3 p-5">
+                    @forelse (($contentFunnel['stages'] ?? []) as $stage)
+                        @php($width = max(4, round(((int) $stage['count'] / max(1, (int) ($contentFunnel['max'] ?? 1))) * 100)))
+                        <div>
+                            <div class="mb-1.5 flex items-center justify-between text-xs">
+                                <span class="font-medium text-slate-700">{{ $stage['label'] }}</span>
+                                <span class="font-bold text-indigo-600">{{ (int) $stage['count'] }}</span>
+                            </div>
+                            <div class="h-2 overflow-hidden rounded-full bg-slate-100">
+                                <div class="h-full rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500" style="width: {{ $width }}%"></div>
+                            </div>
+                        </div>
+                    @empty
+                        <div class="py-8 text-center text-xs text-slate-400">暂无漏斗数据</div>
+                    @endforelse
+                </div>
+            </div>
+        </section>
+
+        {{-- 4) 4 个健康度卡（带渐变图标 + 进度条） --}}
         <section class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            @foreach ($signalCards as $card)
-                <div class="group relative overflow-hidden rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-blue-200 hover:shadow-md">
+            @foreach ($healthCards as $card)
+                <div class="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:shadow-md">
                     <div class="flex items-start justify-between">
-                        <span class="text-xs font-medium text-slate-500">{{ $card['label'] }}</span>
-                        <span class="flex h-8 w-8 items-center justify-center rounded-lg {{ $card['tone'] }}">
+                        <div>
+                            <div class="text-xs font-medium text-slate-500">{{ $card['label'] }}</div>
+                            <div class="mt-2 text-3xl font-bold leading-none text-slate-900 tracking-tight">{{ $card['value'] }}</div>
+                            <div class="mt-1 text-[11px] text-slate-400">{{ $card['sub'] }}</div>
+                        </div>
+                        <span class="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br
+                            @switch($card['color'])
+                                @case('emerald') from-emerald-400 to-teal-600
+                                @case('blue') from-blue-400 to-indigo-600
+                                @case('violet') from-violet-400 to-fuchsia-600
+                                @case('amber') from-amber-400 to-orange-600
+                            @endswitch
+                            text-white shadow-md">
                             <i data-lucide="{{ $card['icon'] }}" class="h-4 w-4"></i>
                         </span>
                     </div>
-                    <div class="mt-2 text-2xl font-bold leading-tight text-slate-900 tracking-tight">{{ number_format((int) $card['value']) }}</div>
-                    <div class="mt-0.5 text-xs text-slate-400">{{ $card['hint'] }}</div>
-                    <svg viewBox="0 0 100 30" preserveAspectRatio="none" class="mt-2 h-7 w-full {{ $card['accent'] }}" aria-hidden="true">
-                        <path d="{{ $sparkArea }}" fill="currentColor" fill-opacity="0.12"/>
-                        <path d="{{ $sparkPath }}" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
-                        @foreach ($sparkDots as $dot)
+                    <div class="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100">
+                        <div class="h-full rounded-full bg-gradient-to-r
+                            @switch($card['color'])
+                                @case('emerald') from-emerald-400 to-teal-500
+                                @case('blue') from-blue-400 to-indigo-500
+                                @case('violet') from-violet-400 to-fuchsia-500
+                                @case('amber') from-amber-400 to-orange-500
+                            @endswitch"
+                            style="width: {{ min(100, max(0, (float) $card['bar'])) }}%"></div>
+                    </div>
+                    <div class="mt-1.5 text-[10px] text-slate-400">{{ $card['detail'] }}</div>
+                </div>
+            @endforeach
+        </section>
+
+        {{-- 5) 4 个关键指标卡（带 sparkline SVG） --}}
+        <section class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            @php
+                $statCards = [
+                    ['label' => '内容资产', 'value' => $totalArticles, 'hint' => '今日 +'.$todayAdded, 'icon' => 'layers-3', 'from' => '#3b82f6', 'to' => '#8b5cf6'],
+                    ['label' => '已发布', 'value' => $publishedArticles, 'hint' => '发布率 '.$publishedRate.'%', 'icon' => 'radio-tower', 'from' => '#10b981', 'to' => '#06b6d4'],
+                    ['label' => '运行任务', 'value' => $activeTasks, 'hint' => '队列 '.$pendingJobs.' · 失败 '.$failedJobs, 'icon' => 'activity', 'from' => '#6366f1', 'to' => '#8b5cf6'],
+                    ['label' => '素材资产', 'value' => $materialTotal, 'hint' => '知识块 '.$knowledgeChunks, 'icon' => 'database', 'from' => '#0ea5e9', 'to' => '#6366f1'],
+                ];
+                $spark = array_column($articleTrendRows, 'count') ?: [3,5,4,7,6,8,10];
+                $sparkN = count($spark);
+                $sparkM = max(1, max($spark));
+                $pts = []; $areaPts = '';
+                foreach (array_values($spark) as $i => $v) {
+                    $x = ($i / max(1, $sparkN - 1)) * 100;
+                    $y = 30 - ($v / $sparkM) * 24 - 3;
+                    $pts[] = [$x, $y];
+                    $areaPts .= ($i === 0 ? 'M' : 'L').sprintf('%.1f,%.1f', $x, $y).' ';
+                }
+                $areaPath = $areaPts.'L100,30 L0,30 Z';
+            @endphp
+            @foreach ($statCards as $i => $card)
+                <div class="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-slate-300 hover:shadow-md">
+                    <div class="flex items-start justify-between">
+                        <div>
+                            <div class="text-xs font-medium text-slate-500">{{ $card['label'] }}</div>
+                            <div class="mt-2 text-2xl font-bold leading-none text-slate-900 tracking-tight">{{ number_format($card['value']) }}</div>
+                            <div class="mt-1 text-[11px] text-slate-400">{{ $card['hint'] }}</div>
+                        </div>
+                        <div class="flex h-10 w-10 items-center justify-center rounded-xl text-white shadow-md" style="background: linear-gradient(135deg, {{ $card['from'] }}, {{ $card['to'] }})">
+                            <i data-lucide="{{ $card['icon'] }}" class="h-4 w-4"></i>
+                        </div>
+                    </div>
+                    <svg viewBox="0 0 100 30" preserveAspectRatio="none" class="mt-3 h-8 w-full" style="color: {{ $card['from'] }}" aria-hidden="true">
+                        <defs>
+                            <linearGradient id="sg-{{ $i }}" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stop-color="currentColor" stop-opacity="0.3"/>
+                                <stop offset="100%" stop-color="currentColor" stop-opacity="0.02"/>
+                            </linearGradient>
+                        </defs>
+                        <path d="{{ $areaPath }}" fill="url(#sg-{{ $i }})"/>
+                        <path d="{{ $areaPts }}" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                        @foreach ($pts as $dot)
                             <circle cx="{{ $dot[0] }}" cy="{{ $dot[1] }}" r="1.2" fill="currentColor"/>
                         @endforeach
                     </svg>
@@ -139,186 +282,75 @@
             @endforeach
         </section>
 
-        {{-- 3) 今日关注（横排）+ 快捷操作 --}}
-        <section class="grid gap-3 lg:grid-cols-3">
-            <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm lg:col-span-2">
-                <div class="mb-3 flex items-center justify-between">
+        {{-- 6) 今日关注（紧凑横排 4 项） --}}
+        <section class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <a href="{{ route('admin.articles.index', ['review_status' => 'pending']) }}" class="group relative overflow-hidden rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50 p-4 transition hover:shadow-md">
+                <div class="flex items-center justify-between">
                     <div>
-                        <h3 class="text-sm font-semibold text-slate-900">今日关注</h3>
-                        <p class="text-xs text-slate-400">优先处理会影响发布和分发的事项</p>
-                    </div>
-                    <span class="rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-700">待办</span>
-                </div>
-                <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                    <a href="{{ route('admin.articles.index', ['review_status' => 'pending']) }}" class="flex items-center justify-between rounded-lg border border-amber-100 bg-amber-50/60 px-3 py-2.5 transition hover:bg-amber-50">
-                        <span class="flex items-center gap-2 text-xs font-medium text-slate-700">
-                            <i data-lucide="clipboard-check" class="h-3.5 w-3.5 text-amber-600"></i>
+                        <div class="flex items-center gap-1.5 text-xs font-semibold text-amber-800">
+                            <i data-lucide="clipboard-check" class="h-3.5 w-3.5"></i>
                             待审文章
-                        </span>
-                        <span class="text-lg font-bold leading-none text-amber-700">{{ $pendingReview }}</span>
-                    </a>
-                    <a href="{{ route('admin.tasks.index') }}" class="flex items-center justify-between rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-2.5 transition hover:bg-blue-50">
-                        <span class="flex items-center gap-2 text-xs font-medium text-slate-700">
-                            <i data-lucide="list-checks" class="h-3.5 w-3.5 text-blue-600"></i>
+                        </div>
+                        <div class="mt-2 text-3xl font-bold leading-none text-amber-700">{{ $pendingReview }}</div>
+                    </div>
+                    <i data-lucide="arrow-right" class="h-5 w-5 text-amber-400 transition group-hover:translate-x-1"></i>
+                </div>
+            </a>
+            <a href="{{ route('admin.tasks.index') }}" class="group relative overflow-hidden rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-indigo-50 p-4 transition hover:shadow-md">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <div class="flex items-center gap-1.5 text-xs font-semibold text-blue-800">
+                            <i data-lucide="list-checks" class="h-3.5 w-3.5"></i>
                             队列等待
-                        </span>
-                        <span class="text-lg font-bold leading-none text-blue-700">{{ $pendingJobs }}</span>
-                    </a>
-                    <a href="{{ route('admin.tasks.index') }}" class="flex items-center justify-between rounded-lg border border-red-100 bg-red-50/60 px-3 py-2.5 transition hover:bg-red-50">
-                        <span class="flex items-center gap-2 text-xs font-medium text-slate-700">
-                            <i data-lucide="circle-alert" class="h-3.5 w-3.5 text-red-600"></i>
+                        </div>
+                        <div class="mt-2 text-3xl font-bold leading-none text-blue-700">{{ $pendingJobs }}</div>
+                    </div>
+                    <i data-lucide="arrow-right" class="h-5 w-5 text-blue-400 transition group-hover:translate-x-1"></i>
+                </div>
+            </a>
+            <a href="{{ route('admin.tasks.index') }}" class="group relative overflow-hidden rounded-2xl border {{ $failedJobs > 0 ? 'border-red-300 bg-gradient-to-br from-red-50 to-rose-50' : 'border-slate-200 bg-gradient-to-br from-slate-50 to-slate-100' }} p-4 transition hover:shadow-md">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <div class="flex items-center gap-1.5 text-xs font-semibold {{ $failedJobs > 0 ? 'text-red-800' : 'text-slate-600' }}">
+                            <i data-lucide="circle-alert" class="h-3.5 w-3.5"></i>
                             失败任务
-                        </span>
-                        <span class="text-lg font-bold leading-none text-red-600">{{ $failedJobs }}</span>
-                    </a>
-                    <a href="{{ route('admin.articles.index') }}" class="flex items-center justify-between rounded-lg border border-emerald-100 bg-emerald-50/60 px-3 py-2.5 transition hover:bg-emerald-50">
-                        <span class="flex items-center gap-2 text-xs font-medium text-slate-700">
-                            <i data-lucide="file-plus-2" class="h-3.5 w-3.5 text-emerald-600"></i>
+                        </div>
+                        <div class="mt-2 text-3xl font-bold leading-none {{ $failedJobs > 0 ? 'text-red-700' : 'text-slate-500' }}">{{ $failedJobs }}</div>
+                    </div>
+                    <i data-lucide="arrow-right" class="h-5 w-5 {{ $failedJobs > 0 ? 'text-red-400' : 'text-slate-300' }} transition group-hover:translate-x-1"></i>
+                </div>
+            </a>
+            <a href="{{ route('admin.articles.index') }}" class="group relative overflow-hidden rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-teal-50 p-4 transition hover:shadow-md">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <div class="flex items-center gap-1.5 text-xs font-semibold text-emerald-800">
+                            <i data-lucide="file-plus-2" class="h-3.5 w-3.5"></i>
                             今日新增
-                        </span>
-                        <span class="text-lg font-bold leading-none text-emerald-700">{{ $todayAdded }}</span>
-                    </a>
-                </div>
-            </div>
-
-            <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                <h3 class="text-sm font-semibold text-slate-900">快捷操作</h3>
-                <p class="mt-0.5 text-xs text-slate-400">常用入口，一键直达</p>
-                <div class="mt-3 grid grid-cols-2 gap-2">
-                    @foreach ($quickActions as $action)
-                        <a href="{{ $action['href'] }}" class="group relative overflow-hidden rounded-lg bg-gradient-to-br {{ $action['tone'] }} px-3 py-3 text-white shadow-sm transition hover:shadow-md">
-                            <i data-lucide="{{ $action['icon'] }}" class="h-4 w-4"></i>
-                            <div class="mt-1.5 text-xs font-semibold">{{ $action['label'] }}</div>
-                            <i data-lucide="arrow-up-right" class="absolute right-2 top-2 h-3.5 w-3.5 opacity-60 transition group-hover:opacity-100"></i>
-                        </a>
-                    @endforeach
-                </div>
-            </div>
-        </section>
-
-        {{-- 4) 趋势图 + 生产漏斗 + 健康度（3 列） --}}
-        <section class="grid gap-3 lg:grid-cols-3">
-            <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm lg:col-span-2">
-                <div class="flex items-start justify-between">
-                    <div>
-                        <h3 class="text-sm font-semibold text-slate-900">内容生产趋势</h3>
-                        <p class="text-xs text-slate-400">最近 7 天新增文章，判断任务产能是否稳定</p>
-                    </div>
-                    <div class="rounded-md bg-blue-50 px-2.5 py-1 text-right">
-                        <div class="text-base font-bold leading-tight text-blue-700">{{ (int) ($articleTrendChart['total_trend_count'] ?? array_sum(array_column($articleTrendRows, 'count'))) }}</div>
-                        <div class="text-[10px] text-blue-500">7日新增</div>
-                    </div>
-                </div>
-                <div class="mt-3 rounded-lg bg-slate-50 border border-slate-100 p-2">
-                    <div data-dashboard-trend-chart data-series='@json($articleTrendRows)' class="h-48 w-full" role="img" aria-label="content production trend chart"></div>
-                </div>
-            </div>
-
-            <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                <div class="flex items-start justify-between">
-                    <div>
-                        <h3 class="text-sm font-semibold text-slate-900">生产漏斗</h3>
-                        <p class="text-xs text-slate-400">从标题到发布触达</p>
-                    </div>
-                    <i data-lucide="git-branch" class="h-4 w-4 text-slate-400"></i>
-                </div>
-                <div class="mt-3 space-y-2.5">
-                    @forelse (($contentFunnel['stages'] ?? []) as $stage)
-                        @php($width = max(5, round(((int) $stage['count'] / max(1, (int) ($contentFunnel['max'] ?? 1))) * 100)))
-                        <div>
-                            <div class="mb-1 flex items-center justify-between text-xs">
-                                <span class="font-medium text-slate-700">{{ $stage['label'] }}</span>
-                                <span class="font-bold text-blue-600">{{ (int) $stage['count'] }}</span>
-                            </div>
-                            <div class="h-1.5 overflow-hidden rounded-full bg-slate-100">
-                                <div class="h-full rounded-full bg-gradient-to-r from-blue-500 to-indigo-500" style="width: {{ $width }}%"></div>
-                            </div>
                         </div>
-                    @empty
-                        <div class="py-6 text-center text-xs text-slate-400">暂无漏斗数据</div>
-                    @endforelse
+                        <div class="mt-2 text-3xl font-bold leading-none text-emerald-700">{{ $todayAdded }}</div>
+                    </div>
+                    <i data-lucide="arrow-right" class="h-5 w-5 text-emerald-400 transition group-hover:translate-x-1"></i>
                 </div>
-            </div>
+            </a>
         </section>
 
-        {{-- 5) 健康度三卡（横排） --}}
-        <section class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            @foreach ($healthCards as $card)
-                <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:shadow-md">
-                    <div class="flex items-start justify-between">
-                        <div>
-                            <h3 class="text-sm font-semibold text-slate-900">{{ $card['label'] }}</h3>
-                            <p class="mt-0.5 text-xs text-slate-400">{{ $card['hint'] }}</p>
-                        </div>
-                        <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
-                            <i data-lucide="{{ $card['icon'] }}" class="h-4 w-4"></i>
-                        </span>
-                    </div>
-                    <div class="mt-3 flex items-end justify-between">
-                        <div class="text-2xl font-bold leading-none text-slate-950">{{ $card['value'] }}</div>
-                        <div class="text-[10px] font-medium text-slate-400">实时</div>
-                    </div>
-                    <div class="mt-2.5 h-1.5 overflow-hidden rounded-full bg-slate-100">
-                        <div class="h-full rounded-full {{ $card['tone'] }}" style="width: {{ min(100, max(0, (float) $card['bar'])) }}%"></div>
-                    </div>
-                </div>
-            @endforeach
-        </section>
-
-        {{-- 6) 采集 + 最近文章（双列） --}}
+        {{-- 7) 双列：最近文章 + 采集任务 --}}
         <section class="grid gap-3 lg:grid-cols-2">
-            <div class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-                <div class="flex items-center justify-between border-b border-slate-100 bg-gradient-to-r from-indigo-50/40 to-white px-4 py-2.5">
+            <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                <div class="flex items-center justify-between border-b border-slate-100 bg-gradient-to-r from-sky-50/60 to-white px-5 py-3">
                     <div class="flex items-center gap-2.5">
-                        <div class="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-100 text-indigo-600">
-                            <i data-lucide="database" class="h-3.5 w-3.5"></i>
-                        </div>
-                        <div>
-                            <div class="text-sm font-bold text-slate-900">采集与素材</div>
-                            <div class="text-[11px] text-slate-400">知识、标题、关键词、图片共同支撑文章生成</div>
-                        </div>
-                    </div>
-                    <a href="{{ route('admin.materials.index') }}" class="text-xs font-semibold text-blue-600 hover:text-blue-700">素材库 →</a>
-                </div>
-                <div class="grid grid-cols-4 gap-px bg-slate-100 text-sm">
-                    <div class="bg-white px-3 py-2.5 text-center"><div class="text-[10px] text-slate-400 mb-0.5">知识库</div><div class="text-lg font-bold text-slate-900">{{ (int) ($materialHealth['knowledge_bases'] ?? 0) }}</div></div>
-                    <div class="bg-white px-3 py-2.5 text-center"><div class="text-[10px] text-slate-400 mb-0.5">标题库</div><div class="text-lg font-bold text-slate-900">{{ (int) ($materialHealth['title_libraries'] ?? 0) }}</div></div>
-                    <div class="bg-white px-3 py-2.5 text-center"><div class="text-[10px] text-slate-400 mb-0.5">图库</div><div class="text-lg font-bold text-slate-900">{{ (int) ($materialHealth['image_libraries'] ?? 0) }}</div></div>
-                    <div class="bg-white px-3 py-2.5 text-center"><div class="text-[10px] text-slate-400 mb-0.5">向量片段</div><div class="text-lg font-bold text-slate-900">{{ $vectorizedChunks }}</div></div>
-                </div>
-                <div class="divide-y divide-slate-100">
-                    @forelse ($recentImports as $job)
-                        <div class="flex items-center justify-between gap-3 px-4 py-2.5 hover:bg-slate-50/50">
-                            <div class="min-w-0 flex-1">
-                                <div class="line-clamp-1 break-all text-xs font-medium text-slate-800">{{ $job->page_title ?: ($job->source_domain ?: 'URL 采集任务') }}</div>
-                                <div class="mt-0.5 text-[11px] text-slate-400">{{ $job->current_step ?: $job->status }}</div>
-                            </div>
-                            <span class="shrink-0 rounded-full bg-indigo-50 border border-indigo-100 px-2 py-0.5 text-[11px] font-semibold text-indigo-600">{{ (int) ($job->progress_percent ?? 0) }}%</span>
-                        </div>
-                    @empty
-                        <div class="px-4 py-6 text-center text-xs text-slate-400">暂无采集记录</div>
-                    @endforelse
-                </div>
-            </div>
-
-            <div class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-                <div class="flex items-center justify-between border-b border-slate-100 bg-gradient-to-r from-emerald-50/40 to-white px-4 py-2.5">
-                    <div class="flex items-center gap-2.5">
-                        <div class="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600">
+                        <span class="flex h-7 w-7 items-center justify-center rounded-lg bg-sky-100 text-sky-600">
                             <i data-lucide="file-text" class="h-3.5 w-3.5"></i>
-                        </div>
-                        <div>
-                            <div class="text-sm font-bold text-slate-900">最近文章</div>
-                            <div class="text-[11px] text-slate-400">生成后建议先预览，再同步到外部平台</div>
-                        </div>
+                        </span>
+                        <div class="text-sm font-bold text-slate-900">最近文章</div>
                     </div>
-                    <a href="{{ route('admin.articles.index') }}" class="text-xs font-semibold text-blue-600 hover:text-blue-700">文章列表 →</a>
+                    <a href="{{ route('admin.articles.index') }}" class="text-xs font-semibold text-sky-600 hover:text-sky-700">查看全部 →</a>
                 </div>
                 <div class="divide-y divide-slate-100">
                     @forelse ($latestArticles as $article)
-                        <div class="flex items-center justify-between gap-3 px-4 py-2.5 hover:bg-slate-50/50">
+                        <div class="flex items-center justify-between gap-3 px-5 py-3 hover:bg-slate-50/50">
                             <div class="min-w-0 flex-1">
-                                <div class="line-clamp-1 break-all text-xs font-medium text-slate-800">{{ $article->title }}</div>
+                                <div class="line-clamp-1 break-all text-sm font-medium text-slate-800">{{ $article->title }}</div>
                                 <div class="mt-0.5 text-[11px] text-slate-400">{{ $article->category_name ?: '未分类' }} · {{ $article->created_at ? \Illuminate\Support\Carbon::parse($article->created_at)->format('m-d H:i') : '-' }}</div>
                             </div>
                             <a href="{{ route('admin.articles.preview', ['articleId' => (int) $article->id]) }}" target="_blank" rel="noopener" class="admin-btn-secondary h-7 px-2.5 text-[11px] font-medium">
@@ -327,23 +359,60 @@
                             </a>
                         </div>
                     @empty
-                        <div class="px-4 py-6 text-center text-xs text-slate-400">暂无文章</div>
+                        <div class="px-5 py-10 text-center">
+                            <i data-lucide="file-x-2" class="mx-auto h-8 w-8 text-slate-300"></i>
+                            <div class="mt-2 text-xs text-slate-400">暂无文章</div>
+                        </div>
+                    @endforelse
+                </div>
+            </div>
+
+            <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                <div class="flex items-center justify-between border-b border-slate-100 bg-gradient-to-r from-indigo-50/60 to-white px-5 py-3">
+                    <div class="flex items-center gap-2.5">
+                        <span class="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-100 text-indigo-600">
+                            <i data-lucide="globe" class="h-3.5 w-3.5"></i>
+                        </span>
+                        <div class="text-sm font-bold text-slate-900">最近采集</div>
+                    </div>
+                    <a href="{{ route('admin.url-import') }}" class="text-xs font-semibold text-indigo-600 hover:text-indigo-700">新建采集 →</a>
+                </div>
+                <div class="divide-y divide-slate-100">
+                    @forelse ($recentImports as $job)
+                        <div class="flex items-center gap-3 px-5 py-3 hover:bg-slate-50/50">
+                            <div class="min-w-0 flex-1">
+                                <div class="line-clamp-1 break-all text-sm font-medium text-slate-800">{{ $job->page_title ?: ($job->source_domain ?: 'URL 采集任务') }}</div>
+                                <div class="mt-1 text-[11px] text-slate-400">{{ $job->current_step ?: $job->status }}</div>
+                                <div class="mt-1.5 h-1 overflow-hidden rounded-full bg-slate-100">
+                                    <div class="h-full rounded-full bg-gradient-to-r from-indigo-500 to-violet-500" style="width: {{ (int) ($job->progress_percent ?? 0) }}%"></div>
+                                </div>
+                            </div>
+                            <span class="shrink-0 rounded-md bg-indigo-50 px-2 py-0.5 text-[11px] font-bold text-indigo-600">{{ (int) ($job->progress_percent ?? 0) }}%</span>
+                        </div>
+                    @empty
+                        <div class="px-5 py-10 text-center">
+                            <i data-lucide="globe-lock" class="mx-auto h-8 w-8 text-slate-300"></i>
+                            <div class="mt-2 text-xs text-slate-400">暂无采集任务</div>
+                        </div>
                     @endforelse
                 </div>
             </div>
         </section>
 
-        {{-- 7) 全部导航入口（紧凑 grid） --}}
-        <section class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div class="mb-3 flex items-center justify-between">
+        {{-- 8) 全部功能入口（图标 grid） --}}
+        <section class="overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div class="mb-3 flex items-center gap-2.5">
+                <span class="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+                    <i data-lucide="layout-grid" class="h-3.5 w-3.5"></i>
+                </span>
                 <div>
-                    <h3 class="text-sm font-semibold text-slate-900">全部功能入口</h3>
-                    <p class="text-xs text-slate-400">点击跳转到对应模块</p>
+                    <div class="text-sm font-bold text-slate-900">全部功能入口</div>
+                    <div class="text-xs text-slate-400">点击跳转到对应模块</div>
                 </div>
             </div>
             <div class="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-8">
                 @foreach ($navLinks as $link)
-                    <a href="{{ $link['href'] }}" class="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-600 transition hover:border-blue-300 hover:bg-blue-50 hover:text-blue-600">
+                    <a href="{{ $link['href'] }}" class="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2.5 text-xs font-medium text-slate-600 transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-sm {{ $link['tint'] }}">
                         <i data-lucide="{{ $link['icon'] }}" class="h-3.5 w-3.5"></i>
                         <span class="truncate">{{ $link['label'] }}</span>
                     </a>
@@ -372,19 +441,19 @@
                     const chart = echarts.init(element, null, { renderer: 'canvas' });
 
                     chart.setOption({
-                        animationDuration: 600,
-                        grid: { top: 12, right: 12, bottom: 24, left: 40 },
+                        animationDuration: 700,
+                        grid: { top: 16, right: 16, bottom: 24, left: 40 },
                         tooltip: {
                             trigger: 'axis',
-                            backgroundColor: '#ffffff',
-                            borderColor: '#bfdbfe',
+                            backgroundColor: 'rgba(255,255,255,0.98)',
+                            borderColor: '#c7d2fe',
                             borderWidth: 1,
-                            textStyle: { color: '#1e3a8a', fontSize: 12 },
+                            textStyle: { color: '#1e1b4b', fontSize: 12 },
                             padding: [8, 12],
-                            extraCssText: 'box-shadow: 0 8px 20px rgba(37, 99, 235, 0.14); border-radius: 8px;',
+                            extraCssText: 'box-shadow: 0 10px 25px rgba(67, 56, 202, 0.18); border-radius: 10px; backdrop-filter: blur(8px);',
                             formatter: (params) => {
                                 const item = Array.isArray(params) ? params[0] : params;
-                                return `${item.axisValue}<br/>新增 <span style="color:#2563eb;font-weight:600">${Number(item.value || 0)}</span> 篇`;
+                                return `<div style="font-weight:600">${item.axisValue}</div><div style="margin-top:4px">新增 <b style="color:#4f46e5">${Number(item.value || 0)}</b> 篇</div>`;
                             },
                         },
                         xAxis: {
@@ -407,13 +476,19 @@
                             data: counts,
                             smooth: 0.4,
                             symbol: 'circle',
-                            symbolSize: 7,
-                            lineStyle: { width: 2.5, color: '#2563eb' },
-                            itemStyle: { color: '#ffffff', borderColor: '#2563eb', borderWidth: 2 },
+                            symbolSize: 8,
+                            lineStyle: { width: 3, color: '#4f46e5' },
+                            itemStyle: {
+                                color: '#ffffff',
+                                borderColor: '#4f46e5',
+                                borderWidth: 2.5,
+                                shadowColor: 'rgba(79, 70, 229, 0.4)',
+                                shadowBlur: 8,
+                            },
                             areaStyle: {
                                 color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                                    { offset: 0, color: 'rgba(37, 99, 235, 0.22)' },
-                                    { offset: 1, color: 'rgba(37, 99, 235, 0.02)' },
+                                    { offset: 0, color: 'rgba(99, 102, 241, 0.32)' },
+                                    { offset: 1, color: 'rgba(99, 102, 241, 0.02)' },
                                 ]),
                             },
                         }],
