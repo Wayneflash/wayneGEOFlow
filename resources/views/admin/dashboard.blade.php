@@ -94,36 +94,37 @@
                     <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                         <div class="mb-4 flex items-start justify-between gap-4">
                             <div>
-                                <div class="text-sm font-bold text-slate-900">浠婃棩鍏虫敞</div>
-                                <div class="mt-0.5 text-xs text-slate-400">浼樺厛澶勭悊浼氬奖鍝嶅彂甯冨拰鍒嗗彂鐨勪簨椤?/div>
+                                <div class="text-sm font-bold text-slate-900">今日关注</div>
+                                <div class="mt-0.5 text-xs text-slate-400">优先处理会影响发布和分发的事项</div>
                             </div>
-                            <span class="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-500">寰呭姙</span>
+                            <span class="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-500">待办</span>
                         </div>
                         <div class="space-y-3">
                             <a href="{{ route('admin.articles.index', ['review_status' => 'pending']) }}" class="flex items-center justify-between rounded-xl border border-amber-100 bg-amber-50/70 px-4 py-3 transition hover:bg-amber-50">
                                 <span class="flex items-center gap-3 text-sm font-medium text-slate-700">
                                     <i data-lucide="clipboard-check" class="h-4 w-4 text-amber-600"></i>
-                                    寰呭鏍告枃绔?                                </span>
+                                    待审核文章
+                                </span>
                                 <span class="text-lg font-bold text-amber-700">{{ $pendingReview }}</span>
                             </a>
                             <a href="{{ route('admin.tasks.index') }}" class="flex items-center justify-between rounded-xl border border-blue-100 bg-blue-50/70 px-4 py-3 transition hover:bg-blue-50">
                                 <span class="flex items-center gap-3 text-sm font-medium text-slate-700">
                                     <i data-lucide="list-checks" class="h-4 w-4 text-blue-600"></i>
-                                    闃熷垪绛夊緟
+                                    队列等待
                                 </span>
                                 <span class="text-lg font-bold text-blue-700">{{ (int) ($taskHealth['pending_jobs'] ?? 0) }}</span>
                             </a>
                             <a href="{{ route('admin.tasks.index') }}" class="flex items-center justify-between rounded-xl border border-red-100 bg-red-50/70 px-4 py-3 transition hover:bg-red-50">
                                 <span class="flex items-center gap-3 text-sm font-medium text-slate-700">
                                     <i data-lucide="circle-alert" class="h-4 w-4 text-red-600"></i>
-                                    澶辫触浠诲姟
+                                    失败任务
                                 </span>
                                 <span class="text-lg font-bold text-red-600">{{ (int) ($taskHealth['failed_jobs'] ?? 0) }}</span>
                             </a>
                             <a href="{{ route('admin.articles.index') }}" class="flex items-center justify-between rounded-xl border border-emerald-100 bg-emerald-50/70 px-4 py-3 transition hover:bg-emerald-50">
                                 <span class="flex items-center gap-3 text-sm font-medium text-slate-700">
                                     <i data-lucide="file-plus-2" class="h-4 w-4 text-emerald-600"></i>
-                                    浠婃棩鏂板
+                                    今日新增
                                 </span>
                                 <span class="text-lg font-bold text-emerald-700">{{ (int) ($todayStats['today_articles'] ?? 0) }}</span>
                             </a>
@@ -137,19 +138,19 @@
             <div class="grid gap-2 md:grid-cols-4">
                 <button type="button" class="admin-tab-button is-active" data-dashboard-tab="overview" aria-pressed="true">
                     <i data-lucide="chart-no-axes-combined" class="h-4 w-4"></i>
-                    鐢熶骇姒傝
+                    生产概览
                 </button>
                 <button type="button" class="admin-tab-button" data-dashboard-tab="guide" aria-pressed="false">
                     <i data-lucide="mouse-pointer-click" class="h-4 w-4"></i>
-                    鏂版墜甯哥敤
+                    新手常用
                 </button>
                 <button type="button" class="admin-tab-button" data-dashboard-tab="materials" aria-pressed="false">
                     <i data-lucide="database" class="h-4 w-4"></i>
-                    绱犳潗鏂囩珷
+                    素材文章
                 </button>
                 <button type="button" class="admin-tab-button" data-dashboard-tab="advanced" aria-pressed="false">
                     <i data-lucide="settings-2" class="h-4 w-4"></i>
-                    楂樼骇鍏ュ彛
+                    高级入口
                 </button>
             </div>
         </section>
@@ -158,12 +159,12 @@
             <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div class="flex items-start justify-between gap-4">
                     <div>
-                        <h3 class="text-base font-semibold text-slate-950">鍐呭鐢熶骇瓒嬪娍</h3>
-                        <p class="mt-1 text-sm text-slate-500">鏈€杩?7 澶╂柊澧炴枃绔狅紝鐢ㄦ潵鍒ゆ柇浠诲姟浜ц兘鏄惁绋冲畾銆?/p>
+                        <h3 class="text-base font-semibold text-slate-950">内容生产趋势</h3>
+                        <p class="mt-1 text-sm text-slate-500">最近 7 天新增文章，用来判断任务产能是否稳定。</p>
                     </div>
                     <div class="rounded-lg bg-blue-50 px-3 py-2 text-right">
                         <div class="text-lg font-bold text-blue-700">{{ (int) ($articleTrendChart['total_trend_count'] ?? 0) }}</div>
-                        <div class="text-xs text-blue-500">7鏃ユ柊澧?/div>
+                        <div class="text-xs text-blue-500">7日新增</div>
                     </div>
                 </div>
                 <div class="mt-5 rounded-xl bg-slate-50 border border-slate-100 p-4" data-dashboard-trend-shell>
@@ -174,8 +175,8 @@
             <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div class="flex items-start justify-between gap-4">
                     <div>
-                        <h3 class="text-base font-semibold text-slate-950">鐢熶骇婕忔枟</h3>
-                        <p class="mt-1 text-sm text-slate-500">浠庢爣棰樺偍澶囧埌鍙戝竷瑙﹁揪鐨勮浆鍖栫姸鎬併€?/p>
+                        <h3 class="text-base font-semibold text-slate-950">生产漏斗</h3>
+                        <p class="mt-1 text-sm text-slate-500">从标题储备到发布触达的转化状态。</p>
                     </div>
                     <i data-lucide="git-branch" class="h-5 w-5 text-slate-400"></i>
                 </div>
@@ -210,7 +211,7 @@
                     </div>
                     <div class="mt-5 flex items-end justify-between">
                         <div class="text-3xl font-bold text-slate-950">{{ $card['value'] }}</div>
-                        <div class="text-xs font-medium text-slate-400">瀹炴椂</div>
+                        <div class="text-xs font-medium text-slate-400">实时</div>
                     </div>
                     <div class="mt-4 h-2 overflow-hidden rounded-full bg-slate-100">
                         <div class="h-full rounded-full {{ $card['tone'] }} transition-all" style="width: {{ min(100, max(0, (float) $card['bar'])) }}%"></div>
@@ -227,29 +228,29 @@
                             <i data-lucide="database" class="h-4 w-4"></i>
                         </div>
                         <div>
-                            <div class="text-sm font-bold text-slate-900">閲囬泦涓庣礌鏉?/div>
-                            <div class="text-xs text-slate-400">鐭ヨ瘑搴撱€佹爣棰樸€佸叧閿瘝銆佸浘鐗囧叡鍚屾敮鎾戞枃绔犵敓鎴?/div>
+                            <div class="text-sm font-bold text-slate-900">采集与素材</div>
+                            <div class="text-xs text-slate-400">知识库、标题、关键词、图片共同支撑文章生成</div>
                         </div>
                     </div>
-                    <a href="{{ route('admin.materials.index') }}" class="text-sm font-semibold text-blue-600 hover:text-blue-700">绱犳潗搴?鈫?/a>
+                    <a href="{{ route('admin.materials.index') }}" class="text-sm font-semibold text-blue-600 hover:text-blue-700">素材库 →</a>
                 </div>
                 <div class="grid grid-cols-4 gap-px bg-slate-100 text-sm">
-                    <div class="bg-white p-4 text-center"><div class="text-xs text-slate-400 mb-1">鐭ヨ瘑搴?/div><div class="text-2xl font-bold text-slate-900">{{ (int) ($materialHealth['knowledge_bases'] ?? 0) }}</div></div>
-                    <div class="bg-white p-4 text-center"><div class="text-xs text-slate-400 mb-1">鏍囬搴?/div><div class="text-2xl font-bold text-slate-900">{{ (int) ($materialHealth['title_libraries'] ?? 0) }}</div></div>
-                    <div class="bg-white p-4 text-center"><div class="text-xs text-slate-400 mb-1">鍥惧簱</div><div class="text-2xl font-bold text-slate-900">{{ (int) ($materialHealth['image_libraries'] ?? 0) }}</div></div>
-                    <div class="bg-white p-4 text-center"><div class="text-xs text-slate-400 mb-1">鍚戦噺鐗囨</div><div class="text-2xl font-bold text-slate-900">{{ (int) ($materialHealth['vectorized_chunks'] ?? 0) }}</div></div>
+                    <div class="bg-white p-4 text-center"><div class="text-xs text-slate-400 mb-1">知识库</div><div class="text-2xl font-bold text-slate-900">{{ (int) ($materialHealth['knowledge_bases'] ?? 0) }}</div></div>
+                    <div class="bg-white p-4 text-center"><div class="text-xs text-slate-400 mb-1">标题库</div><div class="text-2xl font-bold text-slate-900">{{ (int) ($materialHealth['title_libraries'] ?? 0) }}</div></div>
+                    <div class="bg-white p-4 text-center"><div class="text-xs text-slate-400 mb-1">图库</div><div class="text-2xl font-bold text-slate-900">{{ (int) ($materialHealth['image_libraries'] ?? 0) }}</div></div>
+                    <div class="bg-white p-4 text-center"><div class="text-xs text-slate-400 mb-1">向量片段</div><div class="text-2xl font-bold text-slate-900">{{ (int) ($materialHealth['vectorized_chunks'] ?? 0) }}</div></div>
                 </div>
                 <div class="divide-y divide-slate-100">
                     @forelse ($recentImports as $job)
                         <div class="flex items-center justify-between gap-4 px-5 py-4 hover:bg-slate-50/50 transition-colors">
                             <div class="min-w-0 flex-1">
-                                <div class="line-clamp-1 break-all text-sm font-medium text-slate-800">{{ $job->page_title ?: ($job->source_domain ?: 'URL 閲囬泦浠诲姟') }}</div>
+                                <div class="line-clamp-1 break-all text-sm font-medium text-slate-800">{{ $job->page_title ?: ($job->source_domain ?: 'URL 采集任务') }}</div>
                                 <div class="mt-1 text-xs text-slate-400">{{ $job->current_step ?: $job->status }}</div>
                             </div>
                             <span class="shrink-0 rounded-full bg-indigo-50 border border-indigo-100 px-2.5 py-1 text-xs font-semibold text-indigo-600">{{ (int) ($job->progress_percent ?? 0) }}%</span>
                         </div>
                     @empty
-                        <div class="px-5 py-8 text-center text-sm text-slate-400">鏆傛棤閲囬泦璁板綍</div>
+                        <div class="px-5 py-8 text-center text-sm text-slate-400">暂无采集记录</div>
                     @endforelse
                 </div>
             </div>
@@ -261,11 +262,11 @@
                             <i data-lucide="file-text" class="h-4 w-4"></i>
                         </div>
                         <div>
-                            <div class="text-sm font-bold text-slate-900">鏈€杩戞枃绔?/div>
-                            <div class="text-xs text-slate-400">鐢熸垚鍚庡缓璁厛棰勮锛屽啀鍚屾鍒板閮ㄥ钩鍙?/div>
+                            <div class="text-sm font-bold text-slate-900">最近文章</div>
+                            <div class="text-xs text-slate-400">生成后建议先预览，再同步到外部平台</div>
                         </div>
                     </div>
-                    <a href="{{ route('admin.articles.index') }}" class="text-sm font-semibold text-blue-600 hover:text-blue-700">鏂囩珷鍒楄〃 鈫?/a>
+                    <a href="{{ route('admin.articles.index') }}" class="text-sm font-semibold text-blue-600 hover:text-blue-700">文章列表 →</a>
                 </div>
                 <div class="divide-y divide-slate-100">
                     @forelse ($latestArticles as $article)
@@ -276,11 +277,11 @@
                             </div>
                             <a href="{{ route('admin.articles.preview', ['articleId' => (int) $article->id]) }}" target="_blank" rel="noopener" class="admin-btn-secondary h-8 px-3 text-xs font-medium">
                                 <i data-lucide="eye" class="h-3.5 w-3.5"></i>
-                                棰勮
+                                预览
                             </a>
                         </div>
                     @empty
-                        <div class="px-5 py-8 text-center text-sm text-slate-400">鏆傛棤鏂囩珷</div>
+                        <div class="px-5 py-8 text-center text-sm text-slate-400">暂无文章</div>
                     @endforelse
                 </div>
             </div>
@@ -429,7 +430,7 @@
                         axisLabel: { color: '#64748b', fontSize: 11 },
                     },
                     series: [{
-                        name: '鏂板鏂囩珷',
+                        name: '新增文章',
                         type: 'line',
                         data: counts,
                         smooth: 0.4,

@@ -35,7 +35,7 @@ use App\Http\Controllers\Site\HomeController;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 
-Route::middleware(['site.locale', 'site.view_log'])->group(function (): void {
+Route::middleware(['surface.port:site', 'site.locale', 'site.view_log'])->group(function (): void {
     Route::get('/', [HomeController::class, 'index'])->name('site.home');
     Route::get('/archive', [ArchiveController::class, 'index'])->name('site.archive');
     Route::get('/archive/{year}/{month}', [ArchiveController::class, 'month'])
@@ -47,7 +47,7 @@ Route::middleware(['site.locale', 'site.view_log'])->group(function (): void {
 
 $adminPrefix = trim((string) config('geoflow.admin_base_path', '/geo_admin'), '/');
 
-Route::prefix($adminPrefix)->name('admin.')->middleware(['admin.locale'])->group(function () {
+Route::prefix($adminPrefix)->name('admin.')->middleware(['surface.port:admin', 'admin.locale'])->group(function () {
     // 通用入口与语言切换
     Route::get('locale/{locale}', [AdminAuthController::class, 'switchLocale'])->name('locale.switch');
 

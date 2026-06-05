@@ -106,6 +106,7 @@ services:
     container_name: geoflow-web-prod
     ports:
       - "${WEB_PORT:-18080}:80"
+      - "${SITE_PORT:-18081}:80"
     volumes:
       - ./storage:/var/www/html/storage:ro
     depends_on:
@@ -179,7 +180,7 @@ services:
       - ./.env.prod
     command: ["php", "artisan", "reverb:start", "--host=0.0.0.0", "--port=8080"]
     ports:
-      - "${REVERB_EXPOSE_PORT:-18081}:8080"
+      - "${REVERB_EXPOSE_PORT:-18082}:8080"
     volumes:
       - ./.env.prod:/var/www/html/.env
       - ./storage:/var/www/html/storage

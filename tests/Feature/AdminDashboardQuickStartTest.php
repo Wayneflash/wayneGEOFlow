@@ -28,13 +28,14 @@ class AdminDashboardQuickStartTest extends TestCase
 
         $response
             ->assertOk()
-            ->assertSee('GEO OPERATIONS')
-            ->assertSee('内容运营首页')
+            ->assertSee('今日关注')
+            ->assertSee('生产概览')
+            ->assertSee('新手常用')
+            ->assertSee('素材文章')
+            ->assertSee('高级入口')
             ->assertSee('内容生产趋势')
             ->assertSee('生产漏斗')
-            ->assertSee('任务与队列')
             ->assertSee('采集与素材')
-            ->assertSee('AI 模型配置')
             ->assertSee('最近文章')
             ->assertSee(__('admin.dashboard.quick_start.title'))
             ->assertSee(__('admin.dashboard.navigation.single_site_title'))
@@ -46,7 +47,6 @@ class AdminDashboardQuickStartTest extends TestCase
             ->assertSee(__('admin.dashboard.navigation.prompt_config_title'))
             ->assertSee(__('admin.dashboard.navigation.body_prompt_label'))
             ->assertSee(__('admin.dashboard.navigation.special_prompt_label'))
-            ->assertSee(__('admin.dashboard.navigation.admin_users_title'))
             ->assertSee(__('admin.dashboard.navigation.distribution_channels_title'))
             ->assertSee(__('admin.dashboard.navigation.distribution_jobs_title'))
             ->assertSee(route('admin.ai-models.index'), false)
@@ -56,15 +56,19 @@ class AdminDashboardQuickStartTest extends TestCase
             ->assertSee(route('admin.analytics'), false)
             ->assertSee(route('admin.ai-prompts'), false)
             ->assertSee(route('admin.ai-special-prompts'), false)
-            ->assertSee(route('admin.admin-users.index'), false)
             ->assertSee(route('admin.distribution.index'), false)
             ->assertSee(route('admin.distribution.jobs'), false)
             ->assertSee(route('admin.url-import'), false)
             ->assertDontSee('https://github.com/'.str_rot13('lnbwvatnat'), false);
 
         $this->assertLessThan(
-            strpos($html, 'data-dashboard-tab="guide"'),
+            strpos($html, 'data-dashboard-tab="materials"'),
             strpos($html, 'data-dashboard-tab="overview"')
+        );
+
+        $this->assertLessThan(
+            strpos($html, 'data-dashboard-tab="advanced"'),
+            strpos($html, 'data-dashboard-tab="materials"')
         );
     }
 
