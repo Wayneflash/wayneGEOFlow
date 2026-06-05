@@ -185,7 +185,7 @@
                 </div>
                 <div class="space-y-3 p-5">
                     @forelse (($contentFunnel['stages'] ?? []) as $stage)
-                        @php($width = max(4, round(((int) $stage['count'] / max(1, (int) ($contentFunnel['max'] ?? 1))) * 100)))
+                        @php $width = max(4, round(((int) $stage['count'] / max(1, (int) ($contentFunnel['max'] ?? 1))) * 100)); @endphp
                         <div>
                             <div class="mb-1.5 flex items-center justify-between text-xs">
                                 <span class="font-medium text-slate-700">{{ $stage['label'] }}</span>
