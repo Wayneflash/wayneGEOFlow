@@ -62,6 +62,9 @@ class AdminUserController extends Controller
         $targetAdmin = Admin::query()->whereKey($adminId)->firstOrFail();
         $currentAdminId = (int) (auth('admin')->id() ?? 0);
         $isSelf = (int) $targetAdmin->id === $currentAdminId;
+        if ($targetAdmin->isSystemInitial()) {
+            return back()->withErrors(__('admin.admin_users.error.cannot_edit_system_initial'));
+        }
         if ($targetAdmin->isSuperAdmin() && ! $isSelf) {
             return back()->withErrors(__('admin.admin_users.error.cannot_edit_super_admin'));
         }
@@ -202,6 +205,9 @@ class AdminUserController extends Controller
 
         $targetAdmin = Admin::query()->whereKey($adminId)->firstOrFail();
         $currentAdminId = (int) (auth('admin')->id() ?? 0);
+        if ($targetAdmin->isSystemInitial()) {
+            return back()->withErrors(__('admin.admin_users.error.cannot_toggle_system_initial'));
+        }
         if ((int) $targetAdmin->id === $currentAdminId) {
             return back()->withErrors(__('admin.admin_users.error.cannot_toggle_self'));
         }
@@ -238,6 +244,9 @@ class AdminUserController extends Controller
 
         $targetAdmin = Admin::query()->whereKey($adminId)->firstOrFail();
         $currentAdminId = (int) (auth('admin')->id() ?? 0);
+        if ($targetAdmin->isSystemInitial()) {
+            return back()->withErrors(__('admin.admin_users.error.cannot_delete_system_initial'));
+        }
         if ((int) $targetAdmin->id === $currentAdminId) {
             return back()->withErrors(__('admin.admin_users.error.cannot_delete_self'));
         }
@@ -322,6 +331,7 @@ class AdminUserController extends Controller
                 'role' => (string) ($admin->role ?? 'admin'),
                 'status' => (string) ($admin->status ?? 'active'),
                 'is_super_admin' => $admin->isSuperAdmin(),
+                'is_system_initial' => $admin->isSystemInitial(),
                 'last_login' => $admin->last_login?->format('Y-m-d H:i:s') ?? '',
                 'expires_at' => $admin->expires_at?->format('Y-m-d H:i:s') ?? '',
                 'expires_at_input' => $admin->expires_at?->format('Y-m-d') ?? '',

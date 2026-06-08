@@ -20,8 +20,8 @@
                 'summary' => __('admin.materials.titles_summary'),
                 'href' => route('admin.title-libraries.index', [], false),
                 'icon' => 'text-cursor-input',
-                'gradient' => 'linear-gradient(135deg, #34d399 0%, #10b981 55%, #059669 100%)',
-                'shadow' => 'rgba(16, 185, 129, 0.22)',
+                'gradient' => 'linear-gradient(135deg, #60a5fa 0%, #3b82f6 55%, #2563eb 100%)',
+                'shadow' => 'rgba(37, 99, 235, 0.22)',
                 'value' => (int) $stats['total_titles'],
                 'unit' => '标题',
                 'meta' => (int) $stats['title_libraries'].' 个库',
@@ -77,22 +77,11 @@
         <section class="materials-hub-hero">
             <div class="materials-hub-hero-glow materials-hub-hero-glow--left"></div>
             <div class="materials-hub-hero-glow materials-hub-hero-glow--right"></div>
-            <div class="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+            <div class="relative">
                 <div class="min-w-0">
-                    <p class="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-100/90">内容素材中心</p>
-                    <h1 class="mt-2 text-2xl font-bold tracking-tight text-white sm:text-3xl">{{ __('admin.materials.heading') }}</h1>
-                    <p class="mt-2 max-w-2xl text-sm leading-relaxed text-emerald-50/85">{{ __('admin.materials.subtitle') }}</p>
-                </div>
-                <div class="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:max-w-xl">
-                    @foreach ($statPills as $pill)
-                        <div class="materials-hub-stat-pill">
-                            <i data-lucide="{{ $pill['icon'] }}" class="h-3.5 w-3.5 shrink-0 text-emerald-100/80"></i>
-                            <div class="min-w-0">
-                                <div class="text-lg font-bold tabular-nums leading-none text-white">{{ number_format($pill['value']) }}</div>
-                                <div class="mt-1 truncate text-[11px] font-medium text-emerald-100/75">{{ $pill['label'] }}</div>
-                            </div>
-                        </div>
-                    @endforeach
+                    <p class="text-xs font-semibold uppercase tracking-[0.16em] text-blue-600">内容素材中心</p>
+                    <h1 class="mt-2 text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">{{ __('admin.materials.heading') }}</h1>
+                    <p class="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600">{{ __('admin.materials.subtitle') }}</p>
                 </div>
             </div>
         </section>

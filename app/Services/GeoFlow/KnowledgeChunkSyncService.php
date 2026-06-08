@@ -144,43 +144,464 @@ class KnowledgeChunkSyncService
     }
 
     /**
+     * GEO 规则化分块（基础策略）：
+     *  1. 严格按 heading 边界切分（H1-H6 各自独立成块的"知识单元"）
+     *  2. 同 heading 下：表格按 N 行切分（保留表头），其余按 maxChars 合并短块 / 切分长块
+     *  3. 短块（< mergeThreshold）合并到上一个未满的块，确保每片都"内容饱和"
+     *  4. 长块（> maxChars）按句子切分为 2 段，保持语义完整
+     *  5. 每片附 metadata: summary / keyphrases / block_indexes，便于 RAG 检索
+     *
      * @param  list<array<string,mixed>>  $blocks
      * @return list<array{content:string,title:string,section_path:string,strategy:string,metadata:array<string,mixed>}>
      */
     private function buildStructuredRuleChunks(array $blocks, string $strategy): array
     {
-        $chunks = [];
-        $buffer = [];
         $maxChars = $this->chunkMaxChars();
+        $mergeThreshold = 120;
+        $tableRowGroup = 6;
+
+        $chunks = [];
+        $currentBlocks = [];
+        $currentTitle = '';
+        $currentSectionPath = '';
+
+        $flushCurrent = function () use (&$chunks, &$currentBlocks, &$currentTitle, &$currentSectionPath, $strategy): void {
+            if ($currentBlocks === []) {
+                return;
+            }
+            $built = $this->buildChunkFromGroup($currentBlocks, $strategy, $currentTitle, $currentSectionPath);
+            foreach ($built as $chunk) {
+                $chunks[] = $chunk;
+            }
+            $currentBlocks = [];
+            $currentTitle = '';
+            $currentSectionPath = '';
+        };
+
+        $appendBlock = function (array $block) use (&$currentBlocks, &$currentTitle, &$currentSectionPath, $mergeThreshold, $maxChars, &$flushCurrent): void {
+            $text = (string) ($block['text'] ?? '');
+            if (trim($text) === '') {
+                return;
+            }
+
+            $blockType = (string) ($block['type'] ?? 'paragraph');
+
+            if ($currentTitle === '' && $blockType === 'heading') {
+                $currentTitle = (string) ($block['heading_text'] ?? $text);
+            } elseif ($currentTitle === '') {
+                $currentTitle = (string) ($block['heading_text'] ?? '');
+            }
+            $currentSectionPath = (string) ($block['section_path'] ?? $currentSectionPath);
+
+            $currentBlocks[] = $block;
+        };
+
+        $processTableBlock = function (array $block) use (&$appendBlock, &$flushCurrent, &$currentBlocks, &$currentTitle, &$currentSectionPath, $maxChars, $tableRowGroup, $strategy): void {
+            $text = rtrim((string) ($block['text'] ?? ''));
+            if ($text === '') {
+                return;
+            }
+            $rows = preg_split('/\R/u', $text) ?: [];
+            $rows = array_values(array_filter(array_map('trim', $rows), static fn (string $r): bool => $r !== ''));
+            if (count($rows) === 0) {
+                return;
+            }
+
+            $headerRows = [];
+            $bodyRows = [];
+            foreach ($rows as $row) {
+                $looksLikeSeparator = preg_match('/^\|?[\s:|-]+\|?$/', $row) === 1;
+                if ($looksLikeSeparator) {
+                    continue;
+                }
+                if ($headerRows === []) {
+                    $headerRows[] = $row;
+                } else {
+                    $bodyRows[] = $row;
+                }
+            }
+            $header = $headerRows[0] ?? '';
+            $body = $bodyRows;
+
+            $rowsPerGroup = $tableRowGroup;
+            if ($body === []) {
+                $flushCurrent();
+                $currentSectionPath = (string) ($block['section_path'] ?? $currentSectionPath);
+                $currentBlocks = [[
+                    'index' => (int) ($block['index'] ?? 0),
+                    'type' => 'table',
+                    'text' => $header,
+                    'section_path' => $currentSectionPath,
+                    'heading_level' => null,
+                    'heading_text' => null,
+                ]];
+                $flushCurrent();
+
+                return;
+            }
+
+            $flushCurrent();
+            $currentSectionPath = (string) ($block['section_path'] ?? $currentSectionPath);
+
+            foreach (array_chunk($body, $rowsPerGroup) as $group) {
+                $groupText = $header."\n".implode("\n", $group);
+                $currentBlocks = [[
+                    'index' => (int) ($block['index'] ?? 0),
+                    'type' => 'table',
+                    'text' => $groupText,
+                    'section_path' => $currentSectionPath,
+                    'heading_level' => null,
+                    'heading_text' => null,
+                ]];
+                $flushCurrent();
+            }
+        };
 
         foreach ($blocks as $block) {
-            $blockText = (string) ($block['text'] ?? '');
-            if ($blockText === '') {
+            $type = (string) ($block['type'] ?? 'paragraph');
+            $text = (string) ($block['text'] ?? '');
+
+            if ($type === 'heading') {
+                $flushCurrent();
+                $currentTitle = (string) ($block['heading_text'] ?? $text);
+                $currentSectionPath = (string) ($block['section_path'] ?? '');
+
                 continue;
             }
 
-            if (($block['type'] ?? '') === 'heading' && $buffer !== []) {
-                $chunks[] = $this->chunkFromBlocks($buffer, $strategy);
-                $buffer = [];
+            if ($type === 'table') {
+                $processTableBlock($block);
+
+                continue;
             }
 
-            $candidate = $buffer === [] ? $blockText : $this->joinBlockTexts([...$buffer, $block]);
-            if ($buffer !== [] && mb_strlen($candidate, 'UTF-8') > $maxChars) {
-                $chunks[] = $this->chunkFromBlocks($buffer, $strategy);
-                $buffer = [];
+            $appendBlock($block);
+
+            $currentText = $this->joinBlockTexts($currentBlocks);
+            if (mb_strlen($currentText, 'UTF-8') >= $maxChars) {
+                $flushCurrent();
             }
-
-            $buffer[] = $block;
         }
 
-        if ($buffer !== []) {
-            $chunks[] = $this->chunkFromBlocks($buffer, $strategy);
-        }
+        $flushCurrent();
+
+        $chunks = $this->mergeShortNeighbourChunks($chunks, $mergeThreshold);
+        $chunks = $this->splitOversizedChunks($chunks, $maxChars);
 
         return array_values(array_filter(
             $chunks,
             static fn (array $chunk): bool => trim((string) ($chunk['content'] ?? '')) !== ''
         ));
+    }
+
+    /**
+     * @param  list<array{content:string,title:string,section_path:string,strategy:string,metadata:array<string,mixed>}>  $chunks
+     * @return list<array{content:string,title:string,section_path:string,strategy:string,metadata:array<string,mixed>}>
+     */
+    private function mergeShortNeighbourChunks(array $chunks, int $threshold): array
+    {
+        if ($chunks === [] || $threshold <= 0) {
+            return $chunks;
+        }
+        $merged = [];
+        foreach ($chunks as $chunk) {
+            $content = (string) ($chunk['content'] ?? '');
+            $shouldMerge = $merged !== []
+                && mb_strlen($content, 'UTF-8') < $threshold
+                && (string) ($merged[count($merged) - 1]['section_path'] ?? '') === (string) ($chunk['section_path'] ?? '')
+                && (string) ($merged[count($merged) - 1]['strategy'] ?? '') === (string) ($chunk['strategy'] ?? '')
+                && mb_strlen((string) ($merged[count($merged) - 1]['content'] ?? ''), 'UTF-8') + mb_strlen($content, 'UTF-8') <= $threshold * 4;
+
+            if ($shouldMerge) {
+                $last = array_pop($merged);
+                $last['content'] = trim(($last['content'] ?? '')."\n\n".$content);
+                $last['metadata'] = $this->mergeChunkMetadata((array) ($last['metadata'] ?? []), (array) ($chunk['metadata'] ?? []));
+                $merged[] = $last;
+
+                continue;
+            }
+
+            $merged[] = $chunk;
+        }
+
+        return $merged;
+    }
+
+    /**
+     * @param  list<array{content:string,title:string,section_path:string,strategy:string,metadata:array<string,mixed>}>  $chunks
+     * @return list<array{content:string,title:string,section_path:string,strategy:string,metadata:array<string,mixed>}>
+     */
+    private function splitOversizedChunks(array $chunks, int $maxChars): array
+    {
+        if ($maxChars <= 0) {
+            return $chunks;
+        }
+        $result = [];
+        foreach ($chunks as $chunk) {
+            $content = (string) ($chunk['content'] ?? '');
+            if (mb_strlen($content, 'UTF-8') <= $maxChars) {
+                $result[] = $chunk;
+
+                continue;
+            }
+            $sentences = preg_split('/(?<=[。！？!?\.])\s*(?=\S)/u', $content) ?: [];
+            $sentences = array_values(array_filter(array_map('trim', $sentences), static fn (string $s): bool => $s !== ''));
+            if (count($sentences) <= 1) {
+                $result[] = $chunk;
+
+                continue;
+            }
+            $part = '';
+            $partIndex = 0;
+            foreach ($sentences as $sentence) {
+                $candidate = $part === '' ? $sentence : ($part.' '.$sentence);
+                if (mb_strlen($candidate, 'UTF-8') > $maxChars && $part !== '') {
+                    $result[] = $this->cloneChunkWithSuffix($chunk, $part, ++$partIndex);
+                    $part = $sentence;
+                } else {
+                    $part = $candidate;
+                }
+            }
+            if ($part !== '') {
+                $result[] = $this->cloneChunkWithSuffix($chunk, $part, ++$partIndex);
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * @param  array{content:string,title:string,section_path:string,strategy:string,metadata:array<string,mixed>}  $chunk
+     * @return array{content:string,title:string,section_path:string,strategy:string,metadata:array<string,mixed>}
+     */
+    private function cloneChunkWithSuffix(array $chunk, string $content, int $partIndex): array
+    {
+        $cloned = $chunk;
+        $cloned['content'] = trim($content);
+        $cloned['title'] = trim((string) ($chunk['title'] ?? '').'（续 '.$partIndex.'）');
+        $cloned['metadata'] = array_merge((array) ($chunk['metadata'] ?? []), ['part_index' => $partIndex]);
+
+        return $cloned;
+    }
+
+    /**
+     * @param  array<string,mixed>  $left
+     * @param  array<string,mixed>  $right
+     * @return array<string,mixed>
+     */
+    private function mergeChunkMetadata(array $left, array $right): array
+    {
+        $blockIndexes = array_values(array_unique(array_merge(
+            (array) ($left['block_indexes'] ?? []),
+            (array) ($right['block_indexes'] ?? [])
+        )));
+        $sourceIndexes = array_values(array_unique(array_merge(
+            (array) ($left['source_block_indexes'] ?? []),
+            (array) ($right['source_block_indexes'] ?? [])
+        )));
+        $left['block_indexes'] = $blockIndexes;
+        $left['source_block_indexes'] = $sourceIndexes;
+
+        if (isset($left['summary'], $right['summary'])) {
+            $left['summary'] = trim((string) $left['summary'].' / '.(string) $right['summary']);
+        } elseif (isset($right['summary'])) {
+            $left['summary'] = $right['summary'];
+        }
+        if (isset($left['keyphrases'], $right['keyphrases'])) {
+            $left['keyphrases'] = array_values(array_unique(array_merge(
+                (array) $left['keyphrases'],
+                (array) $right['keyphrases']
+            )));
+        } elseif (isset($right['keyphrases'])) {
+            $left['keyphrases'] = $right['keyphrases'];
+        }
+
+        return $left;
+    }
+
+    /**
+     * @param  list<array<string,mixed>>  $blocks
+     * @return list<array{content:string,title:string,section_path:string,strategy:string,metadata:array<string,mixed>}>
+     */
+    private function buildChunkFromGroup(array $blocks, string $strategy, string $title, string $sectionPath): array
+    {
+        if ($blocks === []) {
+            return [];
+        }
+        $first = $blocks[0];
+        $resolvedTitle = trim($title) !== '' ? trim($title) : $this->inferChunkTitle($blocks);
+        $resolvedSection = $sectionPath !== '' ? $sectionPath : (string) ($first['section_path'] ?? '');
+        $content = $this->joinBlockTexts($blocks);
+
+        $allBlockIndexes = array_values(array_map(
+            static fn (array $block): int => (int) ($block['index'] ?? 0),
+            $blocks
+        ));
+        $sourceBlockIndexes = array_values(array_unique(array_map(
+            static fn (array $block): int => (int) ($block['source_block_index'] ?? ($block['index'] ?? 0)),
+            $blocks
+        )));
+        $blockTypes = array_values(array_unique(array_map(
+            static fn (array $block): string => (string) ($block['type'] ?? 'paragraph'),
+            $blocks
+        )));
+
+        $summary = $this->summarizeChunk($content);
+        $keyphrases = $this->extractKeyphrases($content, $resolvedTitle, 6);
+        $category = $this->classifyChunk($content, $resolvedTitle, $resolvedSection);
+        $signals = $this->detectSignals($content);
+
+        return [[
+            'content' => $content,
+            'title' => $resolvedTitle,
+            'section_path' => $resolvedSection,
+            'strategy' => $strategy,
+            'metadata' => [
+                'block_indexes' => $allBlockIndexes,
+                'source_block_indexes' => $sourceBlockIndexes,
+                'block_types' => $blockTypes,
+                'summary' => $summary,
+                'keyphrases' => $keyphrases,
+                'chunk_category' => $category,
+                'signals' => $signals,
+                'char_count' => mb_strlen($content, 'UTF-8'),
+            ],
+        ]];
+    }
+
+    /**
+     * 把切片按"企业知识类型"打标签，让 RAG 检索时可按意图筛。
+     */
+    private function classifyChunk(string $content, string $title, string $sectionPath): string
+    {
+        $haystack = ($title."\n".$sectionPath."\n".$content);
+
+        $rules = [
+            'contact' => ['联系方式', '联系电话', '电话', '邮箱', 'E-mail', '联系地址', '公司地址', '传真', '客服电话', '售前热线', '售后热线', 'QQ', '微信', '邮编', 'Postal', 'Tel', 'Phone', 'Email', 'Address'],
+            'company_profile' => ['关于我们', '公司简介', '公司概况', '企业介绍', 'About Us', 'About', 'Company Profile', 'Company Overview', '创始于', '成立于', '总部位于'],
+            'product' => ['产品介绍', '产品中心', '核心产品', '产品特点', '产品功能', '产品规格', '产品参数', 'Product', 'Features', 'Specifications'],
+            'case' => ['客户案例', '成功案例', '案例展示', '案例研究', 'Case Study', '客户故事', '典型客户', '标杆案例', '合作案例'],
+            'service' => ['服务支持', '售后服务', '服务流程', '服务承诺', 'SLA', '技术支持', 'Service', 'Support', '保修', '维保'],
+            'price' => ['价格', '报价', '套餐', '计费', '收费标准', 'Price', 'Pricing', '折扣', '优惠', '免费试用', '购买'],
+            'team' => ['团队介绍', '核心团队', '创始团队', '管理团队', '专家团队', '团队成员', '顾问团队', 'Team', 'Founder', 'Co-founder', 'CEO', 'CTO'],
+            'qualification' => ['资质', '认证', '专利', '软件著作权', '软著', 'ISO', 'CMMI', '高新技术企业', '可信云', '许可证', 'Certification', 'Patent', 'Award'],
+            'policy' => ['隐私政策', '服务条款', '免责声明', '法律声明', 'Cookie', '使用协议', 'Privacy Policy', 'Terms of Service', '用户协议'],
+            'faq' => ['FAQ', '常见问题', 'Q&A', 'Q & A', '问答', '答疑', '热点问题'],
+            'news' => ['新闻动态', '公司动态', '最新动态', '公司新闻', '媒体报道', 'News', 'Press', 'Announcement', '公告'],
+            'tech' => ['技术架构', '技术实现', '原理', '协议', 'API', 'SDK', '集成方式', 'Tech', 'Architecture', 'Algorithm'],
+            'comparison' => ['对比', '与.*的区别', '优势对比', 'VS', 'vs.', '比较'],
+        ];
+
+        $scores = [];
+        foreach ($rules as $category => $keywords) {
+            $score = 0;
+            foreach ($keywords as $keyword) {
+                if ($keyword === '') {
+                    continue;
+                }
+                $occurrences = mb_substr_count($haystack, $keyword);
+                if ($occurrences > 0) {
+                    $score += $occurrences * (mb_strlen($keyword, 'UTF-8') >= 4 ? 2 : 1);
+                }
+            }
+            if ($score > 0) {
+                $scores[$category] = $score;
+            }
+        }
+
+        if ($scores === []) {
+            return 'general';
+        }
+        arsort($scores);
+
+        return (string) array_key_first($scores);
+    }
+
+    /**
+     * 检测内容里的"事实/信号"（联系方式、URL、人名、数字、日期、邮箱、电话等），
+     * 写入 metadata.signals，方便 RAG 在做事实型问答时直接命中。
+     *
+     * @return array<string, list<string>>
+     */
+    private function detectSignals(string $content): array
+    {
+        $signals = [
+            'emails' => [],
+            'phones' => [],
+            'urls' => [],
+            'dates' => [],
+        ];
+
+        if (preg_match_all('/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/u', $content, $m)) {
+            $signals['emails'] = array_values(array_unique($m[0]));
+        }
+        if (preg_match_all('/(?<!\d)(?:\+?\d{1,3}[-\s]?)?(?:\(?0?\d{2,4}\)?[-\s]?)?\d{3,4}[-\s]?\d{4}(?!\d)/u', $content, $m)) {
+            $signals['phones'] = array_values(array_unique(array_slice($m[0], 0, 5)));
+        }
+        if (preg_match_all('/https?:\/\/[^\s)<>"]+/u', $content, $m)) {
+            $signals['urls'] = array_values(array_unique(array_slice($m[0], 0, 5)));
+        }
+        if (preg_match_all('/\d{4}[-\/年]\d{1,2}[-\/月]?\d{0,2}日?/u', $content, $m)) {
+            $signals['dates'] = array_values(array_unique(array_slice($m[0], 0, 5)));
+        }
+
+        return array_filter($signals, static fn (array $values): bool => $values !== []);
+    }
+
+    private function summarizeChunk(string $content): string
+    {
+        $clean = trim(preg_replace('/\s+/u', ' ', strip_tags($content)) ?? '');
+        if ($clean === '') {
+            return '';
+        }
+        if (mb_strlen($clean, 'UTF-8') <= 80) {
+            return $clean;
+        }
+        $sentence = preg_split('/(?<=[。！？!?\.])\s+/u', $clean);
+        $first = trim((string) ($sentence[0] ?? ''));
+
+        return mb_strlen($first, 'UTF-8') > 100 ? mb_substr($first, 0, 100, 'UTF-8').'…' : $first;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function extractKeyphrases(string $content, string $title, int $limit): array
+    {
+        $stopWords = ['的', '了', '和', '是', '在', '我们', '可以', '通过', '进行', '对', '为', '与', '等', '及', '或', '之', '一个', '一些', '这里', '那里', '什么', '怎么', '如何', '为什么', '哪些'];
+        $text = trim(strip_tags($title."\n".$content));
+        $text = preg_replace('/[#*_`>|\\\-]/u', ' ', $text) ?? $text;
+        $text = preg_replace('/\s+/u', ' ', $text) ?? $text;
+        $freq = [];
+        $candidates = [];
+        $pushTerm = static function (string $term) use (&$candidates, &$freq, $stopWords): void {
+            $term = trim($term);
+            if ($term === '' || mb_strlen($term, 'UTF-8') < 2 || mb_strlen($term, 'UTF-8') > 12) {
+                return;
+            }
+            if (in_array($term, $stopWords, true)) {
+                return;
+            }
+            $freq[$term] = ($freq[$term] ?? 0) + 1;
+            $candidates[$term] = true;
+        };
+
+        preg_match_all('/[\x{4e00}-\x{9fff}]{2,8}/u', $text, $cnMatches);
+        foreach ($cnMatches[0] ?? [] as $m) {
+            $pushTerm($m);
+        }
+        preg_match_all('/[A-Za-z][A-Za-z0-9\-]{1,15}/u', $text, $enMatches);
+        foreach ($enMatches[0] ?? [] as $m) {
+            $pushTerm($m);
+        }
+        foreach (preg_split('/[、，,。；;：:\s]+/u', $title) ?: [] as $piece) {
+            $pushTerm((string) $piece);
+        }
+
+        arsort($freq);
+        $picked = array_slice(array_keys($freq), 0, max(1, $limit), true);
+
+        return array_values($picked);
     }
 
     /**

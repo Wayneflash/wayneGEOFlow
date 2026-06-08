@@ -291,7 +291,7 @@
                     </div>
                 @endif
 
-                <form method="POST" action="{{ route('admin.login.attempt') }}" class="space-y-5">
+                <form method="POST" action="{{ route('admin.login.attempt') }}" class="space-y-5" autocomplete="off">
                     @csrf
 
                     <div>
@@ -300,7 +300,7 @@
                             <i data-lucide="user-round" class="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"></i>
                             <input type="text" id="username" name="username" required value="{{ old('username') }}"
                                    class="block h-[60px] w-full rounded-lg border-0 bg-transparent pl-11 pr-4 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-500/20"
-                                   placeholder="{{ $copy['username'] }}" autocomplete="username" autofocus>
+                                   placeholder="{{ $copy['username'] }}" autocomplete="off">
                         </div>
                     </div>
 
@@ -310,7 +310,7 @@
                             <i data-lucide="lock-keyhole" class="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"></i>
                             <input type="password" id="password" name="password" required
                                    class="block h-[60px] w-full rounded-lg border-0 bg-transparent pl-11 pr-12 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-500/20"
-                                   placeholder="{{ $copy['password'] }}" autocomplete="current-password">
+                                   placeholder="{{ $copy['password'] }}" autocomplete="new-password">
                             <button type="button"
                                     class="absolute right-3 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
                                     data-password-toggle
@@ -320,11 +320,7 @@
                         </div>
                     </div>
 
-                    <input type="hidden" name="remember" value="0">
-                    <label class="flex items-center justify-between px-1 text-sm text-slate-500">
-                        <span>{{ $copy['remember'] }}</span>
-                        <input type="checkbox" name="remember" value="1" checked class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500">
-                    </label>
+                    <input type="hidden" name="remember" value="1">
 
                     <button type="submit"
                             class="flex h-14 w-full items-center justify-center rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white shadow-sm shadow-blue-600/20 transition hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-500/20">

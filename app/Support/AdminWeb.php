@@ -23,7 +23,11 @@ final class AdminWeb
 
     public static function siteName(): string
     {
-        return '内容运营控制台';
+        $configured = trim((string) (class_exists(\App\Support\Site\SiteSettingsBag::class)
+            ? \App\Support\Site\SiteSettingsBag::get('site_name')
+            : ''));
+
+        return $configured !== '' ? $configured : '深联云GEO';
     }
 
     public static function basePath(): string

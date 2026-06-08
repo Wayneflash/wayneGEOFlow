@@ -4,11 +4,13 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Jobs\ProcessUrlImportJob;
+use App\Models\Image;
 use App\Models\KeywordLibrary;
 use App\Models\KnowledgeBase;
 use App\Models\TitleLibrary;
 use App\Models\UrlImportJob;
 use App\Models\UrlImportJobLog;
+use App\Models\UrlImportJobNodeLog;
 use App\Services\GeoFlow\UrlImportProcessingService;
 use App\Support\Tenancy\AdminTenant;
 use Illuminate\Http\JsonResponse;
@@ -173,13 +175,114 @@ class UrlImportController extends Controller
     public function show(int $jobId): View
     {
         $job = UrlImportJob::query()->visibleToAdmin()->whereKey($jobId)->firstOrFail();
+        $importedImages = Image::query()
+            ->where('source_url', (string) $job->normalized_url)
+            ->where('source_area', '<>', 'unknown')
+            ->orderByDesc('id')
+            ->get(['id', 'file_path', 'width', 'height', 'file_size', 'source_area', 'source_alt', 'source_paragraph', 'value_status', 'ai_tag_status'])
+            ->map(fn (Image $img): array => [
+                'id' => (int) $img->id,
+                'file_path' => (string) $img->file_path,
+                'width' => (int) $img->width,
+                'height' => (int) $img->height,
+                'file_size' => (int) $img->file_size,
+                'source_area' => (string) $img->source_area,
+                'source_alt' => (string) ($img->source_alt ?? ''),
+                'source_paragraph' => (string) ($img->source_paragraph ?? ''),
+                'value_status' => (string) $img->value_status,
+                'ai_tag_status' => (string) $img->ai_tag_status,
+            ])
+            ->all();
+
+        $nodeSteps = $this->buildNodeSteps($job);
 
         return view('admin.url-import.show', [
             'pageTitle' => __('admin.url_import.page_title'),
             'activeMenu' => 'materials',
             'job' => $job,
             'result' => $this->decodeJson((string) $job->result_json),
+            'importedImages' => $importedImages,
+            'nodeSteps' => $nodeSteps,
         ]);
+    }
+
+    public function nodes(int $jobId, Request $request): JsonResponse
+    {
+        UrlImportJob::query()->visibleToAdmin()->whereKey($jobId)->firstOrFail();
+        $attempt = (int) $request->query('attempt', 0);
+        $nodeKey = (string) $request->query('node_key', '');
+        if ($nodeKey === '') {
+            return response()->json(['error' => 'node_key required'], 400);
+        }
+
+        $query = UrlImportJobNodeLog::query()
+            ->where('job_id', $jobId)
+            ->where('node_key', $nodeKey)
+            ->orderByDesc('id');
+        if ($attempt > 0) {
+            $query->where('attempt', $attempt);
+        }
+        $log = $query->first();
+
+        if (! $log) {
+            return response()->json(['error' => 'not_found'], 404);
+        }
+
+        return response()->json([
+            'id' => (int) $log->id,
+            'job_id' => (int) $log->job_id,
+            'node_key' => (string) $log->node_key,
+            'node_label' => (string) $log->node_label,
+            'attempt' => (int) $log->attempt,
+            'status' => (string) $log->status,
+            'duration_ms' => (int) ($log->duration_ms ?? 0),
+            'input' => $log->input_json ?? new \stdClass,
+            'output' => $log->output_json ?? new \stdClass,
+            'error' => (string) ($log->error_message ?? ''),
+            'created_at' => $log->created_at?->toIso8601String() ?? '',
+        ]);
+    }
+
+    /**
+     * 拼装 UI 用的"步骤时间线"，每个 step 含节点 key / label / 状态 / 耗时。
+     *
+     * @return list<array{key:string,label:string,status:string,duration_ms:int,attempt:int,error:?string,created_at:?string}>
+     */
+    private function buildNodeSteps(UrlImportJob $job): array
+    {
+        $logs = UrlImportJobNodeLog::query()
+            ->where('job_id', (int) $job->id)
+            ->orderBy('id')
+            ->get();
+        $byKey = [];
+        foreach ($logs as $log) {
+            $byKey[(string) $log->node_key] = $log;
+        }
+
+        $pipeline = [
+            ['key' => 'fetch', 'label' => '读取网页'],
+            ['key' => 'parse', 'label' => '提取正文'],
+            ['key' => 'ai_clean', 'label' => 'AI 清洗正文'],
+            ['key' => 'ai_knowledge', 'label' => 'AI 整理素材'],
+            ['key' => 'ai_keywords', 'label' => 'AI 提炼主题词'],
+            ['key' => 'ai_titles', 'label' => 'AI 生成标题'],
+        ];
+
+        $steps = [];
+        foreach ($pipeline as $entry) {
+            $log = $byKey[$entry['key']] ?? null;
+            $steps[] = [
+                'key' => $entry['key'],
+                'label' => $entry['label'],
+                'status' => $log ? (string) $log->status : 'pending',
+                'duration_ms' => $log ? (int) ($log->duration_ms ?? 0) : 0,
+                'attempt' => $log ? (int) $log->attempt : 0,
+                'error' => $log ? (string) ($log->error_message ?? '') : null,
+                'created_at' => $log?->created_at?->toIso8601String(),
+            ];
+        }
+
+        return $steps;
     }
 
     public function history(): View

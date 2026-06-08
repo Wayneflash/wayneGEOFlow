@@ -34,76 +34,46 @@
 @endphp
 
 @section('content')
-    <div class="space-y-6">
-        <div class="admin-panel">
-            <div class="admin-panel-header">
-                <div class="flex items-start gap-3">
-                    <span class="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
-                        <i data-lucide="library" class="h-5 w-5"></i>
-                    </span>
-                    <div>
-                        <div class="text-xs font-medium uppercase tracking-widest text-slate-400">{{ __('admin.articles.eyebrow') }}</div>
-                        <h1 class="mt-1 text-xl font-semibold tracking-tight text-slate-950">{{ $pageTitle }}</h1>
-                        <p class="hidden">{{ $isTrashView ? __('admin.articles.trash.subtitle') : __('admin.articles.page_subtitle') }}</p>
-                    </div>
-                </div>
-                <div class="flex items-center gap-2">
-                    @if($isTrashView)
-                        <a href="{{ $articlesIndexUrl }}" class="admin-btn-secondary">
-                            <i data-lucide="arrow-left" class="h-4 w-4"></i>
-                            {{ __('admin.articles.trash.back') }}
-                        </a>
-                    @endif
-                    @unless($isTrashView)
-                    <details class="relative">
-                        <summary class="admin-icon-btn cursor-pointer list-none" aria-label="{{ __('admin.common.more') }}">
-                            <i data-lucide="more-horizontal" class="h-4 w-4"></i>
-                        </summary>
-                        <div class="absolute right-0 z-20 mt-2 w-56 overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-xl shadow-slate-200/70">
-                            @if($isTrashView)
-                                <button type="button" onclick="submitEmptyTrash(); this.closest('details')?.removeAttribute('open')" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-rose-600 transition hover:bg-rose-50">
-                                    <i data-lucide="trash-2" class="h-4 w-4"></i>
-                                    {{ __('admin.articles.trash.empty') }}
-                                </button>
-                            @else
-                                <a href="{{ route('admin.articles.create') }}" class="flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50">
-                                    <i data-lucide="file-plus" class="h-4 w-4 text-slate-400"></i>
-                                    {{ __('admin.button.create_article') }}
-                                </a>
-                                <a href="{{ $categoryManageUrl }}" class="flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50">
-                                    <i data-lucide="folder-tree" class="h-4 w-4 text-slate-400"></i>
-                                    {{ __('admin.categories.page_title') }}
-                                </a>
-                            @endif
-                            <a href="{{ $isTrashView ? $articlesIndexUrl : $trashUrl }}" class="flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50">
-                                <i data-lucide="trash-2" class="h-4 w-4 text-slate-400"></i>
-                                {{ $isTrashView ? __('admin.articles.page_title') : __('admin.button.trash') }}
-                            </a>
-                            <button type="button" onclick="toggleBatchActions(); this.closest('details')?.removeAttribute('open')" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-50">
-                                <i data-lucide="check-square" class="h-4 w-4 text-slate-400"></i>
-                                {{ __('admin.button.bulk_actions') }}
-                            </button>
-                        </div>
-                    </details>
-                    @endunless
+<div class="space-y-6">
+    <section class="admin-page-hero">
+        <div class="admin-page-hero-glow admin-page-hero-glow--left" aria-hidden="true"></div>
+        <div class="admin-page-hero-glow admin-page-hero-glow--right" aria-hidden="true"></div>
+        <div class="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+            <div class="min-w-0 flex items-start gap-3">
+                <span class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-sm shadow-blue-600/20">
+                    <i data-lucide="library" class="h-5 w-5"></i>
+                </span>
+                <div class="min-w-0">
+                    <p class="text-xs font-semibold uppercase tracking-[0.16em] text-blue-600">{{ __('admin.articles.eyebrow') }}</p>
+                    <h1 class="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{{ $pageTitle }}</h1>
+                    <p class="mt-1 text-sm text-slate-600">{{ $isTrashView ? __('admin.articles.trash.subtitle') : __('admin.articles.page_subtitle') }}</p>
                 </div>
             </div>
+            <div class="flex flex-wrap items-center gap-2 shrink-0">
+                @if($isTrashView)
+                    <a href="{{ $articlesIndexUrl }}" class="admin-btn-secondary">
+                        <i data-lucide="arrow-left" class="h-4 w-4"></i>
+                        {{ __('admin.articles.trash.back') }}
+                    </a>
+                @endif
+            </div>
         </div>
+    </section>
 
-        <div class="grid gap-3 sm:grid-cols-3">
-            <div class="admin-panel p-4">
-                <div class="text-xs font-medium text-slate-500">{{ $isTrashView ? __('admin.articles.trash.stats_total') : __('admin.articles.stats.total') }}</div>
-                <div class="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{{ (int) ($isTrashView ? ($stats['trashed_total'] ?? 0) : ($stats['total'] ?? 0)) }}</div>
-            </div>
-            <div class="admin-panel p-4">
-                <div class="text-xs font-medium text-slate-500">{{ __('admin.articles.stats.pending_review') }}</div>
-                <div class="mt-1 text-2xl font-semibold tracking-tight text-amber-700">{{ (int) ($stats['pending_review'] ?? 0) }}</div>
-            </div>
-            <div class="admin-panel p-4">
-                <div class="text-xs font-medium text-slate-500">{{ __('admin.articles.stats.today') }}</div>
-                <div class="mt-1 text-2xl font-semibold tracking-tight text-blue-700">{{ (int) ($stats['today'] ?? 0) }}</div>
-            </div>
+    <div class="grid gap-3 sm:grid-cols-3">
+        <div class="admin-panel p-4">
+            <div class="text-xs font-medium text-slate-500">{{ $isTrashView ? __('admin.articles.trash.stats_total') : __('admin.articles.stats.total') }}</div>
+            <div class="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{{ (int) ($isTrashView ? ($stats['trashed_total'] ?? 0) : ($stats['total'] ?? 0)) }}</div>
         </div>
+        <div class="admin-panel p-4">
+            <div class="text-xs font-medium text-slate-500">{{ __('admin.articles.stats.pending_review') }}</div>
+            <div class="mt-1 text-2xl font-semibold tracking-tight text-amber-700">{{ (int) ($stats['pending_review'] ?? 0) }}</div>
+        </div>
+        <div class="admin-panel p-4">
+            <div class="text-xs font-medium text-slate-500">{{ __('admin.articles.stats.today') }}</div>
+            <div class="mt-1 text-2xl font-semibold tracking-tight text-blue-700">{{ (int) ($stats['today'] ?? 0) }}</div>
+        </div>
+    </div>
 
         <div class="admin-panel">
             <div class="admin-panel-header">

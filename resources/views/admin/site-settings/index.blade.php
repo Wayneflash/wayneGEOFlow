@@ -1,27 +1,25 @@
 @extends('admin.layouts.app')
 
 @section('content')
-    <div class="px-4 sm:px-0">
-        <div class="mb-8">
-            <h1 class="text-2xl font-bold text-gray-900">{{ __('admin.site_settings.page_title') }}</h1>
-            <p class="mt-1 text-sm text-gray-600">{{ __('admin.site_settings.page_subtitle') }}</p>
-        </div>
-
-        <div class="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
-            <a href="{{ route('admin.site-settings.sensitive-words') }}" class="group rounded-lg border border-gray-200 bg-white p-5 shadow hover:border-blue-200 hover:bg-blue-50/40">
-                <div class="flex items-start gap-3">
-                    <span class="inline-flex rounded-lg bg-red-50 p-2 text-red-600 group-hover:bg-red-100">
-                        <i data-lucide="shield-alert" class="h-5 w-5"></i>
-                    </span>
-                    <span class="min-w-0">
-                        <span class="block text-base font-semibold text-gray-900">{{ __('admin.site_settings.module_sensitive_words') }}</span>
-                        <span class="mt-1 block text-sm leading-6 text-gray-600">{{ __('admin.site_settings.module_sensitive_words_desc') }}</span>
-                    </span>
+<div class="px-4 sm:px-0 space-y-6">
+    <section class="admin-page-hero">
+        <div class="admin-page-hero-glow admin-page-hero-glow--left" aria-hidden="true"></div>
+        <div class="admin-page-hero-glow admin-page-hero-glow--right" aria-hidden="true"></div>
+        <div class="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+            <div class="min-w-0 flex items-start gap-3">
+                <span class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-sm shadow-blue-600/20">
+                    <i data-lucide="settings" class="h-5 w-5"></i>
+                </span>
+                <div class="min-w-0">
+                    <p class="text-xs font-semibold uppercase tracking-[0.16em] text-blue-600">{{ __('admin.nav.site_settings') }}</p>
+                    <h1 class="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{{ __('admin.site_settings.page_title') }}</h1>
+                    <p class="mt-1 text-sm text-slate-600">{{ __('admin.site_settings.page_subtitle') }}</p>
                 </div>
-            </a>
+            </div>
         </div>
+    </section>
 
-        <details class="mb-6 bg-white shadow rounded-lg overflow-hidden group">
+        <details class="mb-6 bg-white shadow rounded-lg overflow-hidden group" open>
             <summary class="px-6 py-4 border-b border-gray-200 flex items-center justify-between gap-3 cursor-pointer list-none [&::-webkit-details-marker]:hidden">
                 <div>
                     <h3 class="text-lg font-medium text-gray-900">{{ __('admin.site_settings.section_basic') }}</h3>
@@ -30,7 +28,7 @@
                 <i data-lucide="chevron-down" class="w-5 h-5 shrink-0 text-gray-400 transition-transform duration-200 group-open:rotate-180" aria-hidden="true"></i>
             </summary>
             <div class="px-6 py-6">
-                <form method="POST" action="{{ route('admin.site-settings.update') }}" class="space-y-6">
+                <form method="POST" action="{{ route('admin.site-settings.update') }}" enctype="multipart/form-data" class="space-y-6">
                     @csrf
 
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -44,10 +42,25 @@
 
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-2">{{ __('admin.site_settings.field_logo') }}</label>
-                            <input type="url" name="site_logo"
-                                   value="{{ $settings['site_logo'] }}"
-                                   class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                                   placeholder="https://example.com/logo.png">
+                            <div class="flex items-center gap-4">
+                                <div class="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+                                    <img id="site-logo-preview" src="{{ $settings['site_logo'] !== '' ? $settings['site_logo'] : asset('assets/images/logo.png') }}" alt="{{ __('admin.site_settings.brand.preview') }}" class="h-full w-full object-contain">
+                                </div>
+                                <div class="min-w-0 flex-1 space-y-2">
+                                    <input type="file" name="site_logo_file" accept="image/png,image/jpeg,image/gif,image/svg+xml,image/webp,image/x-icon" class="block w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-blue-50 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-blue-700 hover:file:bg-blue-100" data-site-logo-input>
+                                    <input type="url" name="site_logo" id="site-logo-url-input"
+                                           value="{{ $settings['site_logo'] }}"
+                                           class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                                           placeholder="https://example.com/logo.png">
+                                    <p class="text-[11px] text-slate-500">{{ __('admin.site_settings.brand.logo_upload_hint') }}</p>
+                                    @if ($settings['site_logo'] !== '')
+                                        <label class="inline-flex items-center gap-1.5 text-[11px] text-rose-600">
+                                            <input type="checkbox" name="remove_site_logo" value="1" class="rounded border-slate-300 text-rose-600 focus:ring-rose-500">
+                                            {{ __('admin.site_settings.brand.logo_remove') }}
+                                        </label>
+                                    @endif
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -521,5 +534,44 @@
             adList.querySelectorAll('.article-ad-item').forEach(bindRemove);
             refreshState();
         });
+    </script>
+    <script>
+        (() => {
+            const preview = document.getElementById('site-logo-preview');
+            const fileInput = document.querySelector('[data-site-logo-input]');
+            const urlInput = document.getElementById('site-logo-url-input');
+            const removeCheckbox = document.querySelector('input[name="remove_site_logo"]');
+            const defaultLogo = preview?.getAttribute('src') || '';
+
+            const setPreview = (src) => {
+                if (preview && src) {
+                    preview.src = src;
+                }
+            };
+
+            fileInput?.addEventListener('change', () => {
+                const file = fileInput.files?.[0];
+                if (!file) {
+                    return;
+                }
+                const reader = new FileReader();
+                reader.onload = (event) => setPreview(String(event.target?.result || ''));
+                reader.readAsDataURL(file);
+            });
+
+            urlInput?.addEventListener('input', () => {
+                if (urlInput.value.trim() !== '') {
+                    setPreview(urlInput.value.trim());
+                } else if (defaultLogo) {
+                    setPreview(defaultLogo);
+                }
+            });
+
+            removeCheckbox?.addEventListener('change', () => {
+                if (removeCheckbox.checked) {
+                    setPreview("{{ asset('assets/images/logo.png') }}");
+                }
+            });
+        })();
     </script>
 @endpush

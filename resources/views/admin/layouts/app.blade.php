@@ -48,7 +48,6 @@
         </div>
     </main>
 @include('admin.partials.footer')
-@include('admin.partials.welcome-modal')
 @yield('modals')
 <div id="admin-toast-region" class="fixed right-4 top-4 z-[70] flex w-[min(24rem,calc(100vw-2rem))] flex-col gap-3" aria-live="polite" aria-atomic="true"></div>
 <script>

@@ -10,6 +10,9 @@ use App\Support\Site\SiteSettingsBag;
 use App\Support\Site\SiteThemeCatalog;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
@@ -56,7 +59,9 @@ class SiteSettingsController extends Controller
             'site_keywords' => ['nullable', 'string', 'max:500'],
             'copyright_info' => ['nullable', 'string', 'max:500'],
             'site_logo' => ['nullable', 'string', 'max:500'],
+            'site_logo_file' => ['nullable', 'file', 'mimes:png,jpg,jpeg,gif,svg,webp,ico', 'max:2048'],
             'site_favicon' => ['nullable', 'string', 'max:500'],
+            'remove_site_logo' => ['nullable'],
             'analytics_code' => ['nullable', 'string'],
             'seo_title_template' => ['nullable', 'string', 'max:255'],
             'seo_description_template' => ['nullable', 'string', 'max:255'],
@@ -77,6 +82,8 @@ class SiteSettingsController extends Controller
             ],
         ], [
             'site_name.required' => __('admin.site_settings.error.site_name_required'),
+            'site_logo_file.mimes' => __('admin.site_settings.error.site_logo_invalid'),
+            'site_logo_file.max' => __('admin.site_settings.error.site_logo_too_large'),
             'admin_base_path.required' => __('admin.site_settings.error.admin_base_path_required'),
             'admin_base_path.min' => __('admin.site_settings.error.admin_base_path_invalid'),
             'admin_base_path.max' => __('admin.site_settings.error.admin_base_path_invalid'),
@@ -97,6 +104,13 @@ class SiteSettingsController extends Controller
             ->where('setting_key', SiteSettingsBag::storageKey('analytics_code'))
             ->value('setting_value') ?? ($currentSettings['analytics_code'] ?? ''));
 
+        $siteLogoValue = $this->resolveSiteLogoValue(
+            $request->file('site_logo_file'),
+            (string) ($payload['site_logo'] ?? ''),
+            (string) ($currentSettings['site_logo'] ?? ''),
+            $request->boolean('remove_site_logo')
+        );
+
         $settings = [
             'site_name' => trim((string) $payload['site_name']),
             'site_title' => trim((string) $payload['site_name']),
@@ -104,7 +118,7 @@ class SiteSettingsController extends Controller
             'site_description' => trim((string) ($payload['site_description'] ?? '')),
             'site_keywords' => trim((string) ($payload['site_keywords'] ?? '')),
             'copyright_info' => trim((string) ($payload['copyright_info'] ?? '')),
-            'site_logo' => trim((string) ($payload['site_logo'] ?? '')),
+            'site_logo' => $siteLogoValue,
             'site_favicon' => trim((string) ($payload['site_favicon'] ?? '')),
             'analytics_code' => $canEditAnalytics
                 ? trim((string) ($payload['analytics_code'] ?? ''))
@@ -294,6 +308,59 @@ class SiteSettingsController extends Controller
             'home_carousel_slides' => (string) $stored['home_carousel_slides'],
             'article_detail_ads' => (string) $stored['article_detail_ads'],
         ];
+    }
+
+    /**
+     * 解析站点 Logo 字段：
+     *  1. 上传了新文件 → 存到 storage/public/brand/，返回 /storage/brand/xxx 路径；
+     *  2. 显式传了 URL → 优先用 URL；
+     *  3. 勾选「移除」 → 返回空字符串，恢复使用默认 logo；
+     *  4. 都没动 → 保持当前值不变。
+     */
+    private function resolveSiteLogoValue(?UploadedFile $uploadedFile, string $urlInput, string $currentValue, bool $removeRequested): string
+    {
+        if ($uploadedFile instanceof UploadedFile && $uploadedFile->isValid()) {
+            $extension = strtolower((string) $uploadedFile->getClientOriginalExtension() ?: $uploadedFile->extension() ?: 'png');
+            $filename = 'site-logo-'.date('YmdHis').'-'.Str::random(6).'.'.$extension;
+            $directory = 'brand';
+            Storage::disk('public')->makeDirectory($directory);
+            $this->deletePreviousUploadedLogo($currentValue);
+            $stored = $uploadedFile->storeAs($directory, $filename, 'public');
+
+            return $stored !== false ? '/storage/'.$stored : '';
+        }
+
+        if ($removeRequested) {
+            $this->deletePreviousUploadedLogo($currentValue);
+
+            return '';
+        }
+
+        return trim($urlInput) !== '' ? trim($urlInput) : $currentValue;
+    }
+
+    private function deletePreviousUploadedLogo(string $currentValue): void
+    {
+        $path = $this->extractLocalStoragePath($currentValue);
+        if ($path !== '' && Storage::disk('public')->exists($path)) {
+            Storage::disk('public')->delete($path);
+        }
+    }
+
+    private function extractLocalStoragePath(string $urlOrPath): string
+    {
+        $trimmed = trim($urlOrPath);
+        if ($trimmed === '') {
+            return '';
+        }
+
+        $prefix = '/storage/';
+        $position = strpos($trimmed, $prefix);
+        if ($position === false) {
+            return '';
+        }
+
+        return ltrim(substr($trimmed, $position + strlen($prefix)), '/');
     }
 
     /**

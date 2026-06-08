@@ -12,6 +12,7 @@ use App\Models\Title;
 use App\Models\TitleLibrary;
 use App\Models\UrlImportJob;
 use App\Models\UrlImportJobLog;
+use App\Models\UrlImportJobNodeLog;
 use App\Support\GeoFlow\ApiKeyCrypto;
 use App\Support\GeoFlow\OpenAiRuntimeProvider;
 use App\Support\Tenancy\AdminTenant;
@@ -21,12 +22,15 @@ use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Throwable;
 
 final class UrlImportProcessingService
 {
     private const AI_ANALYSIS_MAX_ATTEMPTS = 3;
+
+    private ?string $lastRawAiContent = null;
 
     public function __construct(private readonly ApiKeyCrypto $apiKeyCrypto) {}
 
@@ -131,18 +135,47 @@ final class UrlImportProcessingService
         $this->log($job, 'info', __('admin.url_import.log.fetch_start', ['url' => $job->normalized_url]));
 
         try {
+            $fetchStart = microtime(true);
             $fetched = $this->fetchPage((string) $job->normalized_url);
+            $fetchMs = (int) round((microtime(true) - $fetchStart) * 1000);
             $this->log($job, 'info', __('admin.url_import.log.fetch_done', ['length' => strlen($fetched['html'])]));
+            $this->logNode(
+                $job,
+                'fetch',
+                '读取网页',
+                ['url' => (string) $job->normalized_url, 'headers' => $fetched['headers'] ?? []],
+                ['status' => $fetched['status'], 'html_length' => strlen($fetched['html']), 'content_type' => $fetched['headers']['content-type'] ?? ''],
+                $fetchMs
+            );
 
             $this->updateStep($job, 'page_json', 25);
             $this->log($job, 'info', __('admin.url_import.log.page_json_start'));
+            $parseStart = microtime(true);
             $parsed = $this->parseHtml($fetched['html'], (string) $job->normalized_url);
+            $parseMs = (int) round((microtime(true) - $parseStart) * 1000);
             $this->log($job, 'info', __('admin.url_import.log.extract_done', [
                 'chars' => mb_strlen($parsed['text'], 'UTF-8'),
             ]));
             $this->log($job, 'info', __('admin.url_import.log.page_json_done', [
                 'chars' => mb_strlen((string) data_get($parsed, 'raw_json.text', ''), 'UTF-8'),
             ]));
+            $this->logNode(
+                $job,
+                'parse',
+                '提取正文',
+                [
+                    'html_length' => strlen($fetched['html']),
+                    'base_url' => (string) $job->normalized_url,
+                ],
+                [
+                    'title' => $parsed['title'] ?? '',
+                    'description' => $parsed['description'] ?? '',
+                    'text_chars' => mb_strlen($parsed['text'] ?? '', 'UTF-8'),
+                    'image_count' => count($parsed['images'] ?? []),
+                    'images' => array_slice($parsed['images'] ?? [], 0, 10),
+                ],
+                $parseMs
+            );
 
             $analysis = $this->buildAnalysis($parsed, $job);
 
@@ -164,6 +197,8 @@ final class UrlImportProcessingService
 
             $this->updateStep($job, 'preview', 96);
             $this->log($job, 'info', __('admin.url_import.log.preview_start'));
+
+            $this->dispatchImageDownload($job, $parsed);
 
             $this->updateStep($job, 'preview', 100, [
                 'page_title' => $parsed['title'],
@@ -462,7 +497,7 @@ final class UrlImportProcessingService
         libxml_use_internal_errors($previous);
 
         $xpath = new DOMXPath($dom);
-        foreach ($xpath->query('//script|//style|//noscript|//nav|//footer|//header|//form|//aside') ?: [] as $node) {
+        foreach ($xpath->query('//script|//style|//noscript|//form') ?: [] as $node) {
             $node->parentNode?->removeChild($node);
         }
 
@@ -481,17 +516,256 @@ final class UrlImportProcessingService
         $text = $body ? $this->normalizeText((string) $body->textContent) : '';
         $summary = $description !== '' ? $description : Str::limit($text, 220, '...');
 
+        $images = $this->extractImagesFromDom($dom, $xpath, $baseUrl);
+
         return [
             'title' => $this->normalizeText($title),
             'description' => $this->normalizeText($description),
             'text' => Str::limit($text, 20000, ''),
             'summary' => $this->normalizeText($summary),
+            'images' => $images,
             'raw_json' => [
                 'title' => $this->normalizeText($title),
                 'description' => $this->normalizeText($description),
                 'text' => Str::limit($text, 20000, ''),
             ],
         ];
+    }
+
+    /**
+     * 提取页面的图片 + 上下文（区域、最近标题、所在段落文字、alt）。
+     *
+     * @return list<array{
+     *     url:string,
+     *     area:string,
+     *     width:int,
+     *     height:int,
+     *     alt:string,
+     *     section_path:string,
+     *     paragraph:string
+     * }>
+     */
+    private function extractImagesFromDom(DOMDocument $dom, DOMXPath $xpath, string $baseUrl): array
+    {
+        $images = [];
+        $seen = [];
+
+        $ogImage = $this->firstMetaContent($xpath, ['og:image', 'twitter:image', 'twitter:image:src']);
+        if ($ogImage !== '') {
+            $absolute = $this->absoluteUrl($baseUrl, $ogImage);
+            if ($absolute !== '' && ! isset($seen[$absolute])) {
+                $seen[$absolute] = true;
+                $images[] = [
+                    'url' => $absolute,
+                    'area' => 'og_image',
+                    'width' => 0,
+                    'height' => 0,
+                    'alt' => '',
+                    'section_path' => '',
+                    'paragraph' => '',
+                ];
+            }
+        }
+
+        $imgNodes = $xpath->query('//img') ?: [];
+        $count = 0;
+        foreach ($imgNodes as $imgNode) {
+            if ($count >= 30) {
+                break;
+            }
+            if (! $imgNode instanceof \DOMElement) {
+                continue;
+            }
+
+            $src = $this->pickImageSrc($imgNode);
+            if ($src === '') {
+                continue;
+            }
+            $absolute = $this->absoluteUrl($baseUrl, $src);
+            if ($absolute === '' || isset($seen[$absolute])) {
+                continue;
+            }
+            $seen[$absolute] = true;
+
+            $context = $this->resolveImageContext($imgNode, $xpath, $dom);
+            $images[] = [
+                'url' => $absolute,
+                'area' => $context['area'],
+                'width' => (int) ($imgNode->getAttribute('width') ?: 0),
+                'height' => (int) ($imgNode->getAttribute('height') ?: 0),
+                'alt' => trim((string) $imgNode->getAttribute('alt')),
+                'section_path' => $context['section_path'],
+                'paragraph' => $context['paragraph'],
+            ];
+            $count++;
+        }
+
+        return $images;
+    }
+
+    private function pickImageSrc(\DOMElement $img): string
+    {
+        foreach (['data-src', 'data-original', 'data-lazy-src', 'data-echo', 'data-hi-res-src'] as $attr) {
+            $value = trim((string) $img->getAttribute($attr));
+            if ($value !== '' && ! str_starts_with(strtolower($value), 'data:')) {
+                return $value;
+            }
+        }
+
+        $srcset = trim((string) $img->getAttribute('srcset'));
+        if ($srcset !== '') {
+            $candidates = preg_split('/\s*,\s*/u', $srcset) ?: [];
+            $best = '';
+            $bestWidth = -1;
+            foreach ($candidates as $candidate) {
+                $parts = preg_split('/\s+/u', trim($candidate));
+                $url = (string) ($parts[0] ?? '');
+                $descriptor = (string) ($parts[1] ?? '');
+                $width = 0;
+                if (preg_match('/^(\d+)w$/', $descriptor, $m) === 1) {
+                    $width = (int) $m[1];
+                }
+                if ($url !== '' && $width > $bestWidth) {
+                    $best = $url;
+                    $bestWidth = $width;
+                }
+            }
+            if ($best !== '') {
+                return $best;
+            }
+        }
+
+        $src = trim((string) $img->getAttribute('src'));
+        if ($src === '' || str_starts_with(strtolower($src), 'data:')) {
+            return '';
+        }
+
+        return $src;
+    }
+
+    /**
+     * @return array{area:string,section_path:string,paragraph:string}
+     */
+    private function resolveImageContext(\DOMElement $img, DOMXPath $xpath, DOMDocument $dom): array
+    {
+        $area = 'unknown';
+        $sectionPath = '';
+        $paragraph = '';
+        $depth = 0;
+        $current = $img;
+        $breadcrumb = [];
+
+        while ($current !== null && $depth < 8) {
+            $parent = $current->parentNode;
+            if (! $parent instanceof \DOMElement) {
+                break;
+            }
+            $tag = strtolower($parent->nodeName);
+            $cls = strtolower((string) $parent->getAttribute('class'));
+
+            if ($tag === 'header' || $tag === 'nav') {
+                $area = $area === 'unknown' ? 'nav' : $area;
+            } elseif ($tag === 'main' || $parent->getAttribute('role') === 'main') {
+                $area = 'main';
+            } elseif ($tag === 'article') {
+                $area = 'main';
+            } elseif ($tag === 'aside' || $parent->getAttribute('role') === 'complementary' || preg_match('/\b(side|aside|sidebar|sider)\b/u', $cls) === 1) {
+                $area = $area === 'unknown' ? 'unknown_low' : $area;
+            } elseif ($tag === 'footer' || $parent->getAttribute('role') === 'contentinfo') {
+                $area = 'footer';
+            }
+
+            if (preg_match('/\b(hero|banner|cover|headline|feature[_-]?image|top[_-]?image)\b/u', $cls) === 1) {
+                $area = 'hero';
+            }
+
+            if (preg_match('/\b(logo|brand|avatar|icon|btn|button)\b/u', $cls) === 1) {
+                $area = 'unknown_low';
+            }
+
+            $h = $this->findAncestorHeading($parent, $xpath);
+            if ($h !== '' && $sectionPath === '') {
+                $sectionPath = $h;
+            }
+
+            $breadcrumb[] = $cls !== '' ? $tag.'.'.preg_replace('/\s+/u', '.', $cls) : $tag;
+            $current = $parent;
+            $depth++;
+        }
+
+        if ($area === 'unknown_low') {
+            $area = 'unknown';
+        }
+
+        $nearestP = $this->findNearestParagraph($img, $xpath);
+        if ($nearestP !== '') {
+            $paragraph = $nearestP;
+        }
+
+        $sectionPath = $sectionPath !== '' ? $sectionPath : trim(implode(' / ', array_slice(array_reverse($breadcrumb), 0, 4)));
+
+        return [
+            'area' => $area,
+            'section_path' => $sectionPath,
+            'paragraph' => $paragraph,
+        ];
+    }
+
+    private function findAncestorHeading(\DOMElement $node, DOMXPath $xpath): string
+    {
+        $xpathQuery = 'ancestor::*[self::h1 or self::h2 or self::h3 or self::h4][1]';
+        $result = $xpath->query($xpathQuery, $node);
+        if ($result && $result->length > 0) {
+            return trim((string) $result->item(0)?->textContent);
+        }
+        $prev = $xpath->query('preceding-sibling::*[self::h1 or self::h2 or self::h3 or self::h4][1]', $node);
+        if ($prev && $prev->length > 0) {
+            return trim((string) $prev->item(0)?->textContent);
+        }
+
+        return '';
+    }
+
+    private function findNearestParagraph(\DOMElement $img, DOMXPath $xpath): string
+    {
+        $p = $xpath->query('ancestor::p[1]', $img);
+        if ($p && $p->length > 0) {
+            return trim((string) $p->item(0)?->textContent);
+        }
+        $p = $xpath->query('following-sibling::p[1]', $img);
+        if ($p && $p->length > 0) {
+            return trim((string) $p->item(0)?->textContent);
+        }
+
+        return '';
+    }
+
+    private function absoluteUrl(string $base, string $url): string
+    {
+        $url = trim($url);
+        if ($url === '' || str_starts_with(strtolower($url), 'data:')) {
+            return '';
+        }
+        if (preg_match('/^https?:\/\//u', $url) === 1) {
+            return $url;
+        }
+        if (str_starts_with($url, '//')) {
+            $scheme = parse_url($base, PHP_URL_SCHEME) ?: 'https';
+
+            return $scheme.':'.$url;
+        }
+        $parts = parse_url($base);
+        if (! is_array($parts) || empty($parts['host'])) {
+            return '';
+        }
+        $origin = ($parts['scheme'] ?? 'https').'://'.$parts['host'];
+        if (str_starts_with($url, '/')) {
+            return $origin.$url;
+        }
+        $basePath = (string) ($parts['path'] ?? '/');
+        $basePath = substr($basePath, 0, strrpos($basePath, '/') + 1);
+
+        return $origin.$basePath.$url;
     }
 
     /**
@@ -522,25 +796,67 @@ final class UrlImportProcessingService
                     $this->updateStep($job, 'knowledge', 45);
                     $this->log($job, 'info', __('admin.url_import.log.knowledge_start'));
                     $this->log($job, 'info', __('admin.url_import.log.clean_start'));
-                    $cleaned = $this->normalizeCleanedPage($this->requestAiJson(
+                    $cleanStart = microtime(true);
+                    $rawClean = $this->requestAiJson(
                         $runtime,
                         $this->buildCleanSystemPrompt(),
                         $this->buildCleanUserPrompt($pageJson)
-                    ), $parsed);
+                    );
+                    $this->logNode(
+                        $job,
+                        'ai_clean',
+                        'AI 清洗正文',
+                        [
+                            'model' => $this->modelDisplayName($model),
+                            'system_prompt' => $this->buildCleanSystemPrompt(),
+                            'user_prompt_chars' => mb_strlen($this->buildCleanUserPrompt($pageJson), 'UTF-8'),
+                            'page_chars' => mb_strlen((string) data_get($pageJson, 'text', ''), 'UTF-8'),
+                        ],
+                        $rawClean,
+                        (int) round((microtime(true) - $cleanStart) * 1000),
+                        $attempt
+                    );
+                    $cleaned = $this->normalizeCleanedPage($rawClean, $parsed);
                     $this->log($job, 'info', __('admin.url_import.log.clean_done', [
                         'chars' => mb_strlen((string) $cleaned['text'], 'UTF-8'),
                     ]));
 
-                    $knowledgePayload = $this->requestAiJson(
+                    $knowledgeStart = microtime(true);
+                    $rawKnowledge = $this->requestAiJson(
                         $runtime,
                         $this->buildKnowledgeSystemPrompt(),
                         $this->buildKnowledgeUserPrompt($pageJson, $cleaned, [])
                     );
+                    $this->logNode(
+                        $job,
+                        'ai_knowledge',
+                        'AI 整理素材',
+                        [
+                            'model' => $this->modelDisplayName($model),
+                            'system_prompt' => $this->buildKnowledgeSystemPrompt(),
+                            'user_prompt_chars' => mb_strlen($this->buildKnowledgeUserPrompt($pageJson, $cleaned, []), 'UTF-8'),
+                            'cleaned_text_chars' => mb_strlen((string) $cleaned['text'], 'UTF-8'),
+                        ],
+                        $rawKnowledge,
+                        (int) round((microtime(true) - $knowledgeStart) * 1000),
+                        $attempt
+                    );
+                    $knowledgePayload = $rawKnowledge;
                     $aiSummary = $this->normalizeText($this->aiResponseTextToString($knowledgePayload['summary'] ?? $cleaned['summary'] ?? $summary));
                     $aiLibraryName = $this->safeName($this->aiResponseTextToString($knowledgePayload['library_name'] ?? $cleaned['title'] ?? $libraryName));
                     $aiKnowledge = trim($this->aiResponseTextToString($knowledgePayload['knowledge_markdown'] ?? ''));
                     if ($aiKnowledge === '') {
-                        throw new \RuntimeException(__('admin.url_import.error.ai_knowledge_missing'));
+                        // 兜底：把整段 AI 响应文本当 knowledge_markdown
+                        $rawContent = (string) ($this->lastRawAiContent ?? '');
+                        if ($rawContent !== '') {
+                            $aiKnowledge = $rawContent;
+                            $this->log($job, 'warning', 'AI 未返回结构化 JSON，已将整段响应降级为知识库 Markdown（' . mb_strlen($aiKnowledge, 'UTF-8') . ' 字）');
+                        } else {
+                            // 最终兜底：把清洗后的文本当知识库内容
+                            $aiKnowledge = (string) ($cleaned['text'] ?? $parsed['text'] ?? '');
+                            $aiSummary = $aiSummary !== '' ? $aiSummary : (string) ($cleaned['summary'] ?? '');
+                            $this->log($job, 'warning', 'AI 完全无响应，已用清洗后的页面正文降级为知识库（' . mb_strlen($aiKnowledge, 'UTF-8') . ' 字）');
+                        }
                     }
                     $this->log($job, 'info', __('admin.url_import.log.knowledge_done', [
                         'chars' => mb_strlen($aiKnowledge, 'UTF-8'),
@@ -548,12 +864,27 @@ final class UrlImportProcessingService
 
                     $this->updateStep($job, 'keywords', 62);
                     $this->log($job, 'info', __('admin.url_import.log.keywords_start'));
-                    $keywordPayload = $this->requestAiJson(
+                    $keywordStart = microtime(true);
+                    $rawKeywords = $this->requestAiJson(
                         $runtime,
                         $this->buildKeywordsSystemPrompt(),
                         $this->buildKeywordsUserPrompt($pageJson, $cleaned, $aiKnowledge),
                         'keywords'
                     );
+                    $this->logNode(
+                        $job,
+                        'ai_keywords',
+                        'AI 提炼主题词',
+                        [
+                            'model' => $this->modelDisplayName($model),
+                            'system_prompt' => $this->buildKeywordsSystemPrompt(),
+                            'user_prompt_chars' => mb_strlen($this->buildKeywordsUserPrompt($pageJson, $cleaned, $aiKnowledge), 'UTF-8'),
+                        ],
+                        $rawKeywords,
+                        (int) round((microtime(true) - $keywordStart) * 1000),
+                        $attempt
+                    );
+                    $keywordPayload = $rawKeywords;
                     $keywordValues = $keywordPayload['keywords'] ?? (array_is_list($keywordPayload) ? $keywordPayload : []);
                     $aiKeywords = array_slice($this->cleanKeywordList($this->stringList($keywordValues)), 0, 10);
                     if ($aiKeywords === []) {
@@ -563,12 +894,28 @@ final class UrlImportProcessingService
 
                     $this->updateStep($job, 'titles', 80);
                     $this->log($job, 'info', __('admin.url_import.log.titles_start'));
-                    $titlePayload = $this->requestAiJson(
+                    $titleStart = microtime(true);
+                    $rawTitles = $this->requestAiJson(
                         $runtime,
                         $this->buildTitlesSystemPrompt(),
                         $this->buildTitlesUserPrompt($pageJson, $cleaned, $aiKnowledge, $aiKeywords),
                         'titles'
                     );
+                    $this->logNode(
+                        $job,
+                        'ai_titles',
+                        'AI 生成标题',
+                        [
+                            'model' => $this->modelDisplayName($model),
+                            'system_prompt' => $this->buildTitlesSystemPrompt(),
+                            'user_prompt_chars' => mb_strlen($this->buildTitlesUserPrompt($pageJson, $cleaned, $aiKnowledge, $aiKeywords), 'UTF-8'),
+                            'keyword_count' => count($aiKeywords),
+                        ],
+                        $rawTitles,
+                        (int) round((microtime(true) - $titleStart) * 1000),
+                        $attempt
+                    );
+                    $titlePayload = $rawTitles;
                     $titleValues = $titlePayload['titles'] ?? (array_is_list($titlePayload) ? $titlePayload : []);
                     $aiTitles = array_slice($this->stringList($titleValues), 0, 50);
                     if ($aiTitles === []) {
@@ -594,6 +941,17 @@ final class UrlImportProcessingService
                     ];
                 } catch (Throwable $exception) {
                     $message = $this->normalizeAiErrorMessage($exception, $model);
+                    $this->logNode(
+                        $job,
+                        'ai_call_failed',
+                        'AI 调用失败',
+                        ['model' => $this->modelDisplayName($model), 'attempt' => $attempt, 'max_attempts' => self::AI_ANALYSIS_MAX_ATTEMPTS],
+                        null,
+                        0,
+                        $attempt,
+                        'failed',
+                        $message
+                    );
                     if ($attempt < self::AI_ANALYSIS_MAX_ATTEMPTS) {
                         $this->log($job, 'warning', __('admin.url_import.log.ai_model_retry', [
                             'model' => $this->modelDisplayName($model),
@@ -699,6 +1057,7 @@ final class UrlImportProcessingService
         }
 
         $content = $this->aiResponseTextToString($response->text ?? '');
+        $this->lastRawAiContent = $content;
         if ($content === '') {
             throw new \RuntimeException(__('admin.url_import.error.ai_empty_content'));
         }
@@ -712,9 +1071,14 @@ final class UrlImportProcessingService
         }
 
         if ($decoded === []) {
-            throw new \RuntimeException(__('admin.url_import.error.ai_invalid_json', [
-                'preview' => $this->previewAiContent($content),
-            ]));
+            // 实在无法解析时，把整段文本当 knowledge_markdown / summary 兜底
+            // 这样采集流程不会中断，AI 返回再烂也能入库一份文本
+            $decoded = [
+                'summary' => Str::limit($content, 220, '...'),
+                'library_name' => '',
+                'knowledge_markdown' => $content,
+                '_degraded' => true,
+            ];
         }
 
         /** @var AiModel $model */
@@ -990,6 +1354,43 @@ PROMPT;
     }
 
     /**
+     * 从 AI 返回内容里尝试提取可能的 JSON 片段。
+     * 兼容：被 markdown 围栏包裹、内容前/后有非 JSON 文字、嵌套 JSON、混有中文逗号等场景。
+     *
+     * @return list<string>
+     */
+    private function jsonCandidates(string $content): array
+    {
+        $candidates = [];
+        $content = trim($content);
+        if ($content === '') {
+            return $candidates;
+        }
+
+        if (preg_match_all('/```(?:json)?\s*([\s\S]+?)\s*```/u', $content, $matches) > 0) {
+            foreach ($matches[1] ?? [] as $block) {
+                $candidates[] = (string) $block;
+            }
+        }
+
+        $firstBrace = strpos($content, '{');
+        $lastBrace = strrpos($content, '}');
+        if ($firstBrace !== false && $lastBrace !== false && $lastBrace > $firstBrace) {
+            $candidates[] = substr($content, $firstBrace, $lastBrace - $firstBrace + 1);
+        }
+
+        $firstBracket = strpos($content, '[');
+        $lastBracket = strrpos($content, ']');
+        if ($firstBracket !== false && $lastBracket !== false && $lastBracket > $firstBracket) {
+            $candidates[] = substr($content, $firstBracket, $lastBracket - $firstBracket + 1);
+        }
+
+        $candidates[] = $content;
+
+        return array_values(array_unique(array_filter($candidates, static fn (string $s): bool => trim($s) !== '')));
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function decodeAiJson(string $content): array
@@ -1005,171 +1406,112 @@ PROMPT;
     }
 
     /**
-     * @return list<string>
-     */
-    private function jsonCandidates(string $content): array
-    {
-        $content = trim(preg_replace('/^\xEF\xBB\xBF/', '', $content) ?? $content);
-        $content = trim(preg_replace('/<think\b[^>]*>.*?<\/think>/is', '', $content) ?? $content);
-
-        $candidates = [$content];
-
-        if (preg_match_all('/```(?:json)?\s*(.*?)```/is', $content, $matches)) {
-            foreach ($matches[1] ?? [] as $match) {
-                $candidates[] = trim((string) $match);
-            }
-        }
-
-        foreach ([['{', '}'], ['[', ']']] as [$open, $close]) {
-            $balanced = $this->extractBalancedJson($content, $open, $close);
-            if ($balanced !== '') {
-                $candidates[] = $balanced;
-            }
-
-            $start = strpos($content, $open);
-            $end = strrpos($content, $close);
-            if ($start !== false && $end !== false && $end > $start) {
-                $candidates[] = substr($content, $start, $end - $start + 1);
-            }
-        }
-
-        return array_values(array_unique(array_filter(array_map('trim', $candidates))));
-    }
-
-    private function extractBalancedJson(string $content, string $open, string $close): string
-    {
-        $start = strpos($content, $open);
-        if ($start === false) {
-            return '';
-        }
-
-        $depth = 0;
-        $inString = false;
-        $escaped = false;
-        $length = strlen($content);
-
-        for ($index = $start; $index < $length; $index++) {
-            $char = $content[$index];
-
-            if ($inString) {
-                if ($escaped) {
-                    $escaped = false;
-
-                    continue;
-                }
-
-                if ($char === '\\') {
-                    $escaped = true;
-
-                    continue;
-                }
-
-                if ($char === '"') {
-                    $inString = false;
-                }
-
-                continue;
-            }
-
-            if ($char === '"') {
-                $inString = true;
-
-                continue;
-            }
-
-            if ($char === $open) {
-                $depth++;
-
-                continue;
-            }
-
-            if ($char === $close) {
-                $depth--;
-                if ($depth === 0) {
-                    return substr($content, $start, $index - $start + 1);
-                }
-            }
-        }
-
-        return '';
-    }
-
-    private function previewAiContent(string $content): string
-    {
-        $content = strip_tags($content);
-        $content = preg_replace('/\s+/u', ' ', $content) ?? $content;
-
-        return Str::limit(trim($content), 240, '...');
-    }
-
-    /**
-     * Some models obey the semantic request but ignore the strict JSON wrapper and
-     * return comma-separated or numbered lists. Preserve those valid answers for
-     * list-only steps such as keywords and titles, while still requiring JSON for
-     * knowledge-base extraction.
+     * 把 AI 返回的纯文本兜底解析成"列表"，用于 AI 没按 JSON 返回时降级使用。
+     * 规则：按行 / 编号 / 项目符号 / 中文逗号切分，剔除太短/太长/明显是噪声的行。
      *
      * @return list<string>
      */
     private function parseAiList(string $content): array
     {
-        $content = trim(strip_tags($content));
-        $content = preg_replace('/^\xEF\xBB\xBF/', '', $content) ?? $content;
-        $content = preg_replace('/<think\b[^>]*>.*?<\/think>/is', '', $content) ?? $content;
-        $content = preg_replace('/```(?:json|text)?\s*|\s*```/i', '', $content) ?? $content;
-        $content = trim($content);
-        if ($content === '') {
-            return [];
-        }
-
         $lines = preg_split('/\R/u', $content) ?: [];
         $items = [];
-        foreach ($lines as $line) {
-            $line = trim((string) $line);
+        foreach ($lines as $raw) {
+            $line = trim((string) $raw);
             if ($line === '') {
                 continue;
             }
+            $line = preg_replace('/^[\-\*\u2022\u00b7]\s*/u', '', $line) ?? $line;
+            $line = preg_replace('/^\d+[\.\)、]\s*/u', '', $line) ?? $line;
+            $line = trim($line);
+            if ($line === '') {
+                continue;
+            }
+            $len = mb_strlen($line, 'UTF-8');
+            if ($len < 2 || $len > 80) {
+                continue;
+            }
+            $items[] = $line;
+            if (count($items) >= 50) {
+                break;
+            }
+        }
 
-            $line = preg_replace('/^\s*(?:[-*•]|\d+[\.\)、)]|[（(]?\d+[）)])\s*/u', '', $line) ?? $line;
-            foreach (preg_split('/[,\x{FF0C};；、]/u', $line) ?: [] as $part) {
-                $part = trim((string) $part);
-                $part = preg_replace('/^[\"“”‘’]+|[\"“”‘’]+$/u', '', $part) ?? $part;
-                if ($part !== '') {
-                    $items[] = $part;
+        return array_values(array_unique($items));
+    }
+
+    /**
+     * 用于错误信息中给用户看的内容预览（200 字内）。
+     */
+    private function previewAiContent(string $content): string
+    {
+        $clean = trim(strip_tags($content));
+        if (mb_strlen($clean, 'UTF-8') > 200) {
+            return mb_substr($clean, 0, 200, 'UTF-8').'…';
+        }
+
+        return $clean;
+    }
+
+    /**
+     * 强类型归一：把任意 AI 返回的列表字段（数组 / 字符串 / 嵌套结构）清洗成字符串数组。
+     *
+     * @return list<string>
+     */
+    private function stringList(mixed $value): array
+    {
+        if ($value === null) {
+            return [];
+        }
+        if (is_string($value)) {
+            $parts = preg_split('/[\n,，;；、]+/u', $value) ?: [];
+            $parts = array_values(array_filter(array_map(static fn (string $p): string => trim($p), $parts), static fn (string $p): bool => $p !== ''));
+
+            return $parts;
+        }
+        if (! is_array($value)) {
+            return [];
+        }
+
+        $out = [];
+        $stack = [$value];
+        while ($stack !== []) {
+            $item = array_shift($stack);
+            if (is_string($item)) {
+                $trimmed = trim($item);
+                if ($trimmed !== '') {
+                    $out[] = $trimmed;
+                }
+                continue;
+            }
+            if (is_int($item) || is_float($item)) {
+                $out[] = (string) $item;
+                continue;
+            }
+            if (is_array($item)) {
+                $isAssoc = $item !== [] && array_keys($item) !== range(0, count($item) - 1);
+                if ($isAssoc) {
+                    $label = $item['name'] ?? $item['title'] ?? $item['keyword'] ?? $item['term'] ?? $item['text'] ?? null;
+                    if (is_string($label) && $label !== '') {
+                        $out[] = trim($label);
+                    } else {
+                        foreach ($item as $v) {
+                            if (is_string($v) || is_array($v) || is_int($v) || is_float($v)) {
+                                $stack[] = $v;
+                            }
+                        }
+                    }
+                } else {
+                    foreach ($item as $v) {
+                        $stack[] = $v;
+                    }
                 }
             }
         }
 
-        return Collection::make($items)
-            ->map(fn (string $item): string => $this->normalizeText($item))
-            ->filter(static fn (string $item): bool => $item !== '')
-            ->unique()
-            ->take(80)
-            ->values()
-            ->all();
+        return array_values(array_unique($out));
     }
 
     /**
-     * @return list<string>
-     */
-    private function extractKeywords(string $text): array
-    {
-        preg_match_all('/[\p{Han}A-Za-z0-9][\p{Han}A-Za-z0-9\-\+\.]{1,24}/u', $text, $matches);
-        $stopWords = ['http', 'https', 'www', 'com', 'the', 'and', 'for', 'with', 'this', 'that', 'from', '一个', '我们', '可以', '这个', '以及', '进行', '页面', '内容', '如果', '通过', '不是', '还有', '查看详情', '详情', '更多', '重磅', '首页', '登录', '注册', '返回', '点击', '阅读', '分享'];
-        $counts = [];
-        foreach ($matches[0] ?? [] as $word) {
-            $word = trim($word);
-            if (mb_strlen($word, 'UTF-8') < 2 || in_array(mb_strtolower($word, 'UTF-8'), $stopWords, true)) {
-                continue;
-            }
-            $counts[$word] = ($counts[$word] ?? 0) + 1;
-        }
-        arsort($counts);
-
-        return array_slice(array_keys($counts), 0, 100);
-    }
-
-    /**
-     * @param  list<string>  $keywords
      * @return list<string>
      */
     private function cleanKeywordList(array $keywords): array
@@ -1334,20 +1676,34 @@ PROMPT;
     }
 
     /**
-     * @return list<string>
+     * 派发图片下载到队列，不阻塞主流程。
+     *
+     * @param  array{title:string,description:string,text:string,summary:string,images?:list<array<string,mixed>>,raw_json:array<string,mixed>}  $parsed
      */
-    private function stringList(mixed $value): array
+    private function dispatchImageDownload(UrlImportJob $job, array $parsed): void
     {
-        if (! is_array($value)) {
-            return [];
+        $images = $parsed['images'] ?? [];
+        if (! is_array($images) || $images === []) {
+            return;
+        }
+        $tenantId = (int) ($job->tenant_id ?? 0);
+        if ($tenantId <= 0) {
+            return;
         }
 
-        return Collection::make($value)
-            ->map(fn (mixed $item): string => $this->aiResponseTextToString($item))
-            ->filter(static fn (string $item): bool => $item !== '')
-            ->unique()
-            ->values()
-            ->all();
+        try {
+            \App\Jobs\DownloadUrlImportImagesJob::dispatch(
+                (int) $job->id,
+                (string) $job->normalized_url,
+                (string) $parsed['title'],
+                $parsed
+            );
+        } catch (Throwable $exception) {
+            Log::warning('geoflow.url_import_image_dispatch_failed', [
+                'job_id' => (int) $job->id,
+                'reason' => $exception->getMessage(),
+            ]);
+        }
     }
 
     /**
@@ -1390,6 +1746,58 @@ PROMPT;
             'level' => $level,
             'message' => $message,
         ]);
+    }
+
+    /**
+     * 记录节点的输入/输出快照，用于前端"调试器"展示。
+     *
+     * @param  array<string, mixed>  $input
+     * @param  array<string, mixed>|null  $output
+     */
+    private function logNode(UrlImportJob $job, string $nodeKey, string $nodeLabel, array $input, ?array $output, int $durationMs, int $attempt = 1, string $status = 'success', ?string $error = null): void
+    {
+        try {
+            UrlImportJobNodeLog::query()->create([
+                'job_id' => (int) $job->id,
+                'node_key' => $nodeKey,
+                'node_label' => $nodeLabel,
+                'attempt' => max(1, $attempt),
+                'status' => $status,
+                'duration_ms' => max(0, $durationMs),
+                'input_json' => $this->truncateNodePayload($input, 50_000),
+                'output_json' => $output === null ? null : $this->truncateNodePayload($output, 50_000),
+                'error_message' => $error,
+            ]);
+        } catch (Throwable $exception) {
+            Log::warning('geoflow.url_import_node_log_failed', [
+                'job_id' => (int) $job->id,
+                'node_key' => $nodeKey,
+                'reason' => $exception->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * 节点输入/输出过大时截断，避免数据库行过大。
+     *
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private function truncateNodePayload(array $payload, int $maxChars): array
+    {
+        $json = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+        if (! is_string($json)) {
+            return $payload;
+        }
+        if (mb_strlen($json, 'UTF-8') <= $maxChars) {
+            return $payload;
+        }
+
+        return [
+            '_truncated' => true,
+            '_original_chars' => mb_strlen($json, 'UTF-8'),
+            '_preview' => mb_substr($json, 0, $maxChars, 'UTF-8').'…',
+        ];
     }
 
     /**

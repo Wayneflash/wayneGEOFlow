@@ -266,6 +266,7 @@
         const PROVIDER_PRESETS = {
             minimax: {name: 'MiniMax M2.7', version: 'M2.7', model_id: 'MiniMax-M2.7', api_url: 'https://api.minimax.io', model_type: 'chat'},
             minimax_highspeed: {name: 'MiniMax M2.7 Highspeed', version: 'M2.7', model_id: 'MiniMax-M2.7-highspeed', api_url: 'https://api.minimax.io', model_type: 'chat'},
+            minimax_m3: {name: 'MiniMax M3', version: 'M3', model_id: 'MiniMax-M3', api_url: 'https://api.minimax.io', model_type: 'chat'},
             openai: {name: 'GPT-4o', version: '', model_id: 'gpt-4o', api_url: 'https://api.openai.com', model_type: 'chat'},
             gemini: {name: 'Gemini 3 Flash Preview', version: 'v1beta', model_id: 'gemini-3-flash-preview', api_url: 'https://generativelanguage.googleapis.com/v1beta', model_type: 'chat'},
             deepseek: {name: 'DeepSeek Chat', version: '', model_id: 'deepseek-chat', api_url: 'https://api.deepseek.com', model_type: 'chat'},

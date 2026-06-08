@@ -70,10 +70,6 @@
                         <p class="mt-1 text-sm text-slate-600">管理 AI 生成任务，点击任务名或统计数字可查看对应文章</p>
                     </div>
                 </div>
-                <a href="{{ route('admin.tasks.create') }}" class="admin-btn-primary shrink-0 self-start sm:self-center">
-                    <i data-lucide="plus" class="h-4 w-4"></i>
-                    {{ __('admin.button.create_task') }}
-                </a>
             </div>
         </div>
 
@@ -89,6 +85,16 @@
                 <div>
                     <h3 class="text-base font-semibold text-slate-950">{{ __('admin.tasks.list_title') }}</h3>
                     <p class="mt-1 text-xs text-slate-500">点击任务名或产出数可查看对应文章</p>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                    <span class="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-600">
+                        <i data-lucide="workflow" class="h-3.5 w-3.5 text-slate-400"></i>
+                        {{ __('admin.tasks.list_count', ['count' => count($tasks ?? [])]) }}
+                    </span>
+                    <a href="{{ route('admin.tasks.create') }}" class="admin-btn-primary">
+                        <i data-lucide="plus" class="h-4 w-4"></i>
+                        {{ __('admin.button.new_task') }}
+                    </a>
                 </div>
             </div>
 

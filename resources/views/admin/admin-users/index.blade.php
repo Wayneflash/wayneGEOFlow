@@ -6,31 +6,23 @@
         $admins = is_array($admins ?? null) ? $admins : [];
         $currentAdminId = isset($currentAdminId) ? (int) $currentAdminId : 0;
     @endphp
-    <div class="space-y-6">
-        <div class="admin-panel">
-            <div class="admin-panel-header">
-                <div class="flex items-start gap-3">
-                    <a href="{{ route('admin.site-settings.index') }}" class="admin-icon-btn" aria-label="{{ __('admin.common.back') }}">
-                        <i data-lucide="arrow-left" class="h-4 w-4"></i>
-                    </a>
-                    <div>
-                        <div class="text-xs font-medium uppercase tracking-widest text-slate-400">{{ __('admin.admin_users.page_eyebrow') }}</div>
-                        <h1 class="mt-1 text-xl font-semibold tracking-tight text-slate-950">{{ __('admin.admin_users.page_title') }}</h1>
-                        <p class="mt-1 text-sm text-slate-500">{{ __('admin.admin_users.page_subtitle') }}</p>
-                    </div>
-                </div>
-                <div class="flex flex-wrap items-center gap-2">
-                    <a href="{{ route('admin.admin-activity-logs') }}" class="admin-btn-secondary">
-                        <i data-lucide="clipboard-list" class="h-4 w-4"></i>
-                        {{ __('admin.admin_users.view_logs') }}
-                    </a>
-                    <button type="button" onclick="showCreateAdminModal()" class="admin-btn-primary">
-                        <i data-lucide="user-plus" class="h-4 w-4"></i>
-                        {{ __('admin.admin_users.add_admin') }}
-                    </button>
+<div class="space-y-6">
+    <section class="admin-page-hero">
+        <div class="admin-page-hero-glow admin-page-hero-glow--left" aria-hidden="true"></div>
+        <div class="admin-page-hero-glow admin-page-hero-glow--right" aria-hidden="true"></div>
+        <div class="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+            <div class="min-w-0 flex items-start gap-3">
+                <span class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-sm shadow-blue-600/20">
+                    <i data-lucide="shield-user" class="h-5 w-5"></i>
+                </span>
+                <div class="min-w-0">
+                    <p class="text-xs font-semibold uppercase tracking-[0.16em] text-blue-600">{{ __('admin.admin_users.page_eyebrow') }}</p>
+                    <h1 class="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{{ __('admin.admin_users.page_title') }}</h1>
+                    <p class="mt-1 text-sm text-slate-600">{{ __('admin.admin_users.page_subtitle') }}</p>
                 </div>
             </div>
         </div>
+    </section>
 
         <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             <div class="admin-panel p-5">
@@ -81,9 +73,19 @@
                     <h2 class="text-base font-semibold text-slate-950">{{ __('admin.admin_users.list_title') }}</h2>
                     <p class="mt-1 text-sm text-slate-500">{{ __('admin.admin_users.list_subtitle') }}</p>
                 </div>
-                <div class="flex items-center gap-2 text-xs text-slate-500">
-                    <i data-lucide="shield-user" class="h-4 w-4 text-slate-400"></i>
-                    {{ __('admin.admin_users.list_count', ['count' => count($admins)]) }}
+                <div class="flex flex-wrap items-center gap-2">
+                    <span class="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-600">
+                        <i data-lucide="shield-user" class="h-3.5 w-3.5 text-slate-400"></i>
+                        {{ __('admin.admin_users.list_count', ['count' => count($admins)]) }}
+                    </span>
+                    <a href="{{ route('admin.admin-activity-logs') }}" class="admin-btn-secondary">
+                        <i data-lucide="clipboard-list" class="h-4 w-4"></i>
+                        {{ __('admin.admin_users.view_logs') }}
+                    </a>
+                    <button type="button" onclick="showCreateAdminModal()" class="admin-btn-primary">
+                        <i data-lucide="user-plus" class="h-4 w-4"></i>
+                        {{ __('admin.admin_users.add_admin') }}
+                    </button>
                 </div>
             </div>
             <div class="overflow-x-auto">
@@ -161,10 +163,18 @@
                                     </div>
                                 </td>
                                 <td class="text-sm text-slate-600">
-                                    {{ __('admin.admin_users.activity_count', ['count' => $admin['activity_count']]) }}
+                                    <a href="{{ route('admin.admin-activity-logs', ['admin_id' => $admin['id']]) }}" class="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-xs font-medium text-slate-600 transition hover:border-blue-200 hover:bg-blue-50/60 hover:text-blue-700">
+                                        <i data-lucide="scroll-text" class="h-3 w-3"></i>
+                                        {{ __('admin.admin_users.activity_count', ['count' => $admin['activity_count']]) }}
+                                    </a>
                                 </td>
                                 <td class="text-right text-sm font-medium">
-                                    @if ($admin['id'] === $currentAdminId)
+                                    @if ($admin['is_system_initial'])
+                                        <span class="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-[11px] font-medium text-slate-500">
+                                            <i data-lucide="lock" class="h-3 w-3"></i>
+                                            {{ __('admin.admin_users.system_initial_badge') }}
+                                        </span>
+                                    @elseif ($admin['id'] === $currentAdminId)
                                         <button
                                             type="button"
                                             onclick="showEditAdminModal({{ \Illuminate\Support\Js::from($admin) }})"
@@ -221,6 +231,41 @@
         </div>
     </div>
 
+    <div id="admin-activities-modal" class="admin-modal-shell fixed inset-0 z-50 hidden" role="dialog" aria-modal="true" aria-labelledby="admin-activities-modal-title">
+        <div class="admin-modal-backdrop absolute inset-0 bg-slate-900/45 backdrop-blur-sm" onclick="hideAdminActivitiesModal()"></div>
+        <div class="relative mx-auto mt-[5vh] flex w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl shadow-slate-900/15">
+            <div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+                <div class="flex min-w-0 items-center gap-3">
+                    <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+                        <i data-lucide="scroll-text" class="h-4 w-4"></i>
+                    </span>
+                    <div class="min-w-0">
+                        <h3 id="admin-activities-modal-title" class="truncate text-base font-semibold text-slate-950">{{ __('admin.admin_users.activities_modal_title') }}</h3>
+                        <p class="mt-0.5 truncate text-xs text-slate-500" data-admin-activities-subtitle></p>
+                    </div>
+                </div>
+                <button type="button" onclick="hideAdminActivitiesModal()" class="admin-icon-btn" aria-label="{{ __('admin.common.close') }}">
+                    <i data-lucide="x" class="h-4 w-4"></i>
+                </button>
+            </div>
+            <div class="px-6 py-5">
+                <div class="mb-4 flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-2.5 text-xs text-slate-500">
+                    <div class="flex items-center gap-2">
+                        <i data-lucide="hash" class="h-3.5 w-3.5 text-slate-400"></i>
+                        <span data-admin-activities-total>—</span>
+                    </div>
+                    <a href="{{ route('admin.admin-activity-logs') }}" class="text-blue-600 transition hover:text-blue-800">{{ __('admin.admin_users.view_all_logs') }}</a>
+                </div>
+                <div class="max-h-[60vh] space-y-2 overflow-y-auto pr-1" data-admin-activities-list>
+                    <div class="rounded-xl border border-dashed border-slate-200 bg-slate-50/40 px-4 py-10 text-center text-sm text-slate-400" data-admin-activities-loading>
+                        <i data-lucide="loader" class="mx-auto mb-2 h-5 w-5 animate-spin text-slate-400"></i>
+                        {{ __('admin.admin_users.activities_loading') }}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div id="create-admin-modal" class="admin-modal-shell fixed inset-0 z-50 hidden" role="dialog" aria-modal="true" aria-labelledby="create-admin-modal-title">
         <div class="admin-modal-backdrop absolute inset-0 bg-slate-900/45 backdrop-blur-sm" onclick="hideCreateAdminModal()"></div>
         <div class="relative mx-auto mt-[6vh] flex w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl shadow-slate-900/15">
@@ -235,12 +280,13 @@
                     <i data-lucide="x" class="h-4 w-4"></i>
                 </button>
             </div>
-            <form method="POST" action="{{ route('admin.admin-users.store') }}" enctype="multipart/form-data" class="px-6 py-5 space-y-4">
+            <form id="create-admin-form" method="POST" action="{{ route('admin.admin-users.store') }}" enctype="multipart/form-data" class="px-6 py-5 space-y-4" novalidate>
                 @csrf
                 <div class="grid gap-4 sm:grid-cols-2">
                     <div class="admin-field">
                         <label for="username" class="admin-label">{{ __('admin.admin_users.field_username') }}</label>
-                        <input type="text" name="username" id="username" required class="admin-input" placeholder="{{ __('admin.admin_users.placeholder_username') }}" value="{{ old('username') }}">
+                        <input type="text" name="username" id="username" required data-validate="username" class="admin-input" placeholder="{{ __('admin.admin_users.placeholder_username') }}" value="{{ old('username') }}">
+                        <p class="admin-field-error hidden" data-field-error="username"><i data-lucide="alert-circle"></i><span data-field-error-text></span></p>
                     </div>
 
                     <div class="admin-field">
@@ -251,7 +297,8 @@
 
                 <div class="admin-field">
                     <label for="email" class="admin-label">{{ __('admin.admin_users.field_email') }}</label>
-                    <input type="email" name="email" id="email" class="admin-input" placeholder="{{ __('admin.admin_users.placeholder_email') }}" value="{{ old('email') }}">
+                    <input type="email" name="email" id="email" data-validate="email" class="admin-input" placeholder="{{ __('admin.admin_users.placeholder_email') }}" value="{{ old('email') }}">
+                    <p class="admin-field-error hidden" data-field-error="email"><i data-lucide="alert-circle"></i><span data-field-error-text></span></p>
                 </div>
 
                 <div class="admin-field">
@@ -284,11 +331,13 @@
                 <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div class="admin-field">
                         <label for="password" class="admin-label">{{ __('admin.admin_users.field_password') }}</label>
-                        <input type="password" name="password" id="password" required class="admin-input">
+                        <input type="password" name="password" id="password" required data-validate="password" class="admin-input">
+                        <p class="admin-field-error hidden" data-field-error="password"><i data-lucide="alert-circle"></i><span data-field-error-text></span></p>
                     </div>
                     <div class="admin-field">
                         <label for="confirm_password" class="admin-label">{{ __('admin.admin_users.field_confirm_password') }}</label>
-                        <input type="password" name="confirm_password" id="confirm_password" required class="admin-input">
+                        <input type="password" name="confirm_password" id="confirm_password" required data-validate="confirm_password" class="admin-input">
+                        <p class="admin-field-error hidden" data-field-error="confirm_password"><i data-lucide="alert-circle"></i><span data-field-error-text></span></p>
                     </div>
                 </div>
 
@@ -321,12 +370,13 @@
                     <i data-lucide="x" class="h-4 w-4"></i>
                 </button>
             </div>
-            <form id="edit-admin-form" method="POST" action="#" class="px-6 py-5 space-y-4">
+            <form id="edit-admin-form" method="POST" action="#" class="px-6 py-5 space-y-4" novalidate>
                 @csrf
                 <div class="grid gap-4 sm:grid-cols-2">
                     <div class="admin-field">
                         <label for="edit_username" class="admin-label">{{ __('admin.admin_users.field_username') }}</label>
-                        <input type="text" name="username" id="edit_username" required class="admin-input">
+                        <input type="text" name="username" id="edit_username" required data-validate="username" class="admin-input">
+                        <p class="admin-field-error hidden" data-field-error="username"><i data-lucide="alert-circle"></i><span data-field-error-text></span></p>
                     </div>
 
                     <div class="admin-field">
@@ -337,7 +387,8 @@
 
                 <div class="admin-field">
                     <label for="edit_email" class="admin-label">{{ __('admin.admin_users.field_email') }}</label>
-                    <input type="email" name="email" id="edit_email" class="admin-input">
+                    <input type="email" name="email" id="edit_email" data-validate="email" class="admin-input">
+                    <p class="admin-field-error hidden" data-field-error="email"><i data-lucide="alert-circle"></i><span data-field-error-text></span></p>
                 </div>
 
                 <div class="admin-field">
@@ -358,11 +409,13 @@
                 <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div class="admin-field">
                         <label for="edit_password" class="admin-label">{{ __('admin.admin_users.field_new_password') }}</label>
-                        <input type="password" name="password" id="edit_password" class="admin-input">
+                        <input type="password" name="password" id="edit_password" data-validate="password" class="admin-input">
+                        <p class="admin-field-error hidden" data-field-error="password"><i data-lucide="alert-circle"></i><span data-field-error-text></span></p>
                     </div>
                     <div class="admin-field">
                         <label for="edit_confirm_password" class="admin-label">{{ __('admin.admin_users.field_confirm_new_password') }}</label>
-                        <input type="password" name="confirm_password" id="edit_confirm_password" class="admin-input">
+                        <input type="password" name="confirm_password" id="edit_confirm_password" data-validate="confirm_password" class="admin-input">
+                        <p class="admin-field-error hidden" data-field-error="confirm_password"><i data-lucide="alert-circle"></i><span data-field-error-text></span></p>
                     </div>
                 </div>
 
@@ -387,7 +440,103 @@
         const updateAdminRouteTemplate = @json(route('admin.admin-users.update', ['adminId' => '__ADMIN_ID__']));
         const currentAdminId = @json($currentAdminId);
 
+        const formMessages = {
+            username: @json(__('admin.admin_users.error.username_invalid')),
+            email: @json(__('admin.admin_users.error.email_invalid')),
+            password: @json(__('admin.admin_users.error.password_too_short')),
+            confirm_password: @json(__('admin.admin_users.error.password_mismatch')),
+            username_required: @json(__('admin.admin_users.error.username_required')),
+        };
+
+        function showFieldError(form, field, message) {
+            const input = form.querySelector('[name="' + field + '"]');
+            const errorEl = form.querySelector('[data-field-error="' + field + '"]');
+            if (!errorEl) return;
+            if (input) {
+                input.classList.add('admin-input--error');
+                input.setAttribute('aria-invalid', 'true');
+            }
+            errorEl.classList.remove('hidden');
+            const textEl = errorEl.querySelector('[data-field-error-text]');
+            if (textEl) textEl.textContent = message;
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+        }
+
+        function clearFieldErrors(form) {
+            form.querySelectorAll('.admin-input--error').forEach((el) => {
+                el.classList.remove('admin-input--error');
+                el.removeAttribute('aria-invalid');
+            });
+            form.querySelectorAll('[data-field-error]').forEach((el) => el.classList.add('hidden'));
+        }
+
+        function validateAdminForm(form) {
+            let valid = true;
+            const username = form.querySelector('[name="username"]')?.value.trim() || '';
+            const email = form.querySelector('[name="email"]')?.value.trim() || '';
+            const password = form.querySelector('[name="password"]')?.value || '';
+            const confirm = form.querySelector('[name="confirm_password"]')?.value || '';
+            const isCreate = form.id === 'create-admin-form';
+
+            if (username === '') {
+                showFieldError(form, 'username', formMessages.username_required);
+                valid = false;
+            } else if (!/^[A-Za-z0-9_.-]{3,50}$/.test(username)) {
+                showFieldError(form, 'username', formMessages.username);
+                valid = false;
+            }
+
+            if (email !== '' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+                showFieldError(form, 'email', formMessages.email);
+                valid = false;
+            }
+
+            if (isCreate || password !== '') {
+                if (password.length < 8) {
+                    showFieldError(form, 'password', formMessages.password);
+                    valid = false;
+                }
+                if (confirm !== password) {
+                    showFieldError(form, 'confirm_password', formMessages.confirm_password);
+                    valid = false;
+                }
+            }
+            return valid;
+        }
+
+        document.getElementById('create-admin-form')?.addEventListener('submit', (event) => {
+            clearFieldErrors(event.target);
+            if (!validateAdminForm(event.target)) {
+                event.preventDefault();
+            }
+        });
+        document.getElementById('edit-admin-form')?.addEventListener('submit', (event) => {
+            clearFieldErrors(event.target);
+            if (!validateAdminForm(event.target)) {
+                event.preventDefault();
+            }
+        });
+
+        @if ($errors->any())
+            (() => {
+                const form = document.getElementById('create-admin-form') || document.getElementById('edit-admin-form');
+                if (form) {
+                    clearFieldErrors(form);
+                    @foreach ($errors->messages() as $field => $messages)
+                        showFieldError(form, @json($field), @json($messages[0]));
+                    @endforeach
+                    const modal = form.closest('.admin-modal-shell');
+                    if (modal) {
+                        modal.classList.remove('hidden');
+                        document.documentElement.classList.add('admin-modal-open');
+                    }
+                }
+            })();
+        @endif
+
         function showCreateAdminModal() {
+            const form = document.getElementById('create-admin-form');
+            if (form) clearFieldErrors(form);
             document.getElementById('create-admin-modal').classList.remove('hidden');
             document.documentElement.classList.add('admin-modal-open');
         }
@@ -441,6 +590,74 @@
 
         function hideEditAdminModal() {
             document.getElementById('edit-admin-modal').classList.add('hidden');
+            document.documentElement.classList.remove('admin-modal-open');
+        }
+
+        const adminActivitiesBaseUrl = @js(route('admin.admin-users.activities', ['adminId' => 0]));
+        const adminActivitiesUrlTemplate = adminActivitiesBaseUrl.replace(/\/0$/, '/__ID__');
+
+        function showAdminActivities(adminId, displayName) {
+            const modal = document.getElementById('admin-activities-modal');
+            const subtitle = document.querySelector('[data-admin-activities-subtitle]');
+            const totalEl = document.querySelector('[data-admin-activities-total]');
+            const listEl = document.querySelector('[data-admin-activities-list]');
+
+            subtitle.textContent = displayName || '';
+            totalEl.textContent = '...';
+            listEl.innerHTML = '<div class="rounded-xl border border-dashed border-slate-200 bg-slate-50/40 px-4 py-10 text-center text-sm text-slate-400"><i data-lucide="loader" class="mx-auto mb-2 h-5 w-5 animate-spin text-slate-400"></i>{{ __('admin.admin_users.activities_loading') }}</div>';
+            if (typeof lucide !== 'undefined') { lucide.createIcons(); }
+
+            modal.classList.remove('hidden');
+            document.documentElement.classList.add('admin-modal-open');
+
+            fetch(adminActivitiesUrlTemplate.replace('__ID__', adminId), { headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' } })
+                .then((response) => {
+                    if (response.ok) return response.json();
+                    return response.text().then((text) => Promise.reject({ status: response.status, text, url: response.url }));
+                })
+                .then((data) => {
+                    totalEl.textContent = @js(__('admin.admin_users.activities_total')) + ' ' + (data.total || 0);
+                    renderAdminActivities(data.activities || []);
+                })
+                .catch((err) => {
+                    console.error('activities load failed', err);
+                    const detail = err && (err.status || err.text) ? (' (HTTP ' + (err.status || '?') + ')') : '';
+                    listEl.innerHTML = '<div class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-8 text-center text-sm text-rose-600">{{ __('admin.admin_users.activities_load_error') }}' + detail + '</div>';
+                });
+        }
+
+        function renderAdminActivities(activities) {
+            const listEl = document.querySelector('[data-admin-activities-list]');
+            if (!activities.length) {
+                listEl.innerHTML = '<div class="rounded-xl border border-dashed border-slate-200 bg-slate-50/40 px-4 py-10 text-center text-sm text-slate-400">{{ __('admin.admin_users.activities_empty') }}</div>';
+                return;
+            }
+            listEl.innerHTML = activities.map((item) => {
+                const time = item.created_at || '';
+                const human = item.created_at_human || '';
+                const page = item.page ? '<div class="mt-0.5 truncate text-[11px] text-slate-500">' + escapeHtml(item.page) + '</div>' : '';
+                const details = item.details ? '<div class="mt-1 line-clamp-2 text-[12px] text-slate-500">' + escapeHtml(item.details) + '</div>' : '';
+                const ip = item.ip ? '<span class="rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-500">' + escapeHtml(item.ip) + '</span>' : '';
+                const method = item.method ? '<span class="rounded-md bg-blue-50 px-1.5 py-0.5 text-[11px] font-semibold text-blue-600">' + escapeHtml(item.method) + '</span>' : '';
+                return '<div class="rounded-xl border border-slate-200 bg-white px-4 py-3 transition hover:border-blue-200 hover:shadow-sm">' +
+                    '<div class="flex items-center justify-between gap-2">' +
+                        '<div class="flex min-w-0 items-center gap-2">' + method +
+                            '<span class="truncate text-[13px] font-semibold text-slate-800">' + escapeHtml(item.action || '-') + '</span>' +
+                        '</div>' +
+                        '<span class="shrink-0 text-[11px] text-slate-400" title="' + escapeHtml(time) + '">' + escapeHtml(human) + '</span>' +
+                    '</div>' +
+                    page + details +
+                    (ip ? '<div class="mt-1.5 flex justify-end">' + ip + '</div>' : '') +
+                '</div>';
+            }).join('');
+        }
+
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
+        }
+
+        function hideAdminActivitiesModal() {
+            document.getElementById('admin-activities-modal').classList.add('hidden');
             document.documentElement.classList.remove('admin-modal-open');
         }
 

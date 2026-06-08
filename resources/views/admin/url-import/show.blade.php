@@ -125,30 +125,54 @@
                 </div>
 
                 <div class="url-import-pipeline">
-                    @foreach ($steps as $stepKey => $stepLabel)
+                    @php
+                        $currentNodeKey = match ((string) $job->current_step) {
+                            'fetch' => 'fetch',
+                            'page_json' => 'parse',
+                            'knowledge' => in_array(true, [str_contains((string) $job->current_step, 'knowledge')]) ? 'ai_knowledge' : 'ai_clean',
+                            'keywords' => 'ai_keywords',
+                            'titles' => 'ai_titles',
+                            'preview', 'done' => null,
+                            default => null,
+                        };
+                    @endphp
+                    @foreach ($nodeSteps as $node)
                         @php
-                            $stepIndex = array_search($stepKey, $stepKeys, true);
-                            $done = $job->status === 'completed' ? $stepIndex <= $currentStepIndex : $stepIndex < $currentStepIndex;
-                            $current = in_array($job->status, ['queued', 'running'], true) && $stepKey === $currentStepKey;
-                            $failed = $job->status === 'failed' && $stepKey === $currentStepKey;
+                            $done = $node['status'] === 'success';
+                            $failed = $node['status'] === 'failed';
+                            $isJobRunning = in_array($job->status, ['queued', 'running'], true);
+                            $isCurrentRunning = $isJobRunning && $node['key'] === $currentNodeKey;
                         @endphp
-                        <div
-                            class="url-import-pipeline-step {{ $done ? 'is-done' : '' }} {{ $current ? 'is-current' : '' }} {{ $failed ? 'is-failed' : '' }}"
-                            data-step-row="{{ $stepKey }}"
+                        <button
+                            type="button"
+                            class="url-import-pipeline-step w-full text-left transition hover:bg-blue-50/40 {{ $done ? 'is-done' : '' }} {{ $isCurrentRunning ? 'is-current' : '' }} {{ $failed ? 'is-failed' : '' }}"
+                            data-node-step-row="{{ $node['key'] }}"
+                            data-node-label="{{ $node['label'] }}"
+                            onclick="openNodeDebug('{{ $node['key'] }}', '{{ $node['label'] }}', {{ (int) $node['attempt'] }})"
                         >
                             <div class="flex items-center gap-3">
                                 <span
-                                    class="url-import-step-dot {{ $done ? 'is-done' : '' }} {{ $current ? 'is-current' : '' }} {{ $failed ? 'is-failed' : '' }}"
-                                    data-step-icon-shell
+                                    class="url-import-step-dot {{ $done ? 'is-done' : '' }} {{ $isCurrentRunning ? 'is-current' : '' }} {{ $failed ? 'is-failed' : '' }}"
                                 >
-                                    <i data-lucide="{{ $done ? 'check' : ($current ? 'loader-circle' : ($failed ? 'x' : 'circle')) }}" class="h-4 w-4 {{ $current ? 'animate-spin' : '' }}"></i>
+                                    <i data-lucide="{{ $done ? 'check' : ($isCurrentRunning ? 'loader-circle' : ($failed ? 'x' : 'circle')) }}" class="h-4 w-4 {{ $isCurrentRunning ? 'animate-spin' : '' }}"></i>
                                 </span>
-                                <div class="min-w-0">
-                                    <div class="text-sm font-semibold text-slate-800">{{ $stepLabel }}</div>
-                                    <div class="mt-0.5 truncate text-xs text-slate-500">{{ $stepDescriptions[$stepKey] }}</div>
+                                <div class="min-w-0 flex-1">
+                                    <div class="text-sm font-semibold text-slate-800">{{ $node['label'] }}</div>
+                                    <div class="mt-0.5 truncate text-xs text-slate-500">
+                                        @if ($done)
+                                            <i data-lucide="clock" class="mr-0.5 inline h-3 w-3"></i>{{ number_format($node['duration_ms']) }} ms · 成功
+                                        @elseif ($failed)
+                                            <i data-lucide="alert-circle" class="mr-0.5 inline h-3 w-3"></i>失败
+                                        @elseif ($isCurrentRunning)
+                                            <i data-lucide="loader" class="mr-0.5 inline h-3 w-3 animate-spin"></i>执行中…
+                                        @else
+                                            等待执行
+                                        @endif
+                                    </div>
                                 </div>
+                                <i data-lucide="chevron-right" class="h-4 w-4 shrink-0 text-slate-300"></i>
                             </div>
-                        </div>
+                        </button>
                     @endforeach
                 </div>
             </section>
@@ -161,11 +185,22 @@
             @endif
 
             @if ($result !== [])
-                <section class="admin-panel">
+                <section class="admin-panel" data-url-import-tabs>
                     <div class="flex flex-col gap-4 border-b border-slate-100 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
                         <div>
                             <h3 class="text-lg font-semibold text-slate-950">采集预览</h3>
                             <p class="mt-1 text-sm text-slate-500">确认后写入素材库。</p>
+                        </div>
+                        <div class="inline-flex w-full flex-wrap gap-1 rounded-xl border border-slate-200 bg-slate-100/60 p-1 lg:w-auto" role="tablist">
+                            <button type="button" class="h-9 flex-1 rounded-lg px-3 text-[13px] font-medium text-slate-500 transition sm:flex-none" data-url-import-tab="content" aria-selected="true">
+                                <i data-lucide="file-text" class="mr-1 inline h-3.5 w-3.5"></i>采集内容
+                            </button>
+                            <button type="button" class="h-9 flex-1 rounded-lg px-3 text-[13px] font-medium text-slate-500 transition sm:flex-none" data-url-import-tab="images" aria-selected="false">
+                                <i data-lucide="image" class="mr-1 inline h-3.5 w-3.5"></i>采集图片
+                                @if (! empty($importedImages))
+                                    <span class="ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-blue-600 px-1.5 text-[10px] font-semibold text-white">{{ count($importedImages) }}</span>
+                                @endif
+                            </button>
                         </div>
                         @if ($job->status === 'completed' && $importStatus !== 'imported')
                             <form method="POST" action="{{ route('admin.url-import.commit', ['jobId' => $job->id]) }}" class="flex w-full max-w-xl flex-col gap-3 lg:max-w-md">
@@ -241,6 +276,46 @@
                             </div>
                         </div>
                     </div>
+                </div>
+                <div class="hidden px-5 py-5" data-url-import-panel="images">
+                    @if (empty($importedImages))
+                        <div class="rounded-2xl border border-dashed border-slate-200 bg-slate-50/40 px-6 py-12 text-center">
+                            <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
+                                <i data-lucide="image" class="h-5 w-5"></i>
+                            </div>
+                            <div class="mt-3 text-sm font-semibold text-slate-700">本次采集未入库图片</div>
+                            <p class="mt-1 text-xs text-slate-500">可能页面没有合适的图片，或全部被区域 / 价值 / 尺寸过滤掉。</p>
+                        </div>
+                    @else
+                        <div class="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-3 text-xs text-slate-600">
+                            <i data-lucide="info" class="h-3.5 w-3.5 text-blue-600"></i>
+                            <span>已自动入库 <b class="text-slate-900">{{ count($importedImages) }}</b> 张有价值的图片到"采集暂存库"，AI 打标在后台异步进行。</span>
+                            <a href="{{ route('admin.image-libraries.index') }}" class="ml-auto inline-flex items-center gap-1 text-blue-600 transition hover:text-blue-800">
+                                查看图片库
+                                <i data-lucide="arrow-right" class="h-3.5 w-3.5"></i>
+                            </a>
+                        </div>
+                        <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                            @foreach ($importedImages as $img)
+                                <figure class="group relative overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition hover:border-blue-200 hover:shadow-md">
+                                    <div class="aspect-video w-full overflow-hidden bg-slate-100">
+                                        <img src="{{ asset('storage/'.$img['file_path']) }}" alt="{{ $img['source_alt'] ?? '' }}" loading="lazy" class="h-full w-full object-cover transition duration-300 group-hover:scale-105">
+                                    </div>
+                                    <figcaption class="space-y-1 px-3 py-2.5">
+                                        <div class="flex items-center gap-1.5 text-[11px] text-slate-500">
+                                            <span class="rounded-md bg-slate-100 px-1.5 py-0.5 font-medium text-slate-600">{{ $img['source_area'] ?? 'main' }}</span>
+                                            <span>{{ $img['width'] }}×{{ $img['height'] }}</span>
+                                            <span class="ml-auto">{{ number_format($img['file_size'] / 1024) }} KB</span>
+                                        </div>
+                                        @if (! empty($img['source_paragraph']))
+                                            <p class="line-clamp-2 text-[11px] leading-4 text-slate-500">{{ Str::limit($img['source_paragraph'], 80) }}</p>
+                                        @endif
+                                    </figcaption>
+                                </figure>
+                            @endforeach
+                        </div>
+                    @endif
+                </div>
                 </section>
             @else
                 <section class="admin-panel p-5" data-processing-panel>
@@ -271,6 +346,18 @@
             const initialStatus = root.dataset.status || '';
             const hasServerResult = root.dataset.hasResult === '1';
             const stepOrder = @json($stepKeys);
+            const doneNodeKeys = new Set();
+            const failedNodeKeys = new Set();
+            const nodeStepAlias = (step) => {
+                if (!step) return null;
+                const map = {fetch: 'fetch', page_json: 'parse', knowledge: 'ai_knowledge', keywords: 'ai_keywords', titles: 'ai_titles', preview: null, done: null};
+                return map[step] || null;
+            };
+            const aliasToNodeKey = (step) => {
+                if (!step) return null;
+                const map = {fetch: 'fetch', page_json: 'parse', knowledge: 'ai_knowledge', keywords: 'ai_keywords', titles: 'ai_titles'};
+                return map[step] || null;
+            };
             const stepDescriptions = @json($stepDescriptions);
             const stepAliases = {extract: 'page_json', clean: 'knowledge', imported: 'preview'};
             let polling = null;
@@ -334,30 +421,30 @@
                     statusIcon.classList.toggle('animate-spin', !['completed', 'failed'].includes(payload.status));
                 }
 
-                root.querySelectorAll('[data-step-row]').forEach((row) => {
-                    const step = row.dataset.stepRow || '';
-                    const stepIndex = stepOrder.indexOf(step);
-                    const done = payload.status === 'completed' ? stepIndex <= currentIndex : stepIndex < currentIndex;
-                    const current = !['completed', 'failed'].includes(payload.status) && step === currentStep;
-                    const failed = payload.status === 'failed' && step === currentStep;
-                    const shell = row.querySelector('[data-step-icon-shell]');
-                    if (!shell) return;
+                root.querySelectorAll('[data-step-row]').forEach((row) => { /* legacy, ignored */ });
 
-                    row.className = [
-                        'url-import-pipeline-step',
-                        done ? 'is-done' : '',
-                        current ? 'is-current' : '',
-                        failed ? 'is-failed' : '',
-                    ].filter(Boolean).join(' ');
-
-                    shell.className = [
-                        'url-import-step-dot',
-                        done ? 'is-done' : '',
-                        current ? 'is-current' : '',
-                        failed ? 'is-failed' : '',
-                    ].filter(Boolean).join(' ');
-                    shell.innerHTML = `<i data-lucide="${done ? 'check' : (failed ? 'x' : (current ? 'loader-circle' : 'circle'))}" class="h-4 w-4 ${current ? 'animate-spin' : ''}"></i>`;
+                root.querySelectorAll('[data-node-step-row]').forEach((row) => {
+                    const nodeKey = row.dataset.nodeStepRow || '';
+                    const isDone = doneNodeKeys.has(nodeKey);
+                    const isFailed = failedNodeKeys.has(nodeKey);
+                    const isCurrent = !['completed', 'failed'].includes(payload.status) && currentStep === nodeStepAlias(payload.current_step);
+                    const dot = row.querySelector('.url-import-step-dot');
+                    if (dot) {
+                        dot.classList.toggle('is-done', isDone);
+                        dot.classList.toggle('is-current', isCurrent);
+                        dot.classList.toggle('is-failed', isFailed);
+                    }
+                    row.classList.toggle('is-done', isDone);
+                    row.classList.toggle('is-current', isCurrent);
+                    row.classList.toggle('is-failed', isFailed);
+                    const iconName = isDone ? 'check' : (isFailed ? 'x' : (isCurrent ? 'loader-circle' : 'circle'));
+                    const icon = dot?.querySelector('i[data-lucide]');
+                    if (icon) {
+                        icon.setAttribute('data-lucide', iconName);
+                        icon.classList.toggle('animate-spin', isCurrent);
+                    }
                 });
+                if (window.lucide) window.lucide.createIcons();
 
                 const statusRing = root.querySelector('[data-status-ring]');
                 if (statusRing) {
@@ -441,6 +528,123 @@
             };
 
             startJob();
+        })();
+    </script>
+
+    <div id="node-debug-modal" class="admin-modal-shell fixed inset-0 z-50 hidden" role="dialog" aria-modal="true" aria-labelledby="node-debug-title">
+        <div class="admin-modal-backdrop absolute inset-0 bg-slate-900/45 backdrop-blur-sm" data-node-debug-close></div>
+        <div class="relative mx-auto mt-[3vh] flex h-[94vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+            <div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+                <div class="flex items-center gap-3">
+                    <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+                        <i data-lucide="braces" class="h-4 w-4"></i>
+                    </span>
+                    <div>
+                        <h3 id="node-debug-title" class="text-base font-semibold text-slate-950" data-node-debug-title>节点调试</h3>
+                        <p class="mt-0.5 text-xs text-slate-500" data-node-debug-subtitle>—</p>
+                    </div>
+                </div>
+                <button type="button" data-node-debug-close class="admin-icon-btn" aria-label="{{ __('admin.common.close') }}">
+                    <i data-lucide="x" class="h-4 w-4"></i>
+                </button>
+            </div>
+            <div class="flex flex-1 flex-col overflow-hidden">
+                <div class="flex flex-1 flex-col overflow-hidden border-r border-slate-200">
+                    <div class="flex items-center justify-between border-b border-slate-100 bg-slate-50/60 px-5 py-2.5">
+                        <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                            <i data-lucide="log-in" class="h-3.5 w-3.5 text-blue-500"></i>
+                            输入
+                        </div>
+                        <button type="button" data-node-debug-copy="input" class="rounded-md px-2 py-1 text-[11px] font-medium text-slate-500 transition hover:bg-slate-200/60 hover:text-slate-700">复制</button>
+                    </div>
+                    <pre class="flex-1 overflow-auto px-5 py-4 text-[12px] leading-6 text-slate-700" data-node-debug-input>加载中…</pre>
+                </div>
+                <div class="flex flex-1 flex-col overflow-hidden">
+                    <div class="flex items-center justify-between border-b border-slate-100 bg-slate-50/60 px-5 py-2.5">
+                        <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                            <i data-lucide="log-out" class="h-3.5 w-3.5 text-emerald-500"></i>
+                            输出
+                        </div>
+                        <button type="button" data-node-debug-copy="output" class="rounded-md px-2 py-1 text-[11px] font-medium text-slate-500 transition hover:bg-slate-200/60 hover:text-slate-700">复制</button>
+                    </div>
+                    <pre class="flex-1 overflow-auto px-5 py-4 text-[12px] leading-6 text-slate-700" data-node-debug-output>加载中…</pre>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        (() => {
+            const modal = document.getElementById('node-debug-modal');
+            const titleEl = modal?.querySelector('[data-node-debug-title]');
+            const subtitleEl = modal?.querySelector('[data-node-debug-subtitle]');
+            const inputEl = modal?.querySelector('[data-node-debug-input]');
+            const outputEl = modal?.querySelector('[data-node-debug-output]');
+
+            const nodesBaseUrl = @json(route('admin.url-import.nodes', ['jobId' => $job->id]));
+
+            const setLoading = () => {
+                if (inputEl) inputEl.textContent = '加载中…';
+                if (outputEl) outputEl.textContent = '加载中…';
+            };
+
+            const open = () => {
+                if (!modal) return;
+                modal.classList.remove('hidden');
+                document.documentElement.classList.add('admin-modal-open');
+                if (typeof lucide !== 'undefined') lucide.createIcons();
+            };
+
+            const close = () => {
+                if (!modal) return;
+                modal.classList.add('hidden');
+                document.documentElement.classList.remove('admin-modal-open');
+            };
+
+            window.hideNodeDebug = close;
+            modal?.querySelectorAll('[data-node-debug-close]').forEach((el) => el.addEventListener('click', close));
+
+            window.openNodeDebug = (nodeKey, nodeLabel, attempt) => {
+                if (titleEl) titleEl.textContent = nodeLabel + ' / ' + nodeKey;
+                if (subtitleEl) subtitleEl.textContent = attempt > 0 ? '第 ' + attempt + ' 次调用' : '最新一次';
+                setLoading();
+                open();
+
+                const params = new URLSearchParams({ node_key: nodeKey });
+                if (attempt > 0) params.set('attempt', String(attempt));
+                fetch(nodesBaseUrl + '?' + params.toString(), { headers: { 'Accept': 'application/json' } })
+                    .then((r) => r.ok ? r.json() : Promise.reject(r))
+                    .then((data) => {
+                        if (inputEl) inputEl.textContent = data.input ? JSON.stringify(data.input, null, 2) : '(无输入)';
+                        if (outputEl) outputEl.textContent = data.output && Object.keys(data.output).length > 0
+                            ? JSON.stringify(data.output, null, 2)
+                            : (data.error ? '✗ ' + data.error : '(无输出)');
+                    })
+                    .catch(() => {
+                        if (inputEl) inputEl.textContent = '加载失败';
+                        if (outputEl) outputEl.textContent = '加载失败';
+                    });
+            };
+
+            modal?.querySelectorAll('[data-node-debug-copy]').forEach((btn) => {
+                btn.addEventListener('click', async () => {
+                    const target = btn.getAttribute('data-node-debug-copy');
+                    const text = target === 'input' ? inputEl?.textContent : outputEl?.textContent;
+                    if (!text) return;
+                    try {
+                        await navigator.clipboard.writeText(text);
+                        const original = btn.textContent;
+                        btn.textContent = '已复制';
+                        setTimeout(() => { btn.textContent = original; }, 1200);
+                    } catch (e) {
+                        // ignore
+                    }
+                });
+            });
+
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && modal && !modal.classList.contains('hidden')) close();
+            });
         })();
     </script>
 @endsection

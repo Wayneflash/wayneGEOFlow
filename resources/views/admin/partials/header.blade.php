@@ -2,9 +2,11 @@
     $currentAdmin = auth('admin')->user();
     $tenantBrandName = trim(\App\Support\Site\SiteSettingsBag::get('site_name'));
     $adminBrandLogo = trim(\App\Support\Site\SiteSettingsBag::get('site_logo'));
-    $adminBrandName = $adminBrandLogo !== '' && $tenantBrandName !== ''
+    $defaultLogoUrl = asset('assets/images/logo.png');
+    $adminBrandLogoUrl = $adminBrandLogo !== '' ? $adminBrandLogo : $defaultLogoUrl;
+    $adminBrandName = $tenantBrandName !== ''
         ? $tenantBrandName
-        : __('admin.brand.console');
+        : \App\Support\AdminWeb::siteName();
     $isSuperAdmin = $currentAdmin && method_exists($currentAdmin, 'isSuperAdmin') && $currentAdmin->isSuperAdmin();
     $adminRoleLabel = $isSuperAdmin ? __('admin.header.super_admin') : __('admin.header.admin');
     $menuGroups = [
@@ -20,8 +22,8 @@
             'items' => [
                 'ai_config' => ['route' => 'admin.ai.configurator', 'name' => __('admin.nav.ai_config'), 'icon' => 'sparkles'],
                 'materials' => ['route' => 'admin.materials.index', 'name' => __('admin.nav.materials'), 'icon' => 'database'],
-                'articles' => ['route' => 'admin.articles.index', 'name' => __('admin.nav.articles'), 'icon' => 'file-text'],
                 'tasks' => ['route' => 'admin.tasks.index', 'name' => __('admin.nav.tasks'), 'icon' => 'workflow'],
+                'articles' => ['route' => 'admin.articles.index', 'name' => __('admin.nav.articles'), 'icon' => 'file-text'],
             ],
         ],
         [
@@ -104,13 +106,7 @@
 <aside id="admin-sidebar" class="admin-shell-sidebar">
     <div class="flex h-16 items-center gap-3 border-b border-slate-200 px-4">
         <a href="{{ route('admin.dashboard') }}" class="flex min-w-0 flex-1 items-center gap-3">
-            @if($adminBrandLogo !== '')
-                <img src="{{ $adminBrandLogo }}" alt="{{ $adminBrandName }}" class="h-9 w-9 shrink-0 object-contain">
-            @else
-                <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white">
-                    <i data-lucide="sparkles" class="h-4 w-4"></i>
-                </span>
-            @endif
+            <img src="{{ $adminBrandLogoUrl }}" alt="{{ $adminBrandName }}" class="h-9 w-9 shrink-0 rounded-lg object-contain">
             <span class="sidebar-label truncate text-base font-semibold tracking-tight text-slate-950">{{ $adminBrandName }}</span>
         </a>
     </div>
@@ -140,9 +136,7 @@
     <aside class="relative flex h-full w-80 max-w-[86vw] flex-col border-r border-slate-200 bg-white shadow-2xl">
         <div class="flex h-16 items-center justify-between border-b border-slate-200 px-5">
             <div class="flex min-w-0 items-center gap-3">
-                @if($adminBrandLogo !== '')
-                    <img src="{{ $adminBrandLogo }}" alt="{{ $adminBrandName }}" class="h-9 w-9 object-contain">
-                @endif
+                <img src="{{ $adminBrandLogoUrl }}" alt="{{ $adminBrandName }}" class="h-9 w-9 rounded-lg object-contain">
                 <span class="truncate text-base font-semibold text-slate-950">{{ $adminBrandName }}</span>
             </div>
             <button type="button" data-admin-mobile-sidebar-close class="rounded-lg p-2 text-slate-500 hover:bg-slate-100">
@@ -193,6 +187,9 @@
                         <div class="text-sm font-medium text-slate-900">{{ __('admin.header.welcome', ['name' => $currentAdmin->username ?? '']) }}</div>
                         <div class="text-xs text-slate-400">{{ $adminRoleLabel }}</div>
                     </div>
+                    <a href="{{ route('admin.site-settings.index') }}" class="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-slate-700 transition hover:bg-blue-50 hover:text-blue-700">
+                        <i data-lucide="settings" class="h-4 w-4"></i>{{ __('admin.nav.site_settings') }}
+                    </a>
                     <form method="POST" action="{{ route('admin.logout') }}">
                         @csrf
                         <button type="submit" class="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50">

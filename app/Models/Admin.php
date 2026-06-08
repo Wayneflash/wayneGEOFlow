@@ -86,6 +86,17 @@ class Admin extends Authenticatable
         return in_array($role, ['super_admin', 'superadmin'], true);
     }
 
+    /**
+     * 是否为系统初始化创建的首个超级管理员（id=1 且 created_by 为空）。
+     * 初始化超管禁止编辑 / 启停 / 删除。
+     */
+    public function isSystemInitial(): bool
+    {
+        return $this->isSuperAdmin()
+            && (int) $this->id === 1
+            && ($this->created_by === null || (int) $this->created_by === 0);
+    }
+
     public function isExpired(): bool
     {
         return $this->expires_at !== null && $this->expires_at->isPast();

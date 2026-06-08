@@ -8,6 +8,7 @@ use App\Models\AdminActivityLog;
 use App\Support\AdminWeb;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\View\View;
@@ -38,6 +39,50 @@ class AdminActivityLogController extends Controller
             'logs' => $logs,
             'admins' => $this->loadAdmins(),
             'stats' => $this->loadStats(),
+        ]);
+    }
+
+    /**
+     * 弹窗用：按管理员 ID 返回最近的活动记录 JSON。
+     */
+    public function activitiesForAdmin(int $adminId, Request $request): JsonResponse
+    {
+        $limit = min(50, max(5, (int) $request->query('limit', 20)));
+        $admin = Admin::query()->find($adminId);
+        if (! $admin) {
+            return response()->json(['activities' => [], 'admin' => null], 404);
+        }
+
+        $logs = AdminActivityLog::query()
+            ->where('admin_id', (int) $admin->id)
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->limit($limit)
+            ->get(['id', 'action', 'request_method', 'page', 'target_type', 'target_id', 'ip_address', 'details', 'created_at']);
+
+        $activities = $logs->map(static function (AdminActivityLog $log): array {
+            return [
+                'id' => (int) $log->id,
+                'action' => (string) ($log->action ?? ''),
+                'method' => (string) ($log->request_method ?? ''),
+                'page' => (string) ($log->page ?? ''),
+                'target' => trim(((string) ($log->target_type ?? '')).($log->target_id !== null ? '#'.$log->target_id : '')),
+                'ip' => (string) ($log->ip_address ?? ''),
+                'details' => (string) ($log->details ?? ''),
+                'created_at' => $log->created_at?->format('Y-m-d H:i:s') ?? '',
+                'created_at_human' => $log->created_at?->diffForHumans() ?? '',
+            ];
+        })->all();
+
+        return response()->json([
+            'admin' => [
+                'id' => (int) $admin->id,
+                'username' => (string) $admin->username,
+                'display_name' => (string) ($admin->display_name ?? ''),
+                'role' => (string) $admin->role,
+            ],
+            'activities' => $activities,
+            'total' => AdminActivityLog::query()->where('admin_id', (int) $admin->id)->count(),
         ]);
     }
 

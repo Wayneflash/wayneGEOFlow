@@ -6,26 +6,23 @@
         $channels = $channels ?? collect();
         $logs = $logs ?? collect();
     @endphp
-    <div class="space-y-6">
-        <div class="admin-panel">
-            <div class="admin-panel-header">
-                <div>
-                    <div class="text-xs font-medium uppercase tracking-widest text-slate-400">{{ __('admin.distribution.page_eyebrow') }}</div>
-                    <h1 class="mt-1 text-xl font-semibold tracking-tight text-slate-950">{{ __('admin.distribution.page_heading') }}</h1>
-                    <p class="mt-1 text-sm text-slate-500">{{ __('admin.distribution.page_subtitle') }}</p>
-                </div>
-                <div class="flex flex-wrap items-center gap-2">
-                    <a href="{{ route('admin.distribution.jobs') }}" class="admin-btn-secondary">
-                        <i data-lucide="list-checks" class="h-4 w-4"></i>
-                        {{ __('admin.distribution.button.jobs') }}
-                    </a>
-                    <a href="{{ route('admin.distribution.create') }}" class="admin-btn-primary">
-                        <i data-lucide="plus" class="h-4 w-4"></i>
-                        {{ __('admin.distribution.button.create') }}
-                    </a>
+<div class="space-y-6">
+    <section class="admin-page-hero">
+        <div class="admin-page-hero-glow admin-page-hero-glow--left" aria-hidden="true"></div>
+        <div class="admin-page-hero-glow admin-page-hero-glow--right" aria-hidden="true"></div>
+        <div class="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+            <div class="min-w-0 flex items-start gap-3">
+                <span class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-sm shadow-blue-600/20">
+                    <i data-lucide="send" class="h-5 w-5"></i>
+                </span>
+                <div class="min-w-0">
+                    <p class="text-xs font-semibold uppercase tracking-[0.16em] text-blue-600">{{ __('admin.nav.distribution') }}</p>
+                    <h1 class="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{{ __('admin.distribution.page_heading') }}</h1>
+                    <p class="mt-1 text-sm text-slate-600">{{ __('admin.distribution.page_subtitle') }}</p>
                 </div>
             </div>
         </div>
+    </section>
 
         @if (session('distribution_secret'))
             @php($secret = session('distribution_secret'))
@@ -109,9 +106,19 @@
                     <h2 class="text-base font-semibold text-slate-950">{{ __('admin.distribution.channels_title') }}</h2>
                     <p class="mt-1 text-sm text-slate-500">{{ __('admin.distribution.channels_subtitle') }}</p>
                 </div>
-                <div class="flex items-center gap-2 text-xs text-slate-500">
-                    <i data-lucide="network" class="h-4 w-4 text-slate-400"></i>
-                    {{ __('admin.distribution.channels_count', ['count' => $channels->count()]) }}
+                <div class="flex flex-wrap items-center gap-2">
+                    <span class="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-600">
+                        <i data-lucide="network" class="h-3.5 w-3.5 text-slate-400"></i>
+                        {{ __('admin.distribution.channels_count', ['count' => $channels->count()]) }}
+                    </span>
+                    <a href="{{ route('admin.distribution.jobs') }}" class="admin-btn-secondary">
+                        <i data-lucide="list-checks" class="h-4 w-4"></i>
+                        {{ __('admin.distribution.button.jobs') }}
+                    </a>
+                    <a href="{{ route('admin.distribution.create') }}" class="admin-btn-primary">
+                        <i data-lucide="plus" class="h-4 w-4"></i>
+                        {{ __('admin.distribution.button.create') }}
+                    </a>
                 </div>
             </div>
             @if ($channels->isEmpty())

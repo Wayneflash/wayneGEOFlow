@@ -279,6 +279,11 @@ Route::prefix($adminPrefix)->name('admin.')->middleware(['surface.port:admin', '
                 Route::post('{adminId}/delete', [AdminUserController::class, 'destroy'])->name('delete');
             });
             Route::get('admin-activity-logs', [AdminActivityLogController::class, 'index'])->name('admin-activity-logs');
+        });
+        Route::get('url-import/{jobId}/nodes', [UrlImportController::class, 'nodes'])->name('url-import.nodes');
+        Route::get('admin-users/{adminId}/activities', [AdminActivityLogController::class, 'activitiesForAdmin'])
+            ->name('admin-users.activities');
+        Route::middleware('admin.super')->group(function () {
             Route::prefix('api-tokens')->name('api-tokens.')->group(function () {
                 Route::get('/', [ApiTokenController::class, 'index'])->name('index');
                 Route::post('/', [ApiTokenController::class, 'store'])->name('store');
