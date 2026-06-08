@@ -187,7 +187,7 @@
 
 @section('modals')
     <div id="distill-modal" class="admin-modal-overlay hidden" role="dialog" aria-modal="true" onclick="if (event.target === this) hideDistillModal()">
-        <div class="admin-modal-panel admin-modal-panel--lg" onclick="event.stopPropagation()">
+        <div class="admin-modal-panel admin-modal-panel--distill" onclick="event.stopPropagation()">
             <div class="admin-modal-panel-head">
                 <div>
                     <h3 class="text-base font-semibold text-slate-950">{{ __('admin.title_distill.modal_title') }}</h3>
@@ -198,8 +198,8 @@
                 </button>
             </div>
 
-            <div class="admin-modal-panel-body space-y-5">
-                <ol class="flex items-center gap-2 text-xs font-medium text-slate-500">
+            <div class="admin-modal-panel-body space-y-4">
+                <ol class="flex flex-wrap items-center gap-2 text-xs font-medium text-slate-500">
                     <li class="inline-flex items-center gap-1.5 rounded-full bg-teal-50 px-2.5 py-1 text-teal-800">
                         <span class="flex h-4 w-4 items-center justify-center rounded-full bg-teal-600 text-[10px] text-white">1</span>
                         {{ __('admin.title_distill.step_keyword') }}
@@ -216,129 +216,139 @@
                     </li>
                 </ol>
 
-                <div class="space-y-3">
-                    <div>
-                        <label class="admin-label" for="distill-seed-keyword">{{ __('admin.title_distill.field_seed_keyword') }}</label>
-                        <p class="mt-0.5 text-xs text-slate-500">{{ __('admin.title_distill.keyword_source_hint') }}</p>
+                <div class="grid gap-4 xl:grid-cols-12">
+                    <div class="space-y-4 xl:col-span-5">
+                        <div class="space-y-3">
+                            <div>
+                                <label class="admin-label" for="distill-seed-keyword">{{ __('admin.title_distill.field_seed_keyword') }}</label>
+                                <p class="mt-0.5 text-xs text-slate-500">{{ __('admin.title_distill.keyword_source_hint') }}</p>
+                            </div>
+
+                            @if ($keywordLibraries->isNotEmpty())
+                                <div class="space-y-3">
+                                    <div>
+                                        <label class="admin-label text-xs text-slate-500" for="distill-keyword-library">{{ __('admin.title_distill.field_keyword_library') }}</label>
+                                        <select id="distill-keyword-library" class="admin-input mt-1">
+                                            <option value="">{{ __('admin.title_distill.option_pick_keyword_library') }}</option>
+                                            @foreach ($keywordLibraries as $keywordLibrary)
+                                                <option value="{{ (int) $keywordLibrary->id }}">
+                                                    {{ $keywordLibrary->name }} ({{ (int) ($keywordLibrary->keyword_count ?? 0) }})
+                                                </option>
+                                            @endforeach
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="admin-label text-xs text-slate-500" for="distill-keyword-pick">{{ __('admin.title_distill.field_keyword_pick') }}</label>
+                                        <select id="distill-keyword-pick" class="admin-input mt-1" disabled>
+                                            <option value="">{{ __('admin.title_distill.option_pick_keyword') }}</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            @endif
+
+                            <input
+                                type="text"
+                                id="distill-seed-keyword"
+                                class="admin-input text-base"
+                                placeholder="{{ __('admin.title_distill.placeholder_seed_keyword') }}"
+                                maxlength="100"
+                                autocomplete="off"
+                            >
+                        </div>
                     </div>
 
-                    @if ($keywordLibraries->isNotEmpty())
-                        <div class="grid gap-3 sm:grid-cols-2">
-                            <div>
-                                <label class="admin-label text-xs text-slate-500" for="distill-keyword-library">{{ __('admin.title_distill.field_keyword_library') }}</label>
-                                <select id="distill-keyword-library" class="admin-input mt-1">
-                                    <option value="">{{ __('admin.title_distill.option_pick_keyword_library') }}</option>
-                                    @foreach ($keywordLibraries as $keywordLibrary)
-                                        <option value="{{ (int) $keywordLibrary->id }}">
-                                            {{ $keywordLibrary->name }} ({{ (int) ($keywordLibrary->keyword_count ?? 0) }})
-                                        </option>
-                                    @endforeach
-                                </select>
-                            </div>
-                            <div>
-                                <label class="admin-label text-xs text-slate-500" for="distill-keyword-pick">{{ __('admin.title_distill.field_keyword_pick') }}</label>
-                                <select id="distill-keyword-pick" class="admin-input mt-1" disabled>
-                                    <option value="">{{ __('admin.title_distill.option_pick_keyword') }}</option>
-                                </select>
+                    <div class="space-y-4 xl:col-span-7">
+                        <div class="space-y-2">
+                            <span class="admin-label">{{ __('admin.title_distill.field_method') }}</span>
+                            <div class="grid gap-2 sm:grid-cols-2">
+                                <label class="title-distill-mode-chip !min-w-0">
+                                    <input type="radio" name="distill-method" value="rule" checked>
+                                    <span class="font-medium">{{ __('admin.title_distill.method_rule') }}</span>
+                                    <span class="block text-[11px] text-slate-500">{{ __('admin.title_distill.method_rule_hint') }}</span>
+                                </label>
+                                <label class="title-distill-mode-chip !min-w-0 {{ $aiModels->isEmpty() ? 'pointer-events-none opacity-50' : '' }}">
+                                    <input type="radio" name="distill-method" value="ai" @disabled($aiModels->isEmpty())>
+                                    <span class="font-medium">{{ __('admin.title_distill.method_ai') }}</span>
+                                    <span class="block text-[11px] text-slate-500">
+                                        {{ $aiModels->isEmpty() ? __('admin.title_distill.no_ai_models') : __('admin.title_distill.method_ai_hint') }}
+                                    </span>
+                                </label>
                             </div>
                         </div>
-                    @endif
 
-                    <input
-                        type="text"
-                        id="distill-seed-keyword"
-                        class="admin-input text-base"
-                        placeholder="{{ __('admin.title_distill.placeholder_seed_keyword') }}"
-                        maxlength="100"
-                        autocomplete="off"
-                    >
-                </div>
-
-                <div class="space-y-2">
-                    <span class="admin-label">{{ __('admin.title_distill.field_method') }}</span>
-                    <div class="grid gap-2 sm:grid-cols-2">
-                        <label class="title-distill-mode-chip !min-w-0">
-                            <input type="radio" name="distill-method" value="rule" checked>
-                            <span class="font-medium">{{ __('admin.title_distill.method_rule') }}</span>
-                            <span class="block text-[11px] text-slate-500">{{ __('admin.title_distill.method_rule_hint') }}</span>
-                        </label>
-                        <label class="title-distill-mode-chip !min-w-0 {{ $aiModels->isEmpty() ? 'pointer-events-none opacity-50' : '' }}">
-                            <input type="radio" name="distill-method" value="ai" @disabled($aiModels->isEmpty())>
-                            <span class="font-medium">{{ __('admin.title_distill.method_ai') }}</span>
-                            <span class="block text-[11px] text-slate-500">
-                                {{ $aiModels->isEmpty() ? __('admin.title_distill.no_ai_models') : __('admin.title_distill.method_ai_hint') }}
-                            </span>
-                        </label>
-                    </div>
-                </div>
-
-                <div id="distill-ai-wrap" class="hidden">
-                    <label class="admin-label" for="distill-ai-model">{{ __('admin.title_distill.field_ai_model') }}</label>
-                    <select id="distill-ai-model" class="admin-input mt-1.5">
-                        <option value="">{{ __('admin.title_distill.option_pick_ai_model') }}</option>
-                        @foreach ($aiModels as $aiModel)
-                            <option value="{{ (int) $aiModel->id }}">{{ $aiModel->name }}</option>
-                        @endforeach
-                    </select>
-                </div>
-
-                <div class="space-y-2">
-                    <span class="admin-label">{{ __('admin.title_distill.field_count') }}</span>
-                    <div class="flex flex-wrap gap-2">
-                        @foreach ([10, 20, 30, 50] as $countOption)
-                            <label class="title-distill-mode-chip !min-w-[4.5rem] !flex-row !items-center !justify-center !py-2.5">
-                                <input type="radio" name="distill-count" value="{{ $countOption }}" @checked($countOption === 10)>
-                                <span class="font-medium">{{ $countOption }} 条</span>
-                            </label>
-                        @endforeach
-                    </div>
-                </div>
-
-                <details class="rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-3">
-                    <summary class="cursor-pointer text-sm font-medium text-slate-700">{{ __('admin.title_distill.advanced_options') }}</summary>
-                    <div class="mt-3 space-y-3">
-                        <div id="distill-style-wrap" class="hidden">
-                            <label class="admin-label" for="distill-title-style">{{ __('admin.title_distill.field_style') }}</label>
-                            <select id="distill-title-style" class="admin-input mt-1.5">
-                                @foreach (['professional', 'attractive', 'seo', 'creative', 'question'] as $style)
-                                    <option value="{{ $style }}" @selected($style === 'question')>
-                                        {{ __('admin.title_distill.style.'.$style) }}
-                                    </option>
+                        <div id="distill-ai-wrap" class="hidden">
+                            <label class="admin-label" for="distill-ai-model">{{ __('admin.title_distill.field_ai_model') }}</label>
+                            <select id="distill-ai-model" class="admin-input mt-1.5">
+                                <option value="">{{ __('admin.title_distill.option_pick_ai_model') }}</option>
+                                @foreach ($aiModels as $aiModel)
+                                    <option value="{{ (int) $aiModel->id }}">{{ $aiModel->name }}</option>
                                 @endforeach
                             </select>
                         </div>
-                        <div>
-                            <label class="admin-label" for="distill-brand-context">{{ __('admin.title_distill.field_brand_context') }}</label>
-                            <input type="text" id="distill-brand-context" class="admin-input mt-1.5" placeholder="{{ __('admin.title_distill.placeholder_brand_context') }}" maxlength="300">
+
+                        <div class="space-y-2">
+                            <span class="admin-label">{{ __('admin.title_distill.field_count') }}</span>
+                            <div class="flex flex-wrap gap-2">
+                                @foreach ([10, 20, 30, 50] as $countOption)
+                                    <label class="title-distill-mode-chip !min-w-[4.5rem] !flex-row !items-center !justify-center !py-2.5">
+                                        <input type="radio" name="distill-count" value="{{ $countOption }}" @checked($countOption === 10)>
+                                        <span class="font-medium">{{ $countOption }} 条</span>
+                                    </label>
+                                @endforeach
+                            </div>
                         </div>
-                        <div id="distill-prompt-wrap" class="hidden">
-                            <label class="admin-label" for="distill-custom-prompt">{{ __('admin.title_distill.field_custom_prompt') }}</label>
-                            <textarea id="distill-custom-prompt" rows="3" class="admin-input mt-1.5 text-sm" placeholder="{{ __('admin.title_distill.placeholder_custom_prompt') }}" maxlength="2000"></textarea>
-                        </div>
+
+                        <details class="rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-3">
+                            <summary class="cursor-pointer text-sm font-medium text-slate-700">{{ __('admin.title_distill.advanced_options') }}</summary>
+                            <div class="mt-3 space-y-3">
+                                <div id="distill-style-wrap" class="hidden">
+                                    <label class="admin-label" for="distill-title-style">{{ __('admin.title_distill.field_style') }}</label>
+                                    <select id="distill-title-style" class="admin-input mt-1.5">
+                                        @foreach (['professional', 'attractive', 'seo', 'creative', 'question'] as $style)
+                                            <option value="{{ $style }}" @selected($style === 'question')>
+                                                {{ __('admin.title_distill.style.'.$style) }}
+                                            </option>
+                                        @endforeach
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="admin-label" for="distill-brand-context">{{ __('admin.title_distill.field_brand_context') }}</label>
+                                    <input type="text" id="distill-brand-context" class="admin-input mt-1.5" placeholder="{{ __('admin.title_distill.placeholder_brand_context') }}" maxlength="300">
+                                </div>
+                                <div id="distill-prompt-wrap" class="hidden">
+                                    <label class="admin-label" for="distill-custom-prompt">{{ __('admin.title_distill.field_custom_prompt') }}</label>
+                                    <textarea id="distill-custom-prompt" rows="3" class="admin-input mt-1.5 text-sm" placeholder="{{ __('admin.title_distill.placeholder_custom_prompt') }}" maxlength="2000"></textarea>
+                                </div>
+                            </div>
+                        </details>
+
+                        <button type="button" id="distill-generate-btn" class="admin-btn-teal h-10 w-full text-sm sm:w-auto sm:min-w-[10rem]">
+                            <i data-lucide="sparkles" class="h-4 w-4"></i>
+                            {{ __('admin.title_distill.button_generate') }}
+                        </button>
+                        <p id="distill-status" class="min-h-[1.25rem] text-xs text-slate-500" role="status" aria-live="polite"></p>
                     </div>
-                </details>
-
-                <div class="space-y-2">
-                    <button type="button" id="distill-generate-btn" class="admin-btn-teal h-10 w-full text-sm">
-                        <i data-lucide="sparkles" class="h-4 w-4"></i>
-                        {{ __('admin.title_distill.button_generate') }}
-                    </button>
-                    <p id="distill-status" class="min-h-[1.25rem] text-center text-xs text-slate-500" role="status" aria-live="polite"></p>
                 </div>
 
-                <div id="distill-result-empty" class="rounded-xl border border-dashed border-slate-200 bg-slate-50/80 px-4 py-10 text-center">
-                    <i data-lucide="list" class="mx-auto h-8 w-8 text-slate-300"></i>
-                    <p class="mt-3 text-sm font-medium text-slate-600">{{ __('admin.title_distill.empty_result') }}</p>
-                    <p class="mt-1 text-xs text-slate-500">{{ __('admin.title_distill.empty_result_hint') }}</p>
-                </div>
-
-                <div id="distill-result-wrap" class="hidden space-y-2">
-                    <div class="flex items-center justify-between gap-2">
-                        <label class="admin-label !mb-0" for="distill-result">{{ __('admin.title_distill.field_result') }}</label>
+                <div class="distill-result-panel">
+                    <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50/80 px-4 py-3">
+                        <div class="flex flex-wrap items-center gap-2">
+                            <label class="admin-label !mb-0" for="distill-result">{{ __('admin.title_distill.field_result') }}</label>
+                            <span id="distill-keyword-badge" class="hidden rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600"></span>
+                        </div>
                         <span id="distill-result-count" class="rounded-full bg-teal-50 px-2 py-0.5 text-xs font-medium text-teal-700"></span>
                     </div>
-                    <textarea id="distill-result" rows="8" class="admin-input min-h-[10rem] font-mono text-sm leading-relaxed"></textarea>
-                    <p class="text-xs text-slate-500">{{ __('admin.title_distill.result_edit_hint') }}</p>
+
+                    <div id="distill-result-empty" class="flex flex-1 flex-col items-center justify-center px-6 py-12 text-center">
+                        <i data-lucide="list" class="h-10 w-10 text-slate-300"></i>
+                        <p class="mt-3 text-sm font-medium text-slate-600">{{ __('admin.title_distill.empty_result') }}</p>
+                        <p class="mt-1 text-xs text-slate-500">{{ __('admin.title_distill.empty_result_hint') }}</p>
+                    </div>
+
+                    <div id="distill-result-wrap" class="hidden min-h-0 flex-1 flex-col">
+                        <textarea id="distill-result" rows="20" class="distill-result-textarea w-full flex-1 px-5 py-4 outline-none focus:ring-0" placeholder=""></textarea>
+                        <p class="border-t border-slate-200 bg-slate-50/60 px-4 py-2 text-xs text-slate-500">{{ __('admin.title_distill.result_edit_hint') }}</p>
+                    </div>
                 </div>
             </div>
 
@@ -400,6 +410,7 @@
             importCount: @json($distillImportCountLabel),
             resultCount: @json($distillResultCountLabel),
             importDefault: @json(__('admin.title_distill.button_import')),
+            keywordBadge: @json(__('admin.title_distill.result_keyword_badge')),
         };
 
         function showDistillModal() {
@@ -473,6 +484,24 @@
                 .length;
         }
 
+        function updateDistillKeywordBadge() {
+            const badge = document.getElementById('distill-keyword-badge');
+            const seedKeyword = (document.getElementById('distill-seed-keyword')?.value ?? '').trim();
+            const lineCount = countDistillLines();
+
+            if (!badge) {
+                return;
+            }
+
+            if (seedKeyword !== '' && lineCount > 0) {
+                badge.textContent = distillMessages.keywordBadge.replace(':keyword', seedKeyword);
+                badge.classList.remove('hidden');
+            } else {
+                badge.textContent = '';
+                badge.classList.add('hidden');
+            }
+        }
+
         function updateDistillResultUi() {
             const lineCount = countDistillLines();
             const empty = document.getElementById('distill-result-empty');
@@ -497,6 +526,8 @@
                     ? distillMessages.importCount.replace(':count', String(lineCount))
                     : distillMessages.importDefault;
             }
+
+            updateDistillKeywordBadge();
         }
 
         function setDistillStatus(text) {
@@ -506,16 +537,41 @@
             }
         }
 
-        function renderDistillTitles(titles, seedKeyword) {
+        function normalizeDistillPreviewLine(line) {
+            const trimmed = String(line ?? '').trim();
+            if (trimmed === '') {
+                return '';
+            }
+
+            const pipeIndex = trimmed.indexOf('|');
+            if (pipeIndex === -1) {
+                return trimmed;
+            }
+
+            return trimmed.slice(0, pipeIndex).trim();
+        }
+
+        function buildDistillImportText() {
+            const seedKeyword = (document.getElementById('distill-seed-keyword')?.value ?? '').trim();
+            const lines = (document.getElementById('distill-result')?.value ?? '')
+                .split('\n')
+                .map((line) => normalizeDistillPreviewLine(line))
+                .filter((line) => line !== '');
+
+            return lines
+                .map((title) => (seedKeyword !== '' ? `${title}|${seedKeyword}` : title))
+                .join('\n');
+        }
+
+        function renderDistillTitles(titles) {
             const textarea = document.getElementById('distill-result');
             if (!textarea) {
                 return;
             }
 
             const lines = (titles ?? [])
-                .map((title) => String(title).trim())
-                .filter((title) => title !== '')
-                .map((title) => seedKeyword !== '' ? `${title}|${seedKeyword}` : title);
+                .map((title) => normalizeDistillPreviewLine(title))
+                .filter((title) => title !== '');
 
             textarea.value = lines.join('\n');
             updateDistillResultUi();
@@ -617,7 +673,7 @@
                     return;
                 }
 
-                renderDistillTitles(data.titles ?? [], payload.seed_keyword);
+                renderDistillTitles(data.titles ?? []);
 
                 const duplicateCount = Number(data.duplicate_count ?? 0);
                 let status = (duplicateCount > 0 ? distillMessages.doneWithDuplicate : distillMessages.done)
@@ -670,6 +726,7 @@
                 }
             });
             document.getElementById('distill-result')?.addEventListener('input', updateDistillResultUi);
+            document.getElementById('distill-seed-keyword')?.addEventListener('input', updateDistillKeywordBadge);
 
             document.getElementById('distill-keyword-library')?.addEventListener('change', (event) => {
                 const libraryId = event.target.value;
@@ -689,7 +746,7 @@
             });
 
             document.getElementById('distill-import-btn')?.addEventListener('click', () => {
-                const text = (document.getElementById('distill-result')?.value ?? '').trim();
+                const text = buildDistillImportText();
                 if (text === '') {
                     alert(distillMessages.resultRequired);
                     return;

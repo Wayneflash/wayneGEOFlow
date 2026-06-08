@@ -600,12 +600,6 @@ final class TitleDistillationService
 
     private function normalizeTitle(string $title): string
     {
-        $title = trim($title);
-        $title = preg_replace('/\s+/u', '', $title) ?? $title;
-        if ($title === '' || mb_strlen($title, 'UTF-8') > 48) {
-            return '';
-        }
-
-        return $title;
+        return app(TitleGenerationQuality::class)->normalizeTitle($title);
     }
 }

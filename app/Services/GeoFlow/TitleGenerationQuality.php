@@ -30,8 +30,9 @@ final class TitleGenerationQuality
     {
         $title = trim($title);
         $title = preg_replace('/[\x00-\x1F\x7F]/u', '', $title) ?? $title;
-        $title = preg_replace('/\s+/u', '', $title) ?? $title;
+        $title = preg_replace('/\s+/u', ' ', $title) ?? $title;
         $title = preg_replace('/^[「『"\']+|[」』"\']+$/u', '', $title) ?? $title;
+        $title = trim($title);
 
         if ($title === '') {
             return '';

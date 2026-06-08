@@ -60,7 +60,12 @@ class TitleAiGenerationService
                 $customPrompt,
                 $style
             );
-            $titles = $this->parseGeneratedTitles($content);
+            $titles = $this->finalizeDistilledTitles(
+                $this->parseGeneratedTitles($content),
+                $seedKeyword,
+                $brandContext,
+                $count
+            );
             if ($titles !== []) {
                 return [
                     'titles' => $titles,
@@ -70,17 +75,47 @@ class TitleAiGenerationService
             }
         } catch (Throwable $exception) {
             return [
-                'titles' => app(TitleDistillationService::class)->expandUserQueryTitles($seedKeyword, $brandContext, $count),
+                'titles' => $this->ruleFallbackTitles($seedKeyword, $brandContext, $count),
                 'fallback_used' => true,
                 'fallback_reason' => $exception->getMessage(),
             ];
         }
 
         return [
-            'titles' => app(TitleDistillationService::class)->expandUserQueryTitles($seedKeyword, $brandContext, $count),
+            'titles' => $this->ruleFallbackTitles($seedKeyword, $brandContext, $count),
             'fallback_used' => true,
             'fallback_reason' => 'empty_result',
         ];
+    }
+
+    /**
+     * @param  list<string>  $aiTitles
+     * @return list<string>
+     */
+    private function finalizeDistilledTitles(array $aiTitles, string $seedKeyword, string $brandContext, int $count): array
+    {
+        $quality = app(TitleGenerationQuality::class);
+        $keyword = $quality->sanitizeKeyword($seedKeyword);
+        $picked = $quality->pickTitles($aiTitles, $count, $keyword);
+
+        if (count($picked) >= $count) {
+            return array_slice($picked, 0, $count);
+        }
+
+        return $quality->mergeUpToLimit($picked, $this->ruleFallbackTitles($keyword, $brandContext, $count), $count);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function ruleFallbackTitles(string $seedKeyword, string $brandContext, int $count): array
+    {
+        return app(TitleDistillationService::class)->expandTitles(
+            $seedKeyword,
+            $brandContext,
+            $count,
+            TitleDistillationService::MODE_CLASSIC
+        )['titles'];
     }
 
     public function generateTitles(
@@ -261,6 +296,8 @@ class TitleAiGenerationService
      */
     private function parseGeneratedTitles(string $content): array
     {
+        $content = preg_replace('/<[^>]*thinking[^>]*>.*?<\/[^>]*thinking>/isu', '', $content) ?? $content;
+        $content = preg_replace('/<think>.*?<\/redacted_thinking>/isu', '', $content) ?? $content;
         $content = OpenAiRuntimeProvider::normalizeGeneratedText($content);
         foreach ($this->jsonCandidates($content) as $candidate) {
             $decoded = json_decode($candidate, true);
@@ -284,7 +321,7 @@ class TitleAiGenerationService
             $titles[] = $title;
         }
 
-        return array_values(array_unique($titles));
+        return app(TitleGenerationQuality::class)->pickTitles($titles, 50);
     }
 
     /**
@@ -346,11 +383,11 @@ class TitleAiGenerationService
         $title = preg_replace('/^(?:标题|title)\s*[\d一二三四五六七八九十]*\s*[:：]\s*/iu', '', $title) ?? $title;
         $title = trim($title, " \t\n\r\0\x0B\"'“”‘’，,。");
 
-        if ($title === '' || preg_match('/^(?:titles?|解释|说明|以下是)/iu', $title) === 1) {
+        if ($title === '' || preg_match('/^(?:titles?|解释|说明|以下是|好的|如下)/iu', $title) === 1) {
             return '';
         }
 
-        return $title;
+        return app(TitleGenerationQuality::class)->normalizeTitle($title);
     }
 
     /**

@@ -871,6 +871,10 @@
         @apply max-h-[min(94vh,56rem)] max-w-5xl;
     }
 
+    .admin-modal-panel--distill {
+        @apply max-h-[96vh] w-[min(98vw,80rem)] max-w-none;
+    }
+
     .admin-modal-panel form {
         @apply flex min-h-0 flex-1 flex-col;
     }
@@ -986,6 +990,14 @@
 
     .title-distill-mode-chip input {
         @apply sr-only;
+    }
+
+    .distill-result-panel {
+        @apply flex min-h-[min(58vh,36rem)] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-inner shadow-slate-100/80;
+    }
+
+    .distill-result-textarea {
+        @apply min-h-[min(54vh,32rem)] resize-y border-0 bg-transparent text-base leading-8 text-slate-800;
     }
 }
 
