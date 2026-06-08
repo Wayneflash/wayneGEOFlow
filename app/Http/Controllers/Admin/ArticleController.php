@@ -11,14 +11,18 @@ use App\Models\Task;
 use App\Services\GeoFlow\DistributionOrchestrator;
 use App\Support\AdminWeb;
 use App\Support\GeoFlow\ArticleWorkflow;
+use App\Support\GeoFlow\ImageUrlNormalizer;
+use App\Support\GeoFlow\PublicImageUploader;
 use App\Support\Site\ArticleHtmlPresenter;
 use App\Support\Tenancy\AdminTenant;
 use Illuminate\Database\QueryException;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\File;
 use Illuminate\View\View;
 use Throwable;
 
@@ -205,15 +209,48 @@ class ArticleController extends Controller
             ->whereKey($articleId)
             ->firstOrFail();
 
-        $body = ArticleHtmlPresenter::stripLeadingTitleHeading((string) $article->content, (string) $article->title);
-        $body = preg_replace('/^\s{0,3}>\s?/mu', '', $body) ?? $body;
+        $body = (string) $article->content;
+        if (! ArticleHtmlPresenter::looksLikeHtml($body)) {
+            $body = ArticleHtmlPresenter::stripLeadingTitleHeading($body, (string) $article->title);
+            $body = preg_replace('/^\s{0,3}>\s?/mu', '', $body) ?? $body;
+        }
 
         return view('admin.articles.preview', [
             'article' => $article,
-            'contentHtml' => ArticleHtmlPresenter::markdownToHtml($body),
+            'contentHtml' => ArticleHtmlPresenter::contentToHtml($body, (string) $article->title),
             'pageTitle' => (string) $article->title,
             'publishedAt' => $article->published_at ?? $article->created_at,
         ]);
+    }
+
+    /**
+     * 正文编辑器粘贴/拖放图片时上传，返回可插入正文的 Markdown 片段。
+     */
+    public function uploadInlineImage(Request $request): JsonResponse
+    {
+        $request->validate([
+            'image' => ['required', File::image()->max(10240)],
+        ]);
+
+        try {
+            $stored = PublicImageUploader::store($request->file('image'));
+            $url = ImageUrlNormalizer::toPublicUrl((string) $stored['file_path']);
+            $alt = ImageUrlNormalizer::readableAlt((string) $stored['original_name']);
+            $markdown = $alt !== ''
+                ? '!['.$alt.']('.$url.')'
+                : '![]('.$url.')';
+
+            return response()->json([
+                'success' => true,
+                'url' => $url,
+                'markdown' => $markdown,
+            ]);
+        } catch (Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 422);
+        }
     }
 
     /**

@@ -5,80 +5,27 @@
         $stats = is_array($stats ?? null) ? $stats : [];
         $libraries = is_array($libraries ?? null) ? $libraries : [];
     @endphp
-    <div class="space-y-6">
-        <div class="admin-panel">
-            <div class="admin-panel-header">
-                <div class="flex items-start gap-3">
-                    <a href="{{ route('admin.materials.index') }}" class="admin-icon-btn" aria-label="{{ __('admin.common.back') }}">
-                        <i data-lucide="arrow-left" class="h-4 w-4"></i>
-                    </a>
-                    <div>
-                        <div class="text-xs font-medium uppercase tracking-widest text-slate-400">{{ __('admin.title_libraries.eyebrow') }}</div>
-                        <h1 class="mt-1 text-xl font-semibold tracking-tight text-slate-950">{{ __('admin.title_libraries.heading') }}</h1>
-                        <p class="mt-1 text-sm text-slate-500">{{ __('admin.title_libraries.subtitle') }}</p>
-                    </div>
-                </div>
-                <div class="flex flex-wrap items-center gap-2">
-                    <button type="button" onclick="showCreateModal()" class="admin-btn-primary">
-                        <i data-lucide="plus" class="h-4 w-4"></i>
-                        {{ __('admin.title_libraries.create') }}
-                    </button>
-                </div>
-            </div>
-        </div>
+    <div class="materials-sub-shell">
+        @include('admin.partials.materials-nav', ['active' => 'overview'])
+
+        @component('admin.partials.materials-page-header', ['title' => __('admin.title_libraries.heading')])
+            <button type="button" onclick="showCreateModal()" class="admin-btn-teal">
+                <i data-lucide="plus" class="h-4 w-4"></i>
+                {{ __('admin.title_libraries.create') }}
+            </button>
+        @endcomponent
 
         <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div class="admin-panel p-5">
-                <div class="flex items-center gap-4">
-                    <span class="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
-                        <i data-lucide="folder" class="h-5 w-5"></i>
-                    </span>
-                    <div class="min-w-0">
-                        <div class="text-xs font-medium text-slate-500">{{ __('admin.title_libraries.total') }}</div>
-                        <div class="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{{ (int) ($stats['total_libraries'] ?? 0) }}</div>
-                    </div>
-                </div>
-            </div>
-            <div class="admin-panel p-5">
-                <div class="flex items-center gap-4">
-                    <span class="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
-                        <i data-lucide="type" class="h-5 w-5"></i>
-                    </span>
-                    <div class="min-w-0">
-                        <div class="text-xs font-medium text-slate-500">{{ __('admin.title_libraries.total_titles') }}</div>
-                        <div class="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{{ (int) ($stats['total_titles'] ?? 0) }}</div>
-                    </div>
-                </div>
-            </div>
-            <div class="admin-panel p-5">
-                <div class="flex items-center gap-4">
-                    <span class="flex h-12 w-12 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
-                        <i data-lucide="zap" class="h-5 w-5"></i>
-                    </span>
-                    <div class="min-w-0">
-                        <div class="text-xs font-medium text-slate-500">{{ __('admin.title_libraries.ai_generated') }}</div>
-                        <div class="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{{ (int) ($stats['ai_titles'] ?? 0) }}</div>
-                    </div>
-                </div>
-            </div>
-            <div class="admin-panel p-5">
-                <div class="flex items-center gap-4">
-                    <span class="flex h-12 w-12 items-center justify-center rounded-xl bg-orange-50 text-orange-600">
-                        <i data-lucide="trending-up" class="h-5 w-5"></i>
-                    </span>
-                    <div class="min-w-0">
-                        <div class="text-xs font-medium text-slate-500">{{ __('admin.common.avg_per_library') }}</div>
-                        <div class="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{{ (float) ($stats['avg_titles'] ?? 0) }}</div>
-                    </div>
-                </div>
-            </div>
+            @include('admin.partials.materials-stat-card', ['label' => __('admin.title_libraries.total'), 'value' => (int) ($stats['total_libraries'] ?? 0), 'icon' => 'folder', 'tone' => 'emerald'])
+            @include('admin.partials.materials-stat-card', ['label' => __('admin.title_libraries.total_titles'), 'value' => (int) ($stats['total_titles'] ?? 0), 'icon' => 'type', 'tone' => 'blue'])
+            @include('admin.partials.materials-stat-card', ['label' => __('admin.title_libraries.ai_generated'), 'value' => (int) ($stats['ai_titles'] ?? 0), 'icon' => 'zap', 'tone' => 'violet'])
+            @include('admin.partials.materials-stat-card', ['label' => __('admin.common.avg_per_library'), 'value' => (float) ($stats['avg_titles'] ?? 0), 'icon' => 'trending-up', 'tone' => 'amber'])
         </div>
 
         <div class="admin-panel">
             <div class="admin-panel-header">
                 <div>
                     <h2 class="text-base font-semibold text-slate-950">{{ __('admin.title_libraries.list_title') }}</h2>
-                    <p class="mt-1 text-sm text-slate-500">{{ __('admin.title_libraries.list_subtitle') }}</p>
                 </div>
                 <div class="flex items-center gap-2 text-xs text-slate-500">
                     <i data-lucide="list" class="h-4 w-4 text-slate-400"></i>
@@ -134,10 +81,10 @@
                                         </span>
                                     </div>
                                 </div>
-                                <div class="flex shrink-0 items-center gap-2">
-                                    <a href="{{ route('admin.title-libraries.ai-generate', ['libraryId' => (int) $library['id']]) }}" class="admin-btn-primary h-8 px-3 text-xs">
-                                        <i data-lucide="zap" class="h-3.5 w-3.5"></i>
-                                        {{ __('admin.title_detail.ai_generate') }}
+                                <div class="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                                    <a href="{{ route('admin.title-libraries.detail', ['libraryId' => (int) $library['id'], 'distill' => 1]) }}" class="admin-btn-teal h-8 px-3 text-xs">
+                                        <i data-lucide="sparkles" class="h-3.5 w-3.5"></i>
+                                        {{ __('admin.title_distill.button_open') }}
                                     </a>
                                     <button type="button" onclick="showImportModal({{ (int) $library['id'] }}, @js($library['name']))" class="admin-btn-secondary h-8 px-3 text-xs">
                                         <i data-lucide="upload" class="h-3.5 w-3.5"></i>
@@ -149,7 +96,7 @@
                                     </a>
                                     <form method="POST" action="{{ route('admin.title-libraries.delete', ['libraryId' => (int) $library['id']]) }}" onsubmit="return confirm(@js(__('admin.title_libraries.confirm_delete', ['name' => $library['name']])));" class="inline-block">
                                         @csrf
-                                        <button type="submit" class="admin-btn-danger h-8 px-3 text-xs">
+                                        <button type="submit" class="admin-btn-danger-sm">
                                             <i data-lucide="trash-2" class="h-3.5 w-3.5"></i>
                                             {{ __('admin.button.delete') }}
                                         </button>
@@ -242,24 +189,6 @@
 @endsection
 
 @push('scripts')
-    <style>
-        .admin-btn-danger {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            gap: 0.4rem;
-            border-radius: 0.5rem;
-            background-color: rgb(220 38 38);
-            padding: 0 0.75rem;
-            font-size: 0.75rem;
-            font-weight: 600;
-            color: white;
-            box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-            transition: all 150ms ease;
-        }
-        .admin-btn-danger:hover { background-color: rgb(185 28 28); }
-        .admin-btn-danger:active { transform: translateY(1px); }
-    </style>
     <script>
         function showCreateModal() {
             document.getElementById('create-modal').classList.remove('hidden');

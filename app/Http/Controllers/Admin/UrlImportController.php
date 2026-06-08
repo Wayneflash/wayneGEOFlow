@@ -148,12 +148,15 @@ class UrlImportController extends Controller
         return response()->json($this->statusPayload($job));
     }
 
-    public function commit(int $jobId): RedirectResponse
+    public function commit(Request $request, int $jobId): RedirectResponse
     {
         $job = UrlImportJob::query()->visibleToAdmin()->whereKey($jobId)->firstOrFail();
+        $validated = $request->validate([
+            'library_name' => ['required', 'string', 'max:120'],
+        ]);
 
         try {
-            $summary = $this->urlImportProcessingService->commit($job);
+            $summary = $this->urlImportProcessingService->commit($job, $validated['library_name']);
         } catch (\Throwable $exception) {
             return back()->withErrors(__('admin.url_import.error.commit_failed').': '.$exception->getMessage());
         }

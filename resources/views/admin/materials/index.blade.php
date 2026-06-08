@@ -2,135 +2,194 @@
 
 @section('content')
     @php
-        $assetCards = [
+        $modules = [
             [
                 'title' => __('admin.materials.keyword_libraries'),
-                'desc' => '维护常用主题词，供任务生成时调用。',
-                'count' => (int) $stats['keyword_libraries'],
-                'meta' => __('admin.materials.keyword_count', ['count' => (int) $stats['total_keywords']]),
+                'summary' => __('admin.materials.keywords_summary'),
+                'href' => route('admin.keyword-libraries.index', [], false),
                 'icon' => 'key-round',
-                'route' => route('admin.keyword-libraries.index'),
-                'tone' => 'blue',
+                'gradient' => 'linear-gradient(135deg, #3b82f6 0%, #2563eb 55%, #1d4ed8 100%)',
+                'shadow' => 'rgba(37, 99, 235, 0.22)',
+                'value' => (int) $stats['total_keywords'],
+                'unit' => '关键词',
+                'meta' => (int) $stats['keyword_libraries'].' 个库',
+                'wide' => false,
             ],
             [
                 'title' => __('admin.materials.title_libraries'),
-                'desc' => '整理标题方向，减少重复选题。',
-                'count' => (int) $stats['title_libraries'],
-                'meta' => __('admin.materials.title_count', ['count' => (int) $stats['total_titles']]),
+                'summary' => __('admin.materials.titles_summary'),
+                'href' => route('admin.title-libraries.index', [], false),
                 'icon' => 'text-cursor-input',
-                'route' => route('admin.title-libraries.index'),
-                'tone' => 'emerald',
+                'gradient' => 'linear-gradient(135deg, #34d399 0%, #10b981 55%, #059669 100%)',
+                'shadow' => 'rgba(16, 185, 129, 0.22)',
+                'value' => (int) $stats['total_titles'],
+                'unit' => '标题',
+                'meta' => (int) $stats['title_libraries'].' 个库',
+                'wide' => false,
             ],
             [
                 'title' => __('admin.materials.image_libraries'),
-                'desc' => '管理文章配图和素材图片。',
-                'count' => (int) $stats['image_libraries'],
-                'meta' => __('admin.materials.image_count', ['count' => (int) $stats['total_images']]),
+                'summary' => __('admin.materials.images_summary'),
+                'href' => route('admin.image-libraries.index', [], false),
                 'icon' => 'image',
-                'route' => route('admin.image-libraries.index'),
-                'tone' => 'violet',
+                'gradient' => 'linear-gradient(135deg, #a78bfa 0%, #8b5cf6 55%, #7c3aed 100%)',
+                'shadow' => 'rgba(139, 92, 246, 0.22)',
+                'value' => (int) $stats['total_images'],
+                'unit' => '图片',
+                'meta' => (int) $stats['image_libraries'].' 个库',
+                'wide' => false,
             ],
             [
                 'title' => __('admin.materials.knowledge_bases'),
-                'desc' => '沉淀可复用的业务知识。',
-                'count' => (int) $stats['knowledge_bases'],
-                'meta' => __('admin.materials.author_count', ['count' => (int) $stats['authors']]),
+                'summary' => __('admin.materials.knowledge_summary'),
+                'href' => route('admin.knowledge-bases.index', [], false),
                 'icon' => 'brain-circuit',
-                'route' => route('admin.knowledge-bases.index'),
-                'tone' => 'orange',
+                'gradient' => 'linear-gradient(135deg, #fbbf24 0%, #f59e0b 55%, #d97706 100%)',
+                'shadow' => 'rgba(245, 158, 11, 0.22)',
+                'value' => (int) $stats['knowledge_chunks'],
+                'unit' => '知识块',
+                'meta' => '已向量化 '.number_format((int) $stats['vectorized_chunks']).' 块',
+                'wide' => false,
+            ],
+            [
+                'title' => __('admin.materials.author_manage'),
+                'summary' => '管理文章署名作者与展示档案',
+                'href' => route('admin.authors.index', [], false),
+                'icon' => 'users',
+                'gradient' => 'linear-gradient(135deg, #fb7185 0%, #f43f5e 55%, #e11d48 100%)',
+                'shadow' => 'rgba(244, 63, 94, 0.22)',
+                'value' => (int) $stats['authors'],
+                'unit' => '作者',
+                'meta' => '署名与档案',
+                'wide' => true,
             ],
         ];
 
-        $toneClasses = [
-            'blue' => 'bg-blue-50 text-blue-600 ring-blue-100',
-            'emerald' => 'bg-emerald-50 text-emerald-600 ring-emerald-100',
-            'violet' => 'bg-violet-50 text-violet-600 ring-violet-100',
-            'orange' => 'bg-orange-50 text-orange-600 ring-orange-100',
+        $statPills = [
+            ['label' => '关键词', 'value' => (int) $stats['total_keywords'], 'icon' => 'key-round'],
+            ['label' => '标题', 'value' => (int) $stats['total_titles'], 'icon' => 'text-cursor-input'],
+            ['label' => '图片', 'value' => (int) $stats['total_images'], 'icon' => 'image'],
+            ['label' => '知识块', 'value' => (int) $stats['knowledge_chunks'], 'icon' => 'brain-circuit'],
         ];
     @endphp
 
-    <div class="space-y-6">
-        <section class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-                <h1 class="text-3xl font-semibold tracking-tight text-slate-950">{{ __('admin.materials.heading') }}</h1>
-            </div>
-            <div class="flex flex-wrap gap-3">
-                <a href="{{ route('admin.materials.index') }}" class="inline-flex h-10 items-center rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white shadow-sm shadow-blue-600/20">
-                    <i data-lucide="layout-dashboard" class="mr-2 h-4 w-4"></i>
-                    {{ __('admin.materials.tab.overview') }}
-                </a>
-                <a href="{{ route('admin.url-import') }}" class="inline-flex h-10 items-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700">
-                    <i data-lucide="scan-search" class="mr-2 h-4 w-4"></i>
-                    {{ __('admin.materials.url_import') }}
-                </a>
-                <a href="{{ route('admin.authors.index') }}" class="inline-flex h-10 items-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700">
-                    <i data-lucide="users" class="mr-2 h-4 w-4"></i>
-                    {{ __('admin.materials.author_manage') }}
-                </a>
+    <div class="materials-hub-page">
+        <section class="materials-hub-hero">
+            <div class="materials-hub-hero-glow materials-hub-hero-glow--left"></div>
+            <div class="materials-hub-hero-glow materials-hub-hero-glow--right"></div>
+            <div class="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+                <div class="min-w-0">
+                    <p class="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-100/90">内容素材中心</p>
+                    <h1 class="mt-2 text-2xl font-bold tracking-tight text-white sm:text-3xl">{{ __('admin.materials.heading') }}</h1>
+                    <p class="mt-2 max-w-2xl text-sm leading-relaxed text-emerald-50/85">{{ __('admin.materials.subtitle') }}</p>
+                </div>
+                <div class="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:max-w-xl">
+                    @foreach ($statPills as $pill)
+                        <div class="materials-hub-stat-pill">
+                            <i data-lucide="{{ $pill['icon'] }}" class="h-3.5 w-3.5 shrink-0 text-emerald-100/80"></i>
+                            <div class="min-w-0">
+                                <div class="text-lg font-bold tabular-nums leading-none text-white">{{ number_format($pill['value']) }}</div>
+                                <div class="mt-1 truncate text-[11px] font-medium text-emerald-100/75">{{ $pill['label'] }}</div>
+                            </div>
+                        </div>
+                    @endforeach
+                </div>
             </div>
         </section>
 
-        <section class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-            @foreach ($assetCards as $card)
-                <a href="{{ $card['route'] }}" class="group rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-blue-200 hover:shadow-md">
-                    <div class="flex items-start justify-between gap-4">
-                        <span class="flex h-11 w-11 items-center justify-center rounded-2xl ring-1 {{ $toneClasses[$card['tone']] }}">
-                            <i data-lucide="{{ $card['icon'] }}" class="h-5 w-5"></i>
+        <div class="admin-panel overflow-hidden">
+            @include('admin.partials.materials-nav', ['active' => 'overview'])
+        </div>
+
+        <div class="materials-hub-layout">
+            <div class="materials-hub-modules">
+                @foreach ($modules as $module)
+                    <a href="{{ $module['href'] }}" class="materials-hub-module-card group {{ !empty($module['wide']) ? 'sm:col-span-2' : '' }}">
+                        <span
+                            class="materials-hub-module-icon"
+                            style="background: {{ $module['gradient'] }}; box-shadow: 0 10px 24px {{ $module['shadow'] }};"
+                        >
+                            <i data-lucide="{{ $module['icon'] }}" class="h-5 w-5 text-white"></i>
                         </span>
-                        <i data-lucide="arrow-up-right" class="h-5 w-5 text-slate-300 transition group-hover:text-blue-500"></i>
+                        <div class="min-w-0 flex-1">
+                            <div class="flex items-start justify-between gap-2">
+                                <h2 class="truncate text-base font-semibold text-slate-950 transition group-hover:text-blue-700">{{ $module['title'] }}</h2>
+                                <i data-lucide="arrow-up-right" class="h-4 w-4 shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-blue-500"></i>
+                            </div>
+                            <p class="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-500">{{ $module['summary'] }}</p>
+                            <div class="mt-3 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                                <span class="text-2xl font-bold tabular-nums tracking-tight text-slate-950">{{ number_format($module['value']) }}</span>
+                                <span class="text-xs font-medium text-slate-500">{{ $module['unit'] }}</span>
+                                <span class="text-[11px] font-medium text-slate-400">{{ $module['meta'] }}</span>
+                            </div>
+                        </div>
+                    </a>
+                @endforeach
+            </div>
+
+            <aside class="materials-hub-aside">
+                <a href="{{ route('admin.url-import', [], false) }}" class="materials-hub-feature-card group">
+                    <div class="materials-hub-feature-glow"></div>
+                    <div class="relative">
+                        <span class="materials-hub-feature-badge">
+                            <i data-lucide="sparkles" class="h-3 w-3"></i>
+                            {{ __('admin.materials.url_import_iterating') }}
+                        </span>
+                        <div class="mt-4 flex items-start gap-3">
+                            <span class="materials-hub-feature-icon">
+                                <i data-lucide="scan-search" class="h-6 w-6 text-white"></i>
+                            </span>
+                            <div class="min-w-0">
+                                <h2 class="text-lg font-semibold text-white">{{ __('admin.materials.url_import') }}</h2>
+                                <p class="mt-2 text-sm leading-relaxed text-blue-100/90">{{ __('admin.materials.url_import_description') }}</p>
+                            </div>
+                        </div>
+                        <span class="materials-hub-feature-cta">
+                            {{ __('admin.materials.url_import_start') }}
+                            <i data-lucide="arrow-right" class="h-4 w-4 transition group-hover:translate-x-0.5"></i>
+                        </span>
                     </div>
-                    <div class="mt-5 text-sm font-medium text-slate-500">{{ $card['title'] }}</div>
-                    <div class="mt-2 text-3xl font-semibold tracking-tight text-slate-950">{{ $card['count'] }}</div>
-                    <div class="mt-2 text-sm text-slate-500">{{ $card['meta'] }}</div>
-                    <p class="mt-4 min-h-10 text-sm leading-5 text-slate-500">{{ $card['desc'] }}</p>
                 </a>
-            @endforeach
-        </section>
 
-        <section class="grid grid-cols-1 gap-5 xl:grid-cols-[1fr_360px]">
-            <div class="rounded-2xl border border-slate-200 bg-white shadow-sm">
-                <div class="border-b border-slate-100 p-5">
-                    <h2 class="text-lg font-semibold text-slate-950">常用入口</h2>
-                    <p class="mt-1 text-sm text-slate-500">把素材库入口集中在这里，日常维护不用来回找。</p>
+                <div class="materials-hub-quick-links">
+                    <a href="{{ route('admin.url-import.history', [], false) }}" class="materials-hub-quick-link group">
+                        <span class="materials-hub-quick-link-icon">
+                            <i data-lucide="history" class="h-4 w-4"></i>
+                        </span>
+                        <span class="min-w-0 flex-1">
+                            <span class="block text-sm font-semibold text-slate-900 group-hover:text-blue-700">{{ __('admin.materials.url_import_history') }}</span>
+                            <span class="mt-0.5 block text-xs text-slate-500">{{ __('admin.materials.url_import_history_short') }}</span>
+                        </span>
+                        <i data-lucide="chevron-right" class="h-4 w-4 text-slate-300 group-hover:text-blue-500"></i>
+                    </a>
+                    <a href="{{ route('admin.keyword-libraries.index', [], false) }}" class="materials-hub-quick-link group">
+                        <span class="materials-hub-quick-link-icon materials-hub-quick-link-icon--rose">
+                            <i data-lucide="key-round" class="h-4 w-4"></i>
+                        </span>
+                        <span class="min-w-0 flex-1">
+                            <span class="block text-sm font-semibold text-slate-900 group-hover:text-blue-700">{{ __('admin.materials.manage_keywords_short') }}</span>
+                            <span class="mt-0.5 block text-xs text-slate-500">{{ __('admin.materials.keyword_manage_title') }}</span>
+                        </span>
+                        <i data-lucide="chevron-right" class="h-4 w-4 text-slate-300 group-hover:text-blue-500"></i>
+                    </a>
+                    <a href="{{ route('admin.title-libraries.index', [], false) }}" class="materials-hub-quick-link group">
+                        <span class="materials-hub-quick-link-icon materials-hub-quick-link-icon--emerald">
+                            <i data-lucide="flask-conical" class="h-4 w-4"></i>
+                        </span>
+                        <span class="min-w-0 flex-1">
+                            <span class="block text-sm font-semibold text-slate-900 group-hover:text-blue-700">{{ __('admin.title_distill.button_open') }}</span>
+                            <span class="mt-0.5 block text-xs text-slate-500">{{ __('admin.materials.title_distill_hint') }}</span>
+                        </span>
+                        <i data-lucide="chevron-right" class="h-4 w-4 text-slate-300 group-hover:text-blue-500"></i>
+                    </a>
                 </div>
-                <div class="grid grid-cols-1 divide-y divide-slate-100 md:grid-cols-2 md:divide-x md:divide-y-0">
-                    <div class="space-y-3 p-5">
-                        <a href="{{ route('admin.keyword-libraries.index') }}" class="flex items-center justify-between rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700">
-                            <span class="inline-flex items-center"><i data-lucide="key-round" class="mr-2 h-4 w-4"></i>{{ __('admin.materials.manage_keyword_libraries') }}</span>
-                            <i data-lucide="arrow-right" class="h-4 w-4"></i>
-                        </a>
-                        <a href="{{ route('admin.title-libraries.index') }}" class="flex items-center justify-between rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700">
-                            <span class="inline-flex items-center"><i data-lucide="text-cursor-input" class="mr-2 h-4 w-4"></i>{{ __('admin.materials.manage_title_libraries') }}</span>
-                            <i data-lucide="arrow-right" class="h-4 w-4"></i>
-                        </a>
-                    </div>
-                    <div class="space-y-3 p-5">
-                        <a href="{{ route('admin.image-libraries.index') }}" class="flex items-center justify-between rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700">
-                            <span class="inline-flex items-center"><i data-lucide="image" class="mr-2 h-4 w-4"></i>{{ __('admin.materials.manage_image_libraries') }}</span>
-                            <i data-lucide="arrow-right" class="h-4 w-4"></i>
-                        </a>
-                        <a href="{{ route('admin.knowledge-bases.index') }}" class="flex items-center justify-between rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700">
-                            <span class="inline-flex items-center"><i data-lucide="brain-circuit" class="mr-2 h-4 w-4"></i>{{ __('admin.materials.manage_knowledge_bases') }}</span>
-                            <i data-lucide="arrow-right" class="h-4 w-4"></i>
-                        </a>
-                    </div>
-                </div>
-            </div>
-
-            <div class="rounded-2xl border border-blue-100 bg-blue-50 p-5 shadow-sm">
-                <div class="flex items-center gap-3">
-                    <span class="flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-blue-600 shadow-sm">
-                        <i data-lucide="scan-search" class="h-5 w-5"></i>
-                    </span>
-                    <div>
-                        <h2 class="font-semibold text-slate-950">网址采集</h2>
-                        <p class="text-sm text-slate-600">粘贴一个页面，整理成可预览素材。</p>
-                    </div>
-                </div>
-                <div class="mt-5 rounded-xl bg-white p-4 text-sm leading-6 text-slate-600 shadow-sm ring-1 ring-blue-100">
-                    适合采集文章页、报告页和产品介绍页。采集结果会先进入预览，确认后再写入素材库。
-                </div>
-            </div>
-        </section>
+            </aside>
+        </div>
     </div>
 @endsection
+
+@push('scripts')
+    <script>
+        document.addEventListener('DOMContentLoaded', () => window.lucide?.createIcons?.());
+    </script>
+@endpush

@@ -4,14 +4,15 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\AiModel;
-use App\Models\Keyword;
 use App\Models\KeywordLibrary;
 use App\Models\Task;
 use App\Models\Title;
 use App\Models\TitleLibrary;
 use App\Services\GeoFlow\TitleAiGenerationService;
+use App\Services\GeoFlow\TitleDistillationService;
 use App\Support\AdminWeb;
 use App\Support\Tenancy\AdminTenant;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -28,7 +29,8 @@ class TitleLibraryController extends Controller
     private const DETAIL_PER_PAGE = 20;
 
     public function __construct(
-        private TitleAiGenerationService $titleAiGenerationService
+        private TitleAiGenerationService $titleAiGenerationService,
+        private TitleDistillationService $titleDistillationService
     ) {}
 
     /**
@@ -55,29 +57,6 @@ class TitleLibraryController extends Controller
         $titles = $this->loadDetailTitles($libraryId, '');
         $usageTotal = (int) (Title::query()->where('library_id', $libraryId)->sum('used_count') ?? 0);
 
-        return view('admin.title-libraries.detail', [
-            'pageTitle' => (string) $library->name.__('admin.title_detail.page_title_suffix'),
-            'activeMenu' => 'materials',
-            'adminSiteName' => AdminWeb::siteName(),
-            'library' => $library,
-            'titles' => $titles,
-            'usageTotal' => $usageTotal,
-        ]);
-    }
-
-    /**
-     * AI 生成标题页。
-     */
-    public function aiGenerate(int $libraryId): View|RedirectResponse
-    {
-        $library = TitleLibrary::query()->visibleToAdmin()->whereKey($libraryId)->firstOrFail();
-
-        $keywordLibraries = KeywordLibrary::query()
-            ->select(['id', 'name'])
-            ->visibleToAdmin()
-            ->withCount(['keywords as keyword_count'])
-            ->orderByDesc('created_at')
-            ->get();
         $aiModels = AiModel::query()
             ->select(['id', 'name', 'model_id'])
             ->where('status', 'active')
@@ -86,25 +65,79 @@ class TitleLibraryController extends Controller
             ->orderBy('name')
             ->get();
 
-        return view('admin.title-libraries.ai-generate', [
-            'pageTitle' => __('admin.title_ai_generate.page_title'),
+        $keywordLibraries = KeywordLibrary::query()
+            ->select(['id', 'name'])
+            ->visibleToAdmin()
+            ->withCount(['keywords as keyword_count'])
+            ->orderByDesc('created_at')
+            ->get()
+            ->filter(static fn (KeywordLibrary $keywordLibrary): bool => (int) ($keywordLibrary->keyword_count ?? 0) > 0)
+            ->values();
+
+        return view('admin.title-libraries.detail', [
+            'pageTitle' => (string) $library->name.__('admin.title_detail.page_title_suffix'),
             'activeMenu' => 'materials',
             'adminSiteName' => AdminWeb::siteName(),
             'library' => $library,
-            'keywordLibraries' => $keywordLibraries,
+            'titles' => $titles,
+            'usageTotal' => $usageTotal,
             'aiModels' => $aiModels,
+            'keywordLibraries' => $keywordLibraries,
         ]);
     }
 
     /**
-     * 执行 AI 标题生成（当前使用可控模板生成，保证流程稳定）。
+     * 规则拓词预览：把一个关键词蒸馏成用户提问式标题。
      */
-    public function generateWithAi(Request $request, int $libraryId): RedirectResponse
+    public function previewDistill(Request $request, int $libraryId): JsonResponse
     {
-        $library = TitleLibrary::query()->visibleToAdmin()->whereKey($libraryId)->firstOrFail();
+        TitleLibrary::query()->visibleToAdmin()->whereKey($libraryId)->firstOrFail();
 
         $payload = $request->validate([
-            'keyword_library_id' => ['required', 'integer'],
+            'seed_keyword' => ['required', 'string', 'min:2', 'max:100'],
+            'location' => ['nullable', 'string', 'max:20'],
+            'brand_context' => ['nullable', 'string', 'max:300'],
+            'title_count' => ['nullable', 'integer', 'min:1', 'max:50'],
+            'expand_mode' => ['nullable', 'in:classic,query,all'],
+        ], [
+            'seed_keyword.required' => __('admin.title_distill.error.seed_keyword_required'),
+            'seed_keyword.min' => __('admin.title_distill.error.seed_keyword_required'),
+        ]);
+
+        $result = $this->titleDistillationService->expandTitles(
+            trim((string) $payload['seed_keyword']),
+            trim((string) ($payload['brand_context'] ?? '')),
+            (int) ($payload['title_count'] ?? 10),
+            (string) ($payload['expand_mode'] ?? TitleDistillationService::MODE_CLASSIC),
+            trim((string) ($payload['location'] ?? '')) !== '' ? trim((string) $payload['location']) : null
+        );
+
+        $duplicateStats = $this->countExistingTitleDuplicates($libraryId, $result['titles']);
+
+        return $this->distillJsonResponse([
+            'titles' => $result['titles'],
+            'count' => count($result['titles']),
+            'classic_count' => (int) ($result['classic_count'] ?? 0),
+            'query_count' => (int) ($result['query_count'] ?? 0),
+            'brand_count' => (int) ($result['brand_count'] ?? 0),
+            'duplicate_count' => $duplicateStats['duplicate_count'],
+            'new_count' => $duplicateStats['new_count'],
+            'mode' => 'rule',
+        ]);
+    }
+
+    /**
+     * AI 标题蒸馏：把一个关键词改写成更像用户提问的标题。
+     */
+    public function distillWithAi(Request $request, int $libraryId): JsonResponse
+    {
+        TitleLibrary::query()->visibleToAdmin()->whereKey($libraryId)->firstOrFail();
+
+        $payload = $request->validate([
+            'seed_keyword' => ['required', 'string', 'min:2', 'max:100'],
+            'brand_context' => ['nullable', 'string', 'max:300'],
+            'location' => ['nullable', 'string', 'max:20'],
+            'title_count' => ['required', 'integer', 'min:1', 'max:50'],
             'ai_model_id' => [
                 'required',
                 'integer',
@@ -113,18 +146,12 @@ class TitleLibraryController extends Controller
                         ->whereRaw("COALESCE(NULLIF(model_type, ''), 'chat') = 'chat'");
                 }),
             ],
-            'title_count' => ['required', 'integer', 'min:1', 'max:50'],
-            'title_style' => ['required', 'in:professional,attractive,seo,creative,question'],
-            'custom_prompt' => ['nullable', 'string'],
+            'custom_prompt' => ['nullable', 'string', 'max:2000'],
+            'title_style' => ['nullable', 'in:professional,attractive,seo,creative,question'],
         ], [
-            'keyword_library_id.required' => __('admin.title_ai_generate.error.keyword_library_required'),
-            'ai_model_id.required' => __('admin.title_ai_generate.error.ai_model_required'),
-            'ai_model_id.exists' => __('admin.title_ai_generate.error.ai_model_required'),
-            'title_count.min' => __('admin.title_ai_generate.error.invalid_count'),
-            'title_count.max' => __('admin.title_ai_generate.error.invalid_count'),
+            'seed_keyword.required' => __('admin.title_distill.error.seed_keyword_required'),
+            'ai_model_id.required' => __('admin.title_distill.error.ai_model_required'),
         ]);
-
-        $keywordLibrary = KeywordLibrary::query()->visibleToAdmin()->whereKey((int) $payload['keyword_library_id'])->firstOrFail();
 
         $aiModel = AiModel::query()
             ->whereKey((int) $payload['ai_model_id'])
@@ -133,70 +160,129 @@ class TitleLibraryController extends Controller
             ->visibleToAdmin()
             ->firstOrFail();
 
-        /** @var Collection<int, string> $keywords */
-        $keywords = Keyword::query()
-            ->where('library_id', (int) $payload['keyword_library_id'])
-            ->inRandomOrder()
-            ->limit((int) config('geoflow.title_ai_keyword_sample_limit', 10))
-            ->pluck('keyword')
-            ->map(static fn (mixed $value): string => trim((string) $value))
-            ->filter(static fn (string $keyword): bool => $keyword !== '')
-            ->values();
-        if ($keywords->isEmpty()) {
-            return back()->withErrors(__('admin.title_ai_generate.error.no_keywords'));
+        $location = trim((string) ($payload['location'] ?? ''));
+        $seedKeyword = trim((string) $payload['seed_keyword']);
+        if ($location !== '' && ! str_starts_with($seedKeyword, $location)) {
+            $seedKeyword = $location.$seedKeyword;
         }
 
-        $generationResult = $this->titleAiGenerationService->generateTitles(
+        $result = $this->titleAiGenerationService->distillUserQueryTitles(
             $aiModel,
-            $keywords->all(),
+            $seedKeyword,
             (int) $payload['title_count'],
-            (string) $payload['title_style'],
-            trim((string) ($payload['custom_prompt'] ?? ''))
+            trim((string) ($payload['brand_context'] ?? '')),
+            trim((string) ($payload['custom_prompt'] ?? '')),
+            (string) ($payload['title_style'] ?? 'question')
         );
-        $generatedTitles = $generationResult['titles'];
 
-        $savedCount = 0;
+        $duplicateStats = $this->countExistingTitleDuplicates($libraryId, $result['titles']);
+
+        return $this->distillJsonResponse([
+            'titles' => $result['titles'],
+            'count' => count($result['titles']),
+            'duplicate_count' => $duplicateStats['duplicate_count'],
+            'new_count' => $duplicateStats['new_count'],
+            'mode' => 'ai',
+            'fallback_used' => (bool) ($result['fallback_used'] ?? false),
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function distillJsonResponse(array $payload, int $status = 200): JsonResponse
+    {
+        return response()->json(
+            $this->utf8SafeValue($payload),
+            $status,
+            [],
+            JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE
+        );
+    }
+
+    private function utf8SafeValue(mixed $value): mixed
+    {
+        if (is_string($value)) {
+            return $this->utf8SafeString($value);
+        }
+
+        if (! is_array($value)) {
+            return $value;
+        }
+
+        $safe = [];
+        foreach ($value as $key => $item) {
+            $safe[$key] = $this->utf8SafeValue($item);
+        }
+
+        return $safe;
+    }
+
+    private function utf8SafeString(string $value): string
+    {
+        $value = trim($value);
+        if ($value === '') {
+            return '';
+        }
+
+        if (mb_check_encoding($value, 'UTF-8')) {
+            return $value;
+        }
+
+        $converted = @iconv('UTF-8', 'UTF-8//IGNORE', $value);
+
+        return is_string($converted) ? $converted : '';
+    }
+
+    /**
+     * @param  list<string>  $titles
+     * @return array{duplicate_count:int,new_count:int}
+     */
+    private function countExistingTitleDuplicates(int $libraryId, array $titles): array
+    {
+        $existing = Title::query()
+            ->where('library_id', $libraryId)
+            ->pluck('title')
+            ->map(static fn (mixed $title): string => mb_strtolower(trim((string) $title), 'UTF-8'))
+            ->flip();
+
         $duplicateCount = 0;
-        DB::transaction(function () use ($generatedTitles, $keywords, $libraryId, &$savedCount, &$duplicateCount): void {
-            foreach ($generatedTitles as $titleText) {
-                $title = $this->normalizeGeneratedTitle($titleText);
-                if ($title === '' || mb_strlen($title, 'UTF-8') > 500) {
-                    continue;
-                }
-
-                $exists = Title::query()
-                    ->where('library_id', $libraryId)
-                    ->where('title', $title)
-                    ->exists();
-                if ($exists) {
-                    $duplicateCount++;
-
-                    continue;
-                }
-
-                Title::query()->create([
-                    'library_id' => $libraryId,
-                    'title' => $title,
-                    'keyword' => $keywords->random(),
-                    'is_ai_generated' => true,
-                    'used_count' => 0,
-                    'usage_count' => 0,
-                ]);
-                $savedCount++;
+        foreach ($titles as $title) {
+            $normalized = mb_strtolower(trim($title), 'UTF-8');
+            if ($normalized !== '' && isset($existing[$normalized])) {
+                $duplicateCount++;
             }
-
-            $this->refreshTitleLibraryCount($libraryId);
-        });
-
-        $message = __('admin.title_ai_generate.message.completed', ['count' => $savedCount]);
-        if ($duplicateCount > 0) {
-            $message .= __('admin.title_ai_generate.message.duplicates', ['count' => $duplicateCount]);
-        }
-        if (($generationResult['fallback_used'] ?? false) === true) {
-            $message .= '（AI服务不可用，已使用模板兜底）';
         }
 
-        return redirect()->route('admin.title-libraries.detail', ['libraryId' => $libraryId])->with('message', $message);
+        return [
+            'duplicate_count' => $duplicateCount,
+            'new_count' => max(0, count($titles) - $duplicateCount),
+        ];
+    }
+
+    /**
+     * 旧「AI 生成标题」入口，已合并到标题库详情的生成弹窗。
+     */
+    public function aiGenerate(int $libraryId): RedirectResponse
+    {
+        TitleLibrary::query()->visibleToAdmin()->whereKey($libraryId)->firstOrFail();
+
+        return redirect()->route('admin.title-libraries.detail', [
+            'libraryId' => $libraryId,
+            'distill' => 1,
+        ]);
+    }
+
+    /**
+     * 旧「AI 生成标题」提交入口，已合并到标题库详情的生成弹窗。
+     */
+    public function generateWithAi(Request $request, int $libraryId): RedirectResponse
+    {
+        TitleLibrary::query()->visibleToAdmin()->whereKey($libraryId)->firstOrFail();
+
+        return redirect()
+            ->route('admin.title-libraries.detail', ['libraryId' => $libraryId, 'distill' => 1])
+            ->with('message', __('admin.title_distill.migrated_hint'));
     }
 
     /**

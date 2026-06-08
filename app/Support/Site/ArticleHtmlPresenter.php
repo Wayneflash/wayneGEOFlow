@@ -7,10 +7,78 @@ use App\Support\GeoFlow\ImageUrlNormalizer;
 use League\CommonMark\GithubFlavoredMarkdownConverter;
 
 /**
- * 文章正文 Markdown 渲染与摘要生成（对齐旧版前台展示习惯）。
+ * 文章正文渲染与摘要生成：兼容历史 Markdown 与 AI 生成的 HTML 正文。
  */
 final class ArticleHtmlPresenter
 {
+    /**
+     * 将正文转为可展示的 HTML（自动识别 Markdown 或 HTML 输入）。
+     */
+    public static function contentToHtml(string $content, string $title = ''): string
+    {
+        $content = trim($content);
+        if ($content === '') {
+            return '';
+        }
+
+        if ($title !== '') {
+            $content = self::looksLikeHtml($content)
+                ? self::stripLeadingTitleHeadingHtml($content, $title)
+                : self::stripLeadingTitleHeading($content, $title);
+        }
+
+        if (self::looksLikeHtml($content)) {
+            return self::decorateRenderedHtml(self::sanitizeArticleHtml($content));
+        }
+
+        return self::markdownToHtml($content);
+    }
+
+    /**
+     * AI 生成结果入库：统一转为排版好的 HTML 正文（预览/分发直接可用）。
+     */
+    public static function normalizeGeneratedContentForStorage(string $raw): string
+    {
+        $raw = trim($raw);
+        if ($raw === '') {
+            return '';
+        }
+
+        if (self::looksLikeHtml($raw)) {
+            return self::decorateRenderedHtml(self::sanitizeArticleHtml($raw));
+        }
+
+        return self::markdownToHtml($raw);
+    }
+
+    public static function plainTextFromContent(string $content, int $limit = 0): string
+    {
+        $content = trim($content);
+        if ($content === '') {
+            return '';
+        }
+
+        if (self::looksLikeHtml($content)) {
+            $plain = html_entity_decode(strip_tags($content), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        } else {
+            $plain = self::toPlainLine($content);
+        }
+
+        $plain = trim(preg_replace('/\s+/u', ' ', $plain) ?: $plain);
+
+        if ($limit > 0 && mb_strlen($plain) > $limit) {
+            return mb_substr($plain, 0, $limit);
+        }
+
+        return $plain;
+    }
+
+    public static function looksLikeHtml(string $content): bool
+    {
+        return preg_match('/^\s*</u', $content) === 1
+            || preg_match('/<(h[1-6]|p|div|ul|ol|li|table|section|article)\b/i', $content) === 1;
+    }
+
     /**
      * 将 Markdown 转为 HTML（剥离不安全 HTML 输入）。
      */
@@ -27,6 +95,19 @@ final class ArticleHtmlPresenter
         ]);
 
         return self::decorateRenderedHtml($converter->convert($markdown)->getContent());
+    }
+
+    public static function stripLeadingTitleHeadingHtml(string $html, string $title): string
+    {
+        $title = trim($title);
+        if ($title === '') {
+            return $html;
+        }
+
+        $escaped = preg_quote($title, '/');
+        $pattern = '/^\s*<h1\b[^>]*>\s*'. $escaped .'\s*<\/h1>\s*/iu';
+
+        return (string) preg_replace($pattern, '', $html, 1);
     }
 
     /**
@@ -92,6 +173,14 @@ final class ArticleHtmlPresenter
     private static function removeThematicBreaks(string $markdown): string
     {
         return preg_replace('/^\s{0,3}(?:-{3,}|\*{3,}|_{3,})\s*$/mu', '', $markdown) ?? $markdown;
+    }
+
+    private static function sanitizeArticleHtml(string $html): string
+    {
+        $html = preg_replace('/<(script|style)\b[^>]*>.*?<\/\1>/isu', '', $html) ?? $html;
+        $html = strip_tags($html, '<h2><h3><h4><h5><h6><p><ul><ol><li><table><thead><tbody><tr><th><td><strong><b><em><i><a><img><br><blockquote>');
+
+        return trim($html);
     }
 
     private static function decorateRenderedHtml(string $html): string

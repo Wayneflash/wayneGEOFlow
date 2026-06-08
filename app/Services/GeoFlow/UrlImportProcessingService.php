@@ -190,7 +190,7 @@ final class UrlImportProcessingService
     /**
      * @return array{knowledge_base:int,keyword_library:int,title_library:int,keywords:int,titles:int}
      */
-    public function commit(UrlImportJob $job): array
+    public function commit(UrlImportJob $job, ?string $libraryName = null): array
     {
         $result = $this->decodeResult($job);
         if ($result === []) {
@@ -207,7 +207,7 @@ final class UrlImportProcessingService
         $page = is_array($result['page'] ?? null) ? $result['page'] : [];
         /** @var array<string, mixed> $analysis */
         $analysis = is_array($result['analysis'] ?? null) ? $result['analysis'] : [];
-        $baseName = $this->safeName((string) ($analysis['library_name'] ?? $page['title'] ?? $job->source_domain ?: 'URL素材'));
+        $baseName = $this->resolveLibraryBaseName($job, $analysis, $page, $libraryName);
         $knowledgeContent = trim((string) ($analysis['knowledge_markdown'] ?? $page['text'] ?? ''));
         if ($knowledgeContent === '') {
             throw new \RuntimeException(__('admin.url_import.error.commit_before_parse'));
@@ -503,7 +503,7 @@ final class UrlImportProcessingService
         $title = (string) ($parsed['title'] ?? '');
         $text = (string) ($parsed['text'] ?? '');
         $summary = (string) ($parsed['summary'] ?? '');
-        $libraryName = $this->safeName($title !== '' ? $title : (string) $job->source_domain);
+        $libraryName = $this->resolveLibraryBaseName($job, [], $parsed);
         $pageJson = $this->buildPageJson($parsed, $job);
 
         $models = $this->assertAnalysisModelsReady((int) ($job->tenant_id ?? 0) ?: null);
@@ -1310,6 +1310,27 @@ PROMPT;
         $name = trim(preg_replace('/\s+/u', ' ', $name) ?? $name);
 
         return Str::limit($name !== '' ? $name : 'URL素材', 80, '');
+    }
+
+    /**
+     * @param  array<string, mixed>  $analysis
+     * @param  array<string, mixed>  $page
+     */
+    private function resolveLibraryBaseName(UrlImportJob $job, array $analysis, array $page, ?string $override = null): string
+    {
+        $override = trim((string) $override);
+        if ($override !== '') {
+            return $this->safeName($override);
+        }
+
+        $options = json_decode((string) $job->options_json, true);
+        $options = is_array($options) ? $options : [];
+        $projectName = trim((string) ($options['project_name'] ?? ''));
+        if ($projectName !== '') {
+            return $this->safeName($projectName);
+        }
+
+        return $this->safeName((string) ($analysis['library_name'] ?? $page['title'] ?? $job->source_domain ?: 'URL素材'));
     }
 
     /**

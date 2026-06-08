@@ -6,40 +6,31 @@ final class PromptGuide
 {
     public static function description(string $name): string
     {
-        $normalized = trim($name);
+        $category = ContentPromptPresets::categoryForName($name);
+        $categories = ContentPromptPresets::categories();
 
-        if (str_contains($normalized, '默认推荐')) {
-            return '默认推荐：适合大多数知识型、问答型、指南型文章，输出结构自然，不强行套榜单。';
+        foreach (ContentPromptPresets::templates() as $template) {
+            if ($template['name'] === $name) {
+                return $template['summary'];
+            }
         }
 
-        if (str_contains($normalized, '榜单') || str_contains($normalized, 'Ranking')) {
-            return '仅用于标题明确包含榜单、TOP、排名、推荐清单的文章；不适合普通问答和服务介绍。';
-        }
+        return match ($category) {
+            'ranking' => '榜单/TOP 标题专用：先写评价维度，再列候选对象，不虚构排名。',
+            'soft' => '软文/品牌传播：场景叙事 + 可信观点，避免硬广与无证据夸张词。',
+            'entity' => '实体说明：定义、能力、场景与边界，利于 AI 引用与 RAG。',
+            'comparison' => '选型对比：判断框架、维度对比、风险与 FAQ。',
+            'solution' => '场景方案：痛点、路径、落地步骤与适用边界。',
+            'faq' => 'FAQ 问答：每题短答案 + 展开，适合 AI 摘要。',
+            'process' => '流程指南：阶段、动作、交付物与检查清单。',
+            default => $categories['general'].'：适合大多数知识型、问答型文章。',
+        };
+    }
 
-        if (str_contains($normalized, '决策') || str_contains($normalized, '对比') || str_contains($normalized, 'Comparison')) {
-            return '用于选型、采购、方案对比、服务商比较，重点输出判断标准、适用场景和风险边界。';
-        }
+    public static function categoryLabel(string $name): string
+    {
+        $category = ContentPromptPresets::categoryForName($name);
 
-        if (str_contains($normalized, '场景') || str_contains($normalized, '解决方案')) {
-            return '用于行业场景、客户痛点、解决方案落地文章，重点写清问题、方案、流程和效果边界。';
-        }
-
-        if (str_contains($normalized, 'FAQ') || str_contains($normalized, '问答')) {
-            return '用于高频问题、长尾问答、AI 摘要友好的 FAQ 内容，重点让每个问题都能独立成答案。';
-        }
-
-        if (str_contains($normalized, '流程') || str_contains($normalized, '实施')) {
-            return '用于实施步骤、落地流程、操作指南类文章，重点输出阶段、动作、交付物和注意事项。';
-        }
-
-        if (str_contains($normalized, '实体') || str_contains($normalized, '百科') || str_contains($normalized, 'Entity')) {
-            return '用于品牌、产品、服务、行业概念说明，重点沉淀实体事实、能力边界和可引用答案块。';
-        }
-
-        if (str_contains($normalized, 'English')) {
-            return 'English answer-ready article template for general GEO content and AI answer extraction.';
-        }
-
-        return '默认推荐：适合大多数知识型、问答型、指南型文章，输出结构自然，不强行套榜单。';
+        return ContentPromptPresets::categories()[$category] ?? '通用';
     }
 }

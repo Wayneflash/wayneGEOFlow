@@ -5,22 +5,8 @@
     $adminBrandName = $adminBrandLogo !== '' && $tenantBrandName !== ''
         ? $tenantBrandName
         : __('admin.brand.console');
-    $localeOptions = \App\Support\AdminWeb::supportedLocales();
     $isSuperAdmin = $currentAdmin && method_exists($currentAdmin, 'isSuperAdmin') && $currentAdmin->isSuperAdmin();
     $adminRoleLabel = $isSuperAdmin ? __('admin.header.super_admin') : __('admin.header.admin');
-    $updateNotification = is_array($adminUpdateNotificationPayload ?? null) ? $adminUpdateNotificationPayload : [];
-    $updateState = is_array($updateNotification['state'] ?? null) ? $updateNotification['state'] : [];
-    $updateLinks = is_array($updateNotification['links'] ?? null) ? $updateNotification['links'] : [];
-    $hasVersionUpdate = ! empty($updateState['is_update_available']);
-    $localeForChangelog = app()->getLocale() === 'en' ? 'en' : 'zh-CN';
-    $updatePayload = is_array($updateState['payload'] ?? null) ? $updateState['payload'] : [];
-    $updateSummary = (string) ($localeForChangelog === 'en'
-        ? ($updatePayload['summary_en'] ?? '')
-        : ($updatePayload['summary_zh'] ?? ''));
-    $changelogLinks = is_array($updateLinks['changelog'] ?? null) ? $updateLinks['changelog'] : [];
-    $notificationChangelogUrl = (string) ($changelogLinks[$localeForChangelog] ?? $changelogLinks['zh-CN'] ?? '');
-    $notificationGithubUrl = (string) ($updateLinks['github'] ?? '');
-    $notificationStatus = (string) ($updateState['status'] ?? 'disabled');
     $menuGroups = [
         [
             'label' => '运营',
@@ -196,47 +182,6 @@
 
         <div class="flex shrink-0 items-center gap-2">
             <div class="relative">
-                <button data-admin-menu-button="notifications" class="relative rounded-lg border border-slate-200 bg-white p-2 text-slate-500 shadow-sm hover:bg-slate-50 hover:text-slate-700" type="button" aria-expanded="false" aria-controls="admin-notification-menu" aria-label="{{ __('admin.header.notifications.label') }}">
-                    <i data-lucide="bell" class="h-5 w-5"></i>
-                    @if($hasVersionUpdate)
-                        <span data-update-indicator class="absolute right-1.5 top-1.5 h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white"></span>
-                    @endif
-                </button>
-                <div id="admin-notification-menu" data-admin-menu="notifications" class="hidden absolute right-0 mt-3 w-80 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
-                    <div class="border-b border-slate-100 px-4 py-3 text-sm font-semibold text-slate-950">{{ __('admin.header.notifications.title') }}</div>
-                    <div class="px-4 py-4">
-                        @if($hasVersionUpdate)
-                            <div class="text-sm font-semibold text-slate-950">{{ __('admin.header.notifications.update_available', ['version' => (string) ($updateState['latest_version'] ?? '')]) }}</div>
-                            <p class="mt-2 text-sm leading-6 text-slate-600">{{ $updateSummary !== '' ? $updateSummary : __('admin.header.notifications.update_desc') }}</p>
-                        @elseif($notificationStatus === 'current')
-                            <div class="text-sm font-semibold text-slate-950">{{ __('admin.header.notifications.up_to_date') }}</div>
-                            <p class="mt-2 text-sm leading-6 text-slate-600">{{ __('admin.header.notifications.no_update_desc') }}</p>
-                        @else
-                            <div class="text-sm font-semibold text-slate-950">{{ __('admin.header.notifications.unavailable') }}</div>
-                            <p class="mt-2 text-sm leading-6 text-slate-600">{{ __('admin.header.notifications.unavailable_desc') }}</p>
-                        @endif
-                        @if($notificationChangelogUrl !== '' || $notificationGithubUrl !== '')
-                            <div class="mt-4 flex flex-wrap gap-2">
-                                @if($notificationChangelogUrl !== '')
-                                    <a href="{{ $notificationChangelogUrl }}" target="_blank" rel="noopener noreferrer" class="admin-btn-primary h-9 px-3 text-xs">{{ __('admin.header.notifications.view_changelog') }}</a>
-                                @endif
-                                @if($notificationGithubUrl !== '')
-                                    <a href="{{ $notificationGithubUrl }}" target="_blank" rel="noopener noreferrer" class="admin-btn-secondary h-9 px-3 text-xs">{{ __('admin.header.notifications.open_github') }}</a>
-                                @endif
-                            </div>
-                        @endif
-                    </div>
-                </div>
-            </div>
-            <div class="hidden items-center rounded-lg border border-slate-200 bg-white px-2 py-1 shadow-sm md:flex">
-                <i data-lucide="languages" class="mr-1.5 h-4 w-4 text-slate-400"></i>
-                <select class="bg-transparent pr-1 text-sm font-medium text-slate-700 outline-none" aria-label="{{ __('admin.header.language') }}" onchange="if (this.value) window.location.href = this.value">
-                    @foreach ($localeOptions as $localeCode => $localeLabel)
-                        <option value="{{ route('admin.locale.switch', ['locale' => $localeCode]) }}" @selected(app()->getLocale() === $localeCode)>{{ $localeLabel }}</option>
-                    @endforeach
-                </select>
-            </div>
-            <div class="relative">
                 <button data-admin-menu-button="user" class="flex items-center gap-2 rounded-lg border border-slate-200 bg-white p-1.5 pr-2 text-sm text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950" type="button" aria-expanded="false" aria-controls="user-menu">
                     <span class="flex h-7 w-7 items-center justify-center rounded-md bg-blue-50 text-blue-700">
                         <i data-lucide="user" class="h-4 w-4"></i>
@@ -248,18 +193,7 @@
                         <div class="text-sm font-medium text-slate-900">{{ __('admin.header.welcome', ['name' => $currentAdmin->username ?? '']) }}</div>
                         <div class="text-xs text-slate-400">{{ $adminRoleLabel }}</div>
                     </div>
-                    <a href="{{ route('admin.site-settings.index') }}" class="flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">
-                        <i data-lucide="settings" class="h-4 w-4"></i>{{ __('admin.nav.system_settings') }}
-                    </a>
-                    @if ($isSuperAdmin)
-                        <a href="{{ route('admin.admin-users.index') }}" class="flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">
-                            <i data-lucide="users" class="h-4 w-4"></i>{{ __('admin.nav.admin_management') }}
-                        </a>
-                        <a href="{{ route('admin.api-tokens.index') }}" class="flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">
-                            <i data-lucide="key-round" class="h-4 w-4"></i>{{ __('admin.nav.api_tokens') }}
-                        </a>
-                    @endif
-                    <form method="POST" action="{{ route('admin.logout') }}" class="border-t border-slate-100">
+                    <form method="POST" action="{{ route('admin.logout') }}">
                         @csrf
                         <button type="submit" class="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50">
                             <i data-lucide="log-out" class="h-4 w-4"></i>{{ __('admin.button.logout') }}
@@ -326,10 +260,6 @@
         window.toggleUserMenu = () => {
             const menu = document.querySelector('[data-admin-menu="user"]');
             closeMenus(menu?.classList.contains('hidden') ? 'user' : '');
-        };
-        window.toggleAdminNotifications = () => {
-            const menu = document.querySelector('[data-admin-menu="notifications"]');
-            closeMenus(menu?.classList.contains('hidden') ? 'notifications' : '');
         };
     })();
 </script>

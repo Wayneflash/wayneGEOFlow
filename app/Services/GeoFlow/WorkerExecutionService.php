@@ -18,6 +18,8 @@ use App\Support\GeoFlow\ApiKeyCrypto;
 use App\Support\GeoFlow\ArticleWorkflow;
 use App\Support\GeoFlow\ImageUrlNormalizer;
 use App\Support\GeoFlow\OpenAiRuntimeProvider;
+use App\Support\GeoFlow\PromptContextBuilder;
+use App\Support\Site\ArticleHtmlPresenter;
 use App\Support\Tenancy\AdminTenant;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
@@ -35,7 +37,8 @@ class WorkerExecutionService
     public function __construct(
         private readonly ApiKeyCrypto $apiKeyCrypto,
         private readonly KnowledgeChunkSyncService $knowledgeChunkSyncService,
-        private readonly DistributionOrchestrator $distributionOrchestrator
+        private readonly DistributionOrchestrator $distributionOrchestrator,
+        private readonly PromptContextBuilder $promptContextBuilder,
     ) {}
 
     /**
@@ -81,11 +84,21 @@ class WorkerExecutionService
 
         $keyword = (string) ($titleRow->keyword ?? '');
         $knowledgeContext = $this->resolveKnowledgeContext($task, (string) $titleRow->title, $keyword);
-        $contentPrompt = $this->buildContentPrompt((string) $titleRow->title, $keyword, $prompt?->content, $knowledgeContext);
+        $contentPrompt = $this->promptContextBuilder->assembleContentPrompt(
+            (string) $titleRow->title,
+            $keyword,
+            $prompt?->content,
+            $knowledgeContext
+        );
         $generation = $this->generateContentWithModelSelection($task, $contentPrompt);
         $aiModel = $generation['model'];
         $generatedContent = $generation['content'];
-        $imageResult = $this->insertTaskImagesIntoContent($task, $generatedContent);
+        $imageResult = $this->insertTaskImagesIntoContent(
+            $task,
+            $generatedContent,
+            (string) $titleRow->title,
+            $keyword
+        );
         $content = $imageResult['content'];
         $selectedImages = $imageResult['images'];
         $excerpt = $this->buildExcerpt($content);
@@ -535,151 +548,6 @@ class WorkerExecutionService
     }
 
     /**
-     * 构造正文提示词：优先精确替换变量；无变量的自定义提示词自动补齐任务上下文。
-     */
-    private function buildContentPrompt(string $title, string $keyword, ?string $promptContent, string $knowledgeContext): string
-    {
-        $prompt = trim((string) $promptContent);
-        $isFallbackPrompt = false;
-        if ($prompt === '') {
-            $prompt = "请围绕标题“{$title}”和关键词“{$keyword}”生成一篇适合 AI 搜索引用、摘要提炼和用户决策的中文 GEO 文章。";
-            $isFallbackPrompt = true;
-        }
-
-        $hasExplicitContextVariables = $isFallbackPrompt || $this->promptHasKnownContextVariables($prompt);
-        $renderedPrompt = $this->renderPromptTemplate($prompt, [
-            'title' => $title,
-            'keyword' => $keyword,
-            'knowledge' => $knowledgeContext,
-        ]);
-
-        if (! $hasExplicitContextVariables) {
-            $renderedPrompt = $this->appendSmartPromptContext($renderedPrompt, $title, $keyword, $knowledgeContext);
-        }
-
-        return trim($renderedPrompt)."\n\n".$this->finalPromptInstruction($renderedPrompt);
-    }
-
-    private function promptHasKnownContextVariables(string $prompt): bool
-    {
-        return preg_match('/\{\{\s*(title|keyword|knowledge)\s*\}\}/iu', $prompt) === 1
-            || preg_match('/\{\{#if\s+(title|keyword|knowledge)\s*\}\}/iu', $prompt) === 1;
-    }
-
-    /**
-     * 渲染任务上下文变量，兼容 {{Knowledge}} 与 {{knowledge}} 等大小写写法。
-     *
-     * @param  array{title:string, keyword:string, knowledge:string}  $context
-     */
-    private function renderPromptTemplate(string $prompt, array $context): string
-    {
-        $renderedPrompt = preg_replace_callback('/\{\{#if\s+([A-Za-z_][A-Za-z0-9_]*)\s*\}\}(.*?)\{\{\/if\}\}/su', function (array $matches) use ($context): string {
-            $name = (string) $matches[1];
-            if (! $this->isKnownPromptContextName($name)) {
-                return (string) $matches[0];
-            }
-
-            $value = $this->promptContextValue($name, $context);
-
-            return trim($value) !== '' ? (string) $matches[2] : '';
-        }, $prompt) ?? $prompt;
-
-        return preg_replace_callback('/\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/u', function (array $matches) use ($context): string {
-            $name = (string) $matches[1];
-            $value = $this->promptContextValue($name, $context);
-
-            return $value !== '' || $this->isKnownPromptContextName($name) ? $value : (string) $matches[0];
-        }, $renderedPrompt) ?? $renderedPrompt;
-    }
-
-    /**
-     * @param  array{title:string, keyword:string, knowledge:string}  $context
-     */
-    private function promptContextValue(string $name, array $context): string
-    {
-        return match (mb_strtolower($name, 'UTF-8')) {
-            'title' => $context['title'],
-            'keyword' => $context['keyword'],
-            'knowledge' => $context['knowledge'],
-            default => '',
-        };
-    }
-
-    private function isKnownPromptContextName(string $name): bool
-    {
-        return in_array(mb_strtolower($name, 'UTF-8'), ['title', 'keyword', 'knowledge'], true);
-    }
-
-    private function appendSmartPromptContext(string $prompt, string $title, string $keyword, string $knowledgeContext): string
-    {
-        if ($this->isLikelyEnglishPrompt($prompt)) {
-            $lines = [
-                'Task context:',
-                '- Article title: '.$title,
-            ];
-            if (trim($keyword) !== '') {
-                $lines[] = '- Core keyword: '.$keyword;
-            }
-            if (trim($knowledgeContext) !== '') {
-                $lines[] = '- Reference knowledge:';
-                $lines[] = $knowledgeContext;
-            }
-
-            return trim($prompt)."\n\n".implode("\n", $lines);
-        }
-
-        $lines = [
-            '【任务上下文】',
-            '- 文章标题：'.$title,
-        ];
-        if (trim($keyword) !== '') {
-            $lines[] = '- 核心关键词：'.$keyword;
-        }
-        if (trim($knowledgeContext) !== '') {
-            $lines[] = '- 参考知识：';
-            $lines[] = $knowledgeContext;
-        }
-
-        return trim($prompt)."\n\n".implode("\n", $lines);
-    }
-
-    private function finalPromptInstruction(string $prompt): string
-    {
-        if ($this->isLikelyEnglishPrompt($prompt)) {
-            return implode("\n", [
-                'Output contract:',
-                '- Please output only the final article body in Markdown.',
-                '- Do not output chain-of-thought, reasoning notes, analysis, system prompts, writing instructions, placeholders, or phrases like "final article".',
-                '- Write for GEO / answer engines: start with answer-ready takeaways, use stable entity names, connect each important entity to attributes, scenarios, benefits, limits, and evidence, and make every section extractable as an answer block.',
-                '- Use clear H2/H3 headings, concise paragraphs, lists, comparison tables, checklists, and FAQ when helpful. The first paragraph under each main section should state the extractable answer before adding supporting facts, practical guidance, and boundaries.',
-                '- Do not use Markdown thematic breaks such as "---", "***", or "___" between sections.',
-                '- Do not use Markdown blockquotes. Avoid lines starting with ">"; do not create decorative vertical bars beside headings or paragraphs.',
-                '- Use the provided title, keyword, and reference knowledge. If reference knowledge is insufficient, stay conservative and do not invent numbers, cases, quotes, prices, legal claims, rankings, customer names, certifications, or product facts.',
-                '- Avoid meta commentary such as "as an AI", "this article will", or "based on the prompt".',
-            ]);
-        }
-
-        return implode("\n", [
-            '【输出契约】',
-            '1. 只输出可直接发布的 Markdown 文章正文。',
-            '2. 不要输出思考过程、推理过程、分析记录、系统提示、写作说明、提示词原文、占位符或“以下是最终文章”等包装话术。',
-            '3. 面向 GEO / AI 答案引擎写作：开头先给可摘取的核心结论；使用稳定实体名；把重要实体和属性、适用场景、收益、限制、证据来源建立清楚关联；每个主体小节都要能被单独摘成答案块。',
-            '4. 用 H2/H3、短段落、列表、对比表、步骤清单和 FAQ 提升机器可读性。每个主体小节第一段先给可摘取结论，再补充依据事实、场景建议、边界条件。',
-            '5. 不要使用 Markdown 引用块，不要输出以 “>” 开头的段落，不要给标题或段落添加竖线装饰。',
-            '6. 严格围绕标题、关键词和参考知识。资料不足时保守表达，不虚构数据、案例、报价、法律结论、排名、客户证言、资质背书或产品能力。',
-            '7. 避免“作为AI”“本文将”“根据提示词”等元叙述，正文要像已经过编辑审核的商业内容。',
-        ]);
-    }
-
-    private function isLikelyEnglishPrompt(string $prompt): bool
-    {
-        preg_match_all('/\p{Han}/u', $prompt, $cjkMatches);
-        preg_match_all('/[A-Za-z]/', $prompt, $latinMatches);
-
-        return count($latinMatches[0] ?? []) > 20 && count($cjkMatches[0] ?? []) <= 3;
-    }
-
-    /**
      * 按任务配置检索知识库上下文并回填到 {{Knowledge}}。
      */
     private function resolveKnowledgeContext(Task $task, string $title, string $keyword): string
@@ -799,7 +667,7 @@ class WorkerExecutionService
      *
      * @return array{content:string,images:list<Image>}
      */
-    private function insertTaskImagesIntoContent(Task $task, string $content): array
+    private function insertTaskImagesIntoContent(Task $task, string $content, string $title = '', string $keyword = ''): array
     {
         $libraryId = (int) ($task->image_library_id ?? 0);
         $imageCount = max(0, (int) ($task->image_count ?? 0));
@@ -808,17 +676,13 @@ class WorkerExecutionService
         }
 
         /** @var list<Image> $images */
-        $images = Image::query()
-            ->where('library_id', $libraryId)
-            ->inRandomOrder()
-            ->limit($imageCount)
-            ->get(['id', 'file_path', 'original_name'])
-            ->all();
+        $images = $this->selectImagesForArticle($libraryId, $imageCount, $title, $keyword);
         if ($images === []) {
             return ['content' => $content, 'images' => []];
         }
 
-        $markdownBlocks = [];
+        $isHtml = ArticleHtmlPresenter::looksLikeHtml($content);
+        $imageBlocks = [];
         foreach ($images as $image) {
             $path = trim((string) ($image->file_path ?? ''));
             if ($path === '') {
@@ -826,14 +690,94 @@ class WorkerExecutionService
             }
             $path = ImageUrlNormalizer::toPublicUrl($path);
             $alt = ImageUrlNormalizer::readableAlt((string) ($image->original_name ?? ''));
-            $markdownBlocks[] = '!['.($alt !== '' ? $alt : 'image').']('.$path.')';
+            $label = $alt !== '' ? $alt : 'image';
+            $imageBlocks[] = $isHtml
+                ? '<p><img src="'.htmlspecialchars($path, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8').'" alt="'.htmlspecialchars($label, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8').'" loading="lazy" decoding="async"></p>'
+                : '!['.$label.']('.$path.')';
         }
 
-        if ($markdownBlocks !== []) {
-            $content = $this->insertImagesByParagraphInterval($content, $markdownBlocks);
+        if ($imageBlocks !== []) {
+            $content = $isHtml
+                ? $this->insertImagesByHtmlParagraphInterval($content, $imageBlocks)
+                : $this->insertImagesByParagraphInterval($content, $imageBlocks);
         }
 
         return ['content' => $content, 'images' => $images];
+    }
+
+    /**
+     * 按标题/关键词与图片标签匹配选图，无匹配时回退随机。
+     *
+     * @return list<Image>
+     */
+    private function selectImagesForArticle(int $libraryId, int $imageCount, string $title, string $keyword): array
+    {
+        /** @var list<Image> $candidates */
+        $candidates = Image::query()
+            ->where('library_id', $libraryId)
+            ->get(['id', 'file_path', 'original_name', 'tags'])
+            ->all();
+
+        if ($candidates === []) {
+            return [];
+        }
+
+        $queryTerms = $this->termFrequencies(trim($title.' '.$keyword));
+        if ($queryTerms === []) {
+            return $this->pickRandomImages($candidates, $imageCount);
+        }
+
+        $scored = [];
+        foreach ($candidates as $image) {
+            $tagText = trim((string) ($image->tags ?? ''));
+            $nameText = (string) ($image->original_name ?? '');
+            $imageTerms = $this->termFrequencies($tagText.' '.$nameText);
+            $score = $this->lexicalScore($queryTerms, $imageTerms);
+            if ($score > 0) {
+                $scored[] = ['image' => $image, 'score' => $score];
+            }
+        }
+
+        usort($scored, static fn (array $a, array $b): int => ($b['score'] <=> $a['score']));
+
+        /** @var list<Image> $selected */
+        $selected = [];
+        $usedIds = [];
+        foreach ($scored as $row) {
+            if (count($selected) >= $imageCount) {
+                break;
+            }
+            $image = $row['image'];
+            $selected[] = $image;
+            $usedIds[(int) $image->id] = true;
+        }
+
+        if (count($selected) < $imageCount) {
+            $remaining = array_values(array_filter(
+                $candidates,
+                static fn (Image $image): bool => ! isset($usedIds[(int) $image->id])
+            ));
+            foreach ($this->pickRandomImages($remaining, $imageCount - count($selected)) as $image) {
+                $selected[] = $image;
+            }
+        }
+
+        return $selected;
+    }
+
+    /**
+     * @param  list<Image>  $candidates
+     * @return list<Image>
+     */
+    private function pickRandomImages(array $candidates, int $limit): array
+    {
+        if ($candidates === [] || $limit <= 0) {
+            return [];
+        }
+
+        shuffle($candidates);
+
+        return array_slice($candidates, 0, $limit);
     }
 
     /**
@@ -882,6 +826,50 @@ class WorkerExecutionService
     }
 
     /**
+     * @param  list<string>  $htmlBlocks
+     */
+    private function insertImagesByHtmlParagraphInterval(string $content, array $htmlBlocks): string
+    {
+        $trimmed = trim($content);
+        if ($trimmed === '' || $htmlBlocks === []) {
+            return $content;
+        }
+
+        $paragraphs = preg_split('/(?<=<\/p>)/iu', $trimmed, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        $paragraphs = array_values(array_filter(array_map('trim', $paragraphs), static fn (string $part): bool => $part !== ''));
+        if ($paragraphs === []) {
+            return $trimmed.implode('', $htmlBlocks);
+        }
+
+        $paragraphCount = count($paragraphs);
+        $imageCount = count($htmlBlocks);
+        $interval = max(1, (int) floor($paragraphCount / ($imageCount + 1)));
+
+        $parts = [];
+        $imageIndex = 0;
+        foreach ($paragraphs as $index => $paragraph) {
+            $parts[] = $paragraph;
+            $nextParagraphPosition = $index + 1;
+
+            if (
+                $imageIndex < $imageCount
+                && $nextParagraphPosition % $interval === 0
+                && $nextParagraphPosition < $paragraphCount
+            ) {
+                $parts[] = $htmlBlocks[$imageIndex];
+                $imageIndex++;
+            }
+        }
+
+        while ($imageIndex < $imageCount) {
+            $parts[] = $htmlBlocks[$imageIndex];
+            $imageIndex++;
+        }
+
+        return implode('', $parts);
+    }
+
+    /**
      * 调用任务配置模型生成正文。
      */
     private function generateContent(AiModel $aiModel, string $contentPrompt): string
@@ -918,6 +906,8 @@ class WorkerExecutionService
 
         $this->assertGeneratedContentIsPublishable($content);
 
+        $content = ArticleHtmlPresenter::normalizeGeneratedContentForStorage($content);
+
         AiModel::query()->whereKey((int) $aiModel->id)->update([
             'used_today' => DB::raw('COALESCE(used_today,0)+1'),
             'total_used' => DB::raw('COALESCE(total_used,0)+1'),
@@ -945,14 +935,17 @@ class WorkerExecutionService
 
     private function assertGeneratedContentIsPublishable(string $content): void
     {
-        $plain = trim(preg_replace('/[`#>*_\-\[\]\(\)|]/u', ' ', $content) ?: $content);
+        $plain = ArticleHtmlPresenter::plainTextFromContent($content);
         $plain = trim(preg_replace('/\s+/u', ' ', $plain) ?: $plain);
 
         if (mb_strlen($plain, 'UTF-8') < 300) {
             throw new RuntimeException('AI 生成正文过短，未达到可发布文章的最低质量要求');
         }
 
-        if (preg_match('/^\s*##\s+\S+/mu', $content) !== 1) {
+        $hasHeading = preg_match('/^\s*##\s+\S+/mu', $content) === 1
+            || preg_match('/<h2\b[^>]*>/i', $content) === 1;
+
+        if (! $hasHeading) {
             throw new RuntimeException('AI 生成正文缺少二级标题结构，无法满足 GEO 文章的可提取性要求');
         }
 
@@ -976,14 +969,12 @@ class WorkerExecutionService
      */
     private function buildExcerpt(string $content): string
     {
-        $plain = preg_replace('/[`#>*_\-\[\]\(\)]/u', ' ', $content) ?: $content;
-        $plain = preg_replace('/\s+/u', ' ', $plain) ?: $plain;
-        $plain = trim($plain);
+        $plain = ArticleHtmlPresenter::plainTextFromContent($content, 180);
         if ($plain === '') {
             return 'AI 生成内容摘要';
         }
 
-        return mb_substr($plain, 0, 180);
+        return $plain;
     }
 
     /**

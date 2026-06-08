@@ -6,62 +6,20 @@
         $authors = is_array($authors ?? null) ? $authors : [];
         $search = (string) ($search ?? '');
     @endphp
-    <div class="space-y-6">
-        <div class="admin-panel">
-            <div class="admin-panel-header">
-                <div class="flex items-start gap-3">
-                    <a href="{{ route('admin.materials.index') }}" class="admin-icon-btn" aria-label="{{ __('admin.common.back') }}">
-                        <i data-lucide="arrow-left" class="h-4 w-4"></i>
-                    </a>
-                    <div>
-                        <div class="text-xs font-medium uppercase tracking-widest text-slate-400">{{ __('admin.authors.page_eyebrow') }}</div>
-                        <h1 class="mt-1 text-xl font-semibold tracking-tight text-slate-950">{{ __('admin.authors.page_title') }}</h1>
-                        <p class="mt-1 text-sm text-slate-500">{{ __('admin.authors.page_subtitle') }}</p>
-                    </div>
-                </div>
-                <div class="flex flex-wrap items-center gap-2">
-                    <button type="button" onclick="showCreateModal()" class="admin-btn-primary">
-                        <i data-lucide="plus" class="h-4 w-4"></i>
-                        {{ __('admin.authors.create') }}
-                    </button>
-                </div>
-            </div>
-        </div>
+    <div class="materials-sub-shell">
+        @include('admin.partials.materials-nav', ['active' => 'overview'])
+
+        @component('admin.partials.materials-page-header', ['title' => __('admin.authors.page_title')])
+            <button type="button" onclick="showCreateModal()" class="admin-btn-teal">
+                <i data-lucide="plus" class="h-4 w-4"></i>
+                {{ __('admin.authors.create') }}
+            </button>
+        @endcomponent
 
         <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <div class="admin-panel p-5">
-                <div class="flex items-center gap-4">
-                    <span class="flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
-                        <i data-lucide="users" class="h-5 w-5"></i>
-                    </span>
-                    <div class="min-w-0">
-                        <div class="text-xs font-medium text-slate-500">{{ __('admin.authors.stats_total') }}</div>
-                        <div class="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{{ (int) ($stats['total_authors'] ?? 0) }}</div>
-                    </div>
-                </div>
-            </div>
-            <div class="admin-panel p-5">
-                <div class="flex items-center gap-4">
-                    <span class="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
-                        <i data-lucide="user-check" class="h-5 w-5"></i>
-                    </span>
-                    <div class="min-w-0">
-                        <div class="text-xs font-medium text-slate-500">{{ __('admin.authors.stats_active') }}</div>
-                        <div class="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{{ (int) ($stats['active_authors'] ?? 0) }}</div>
-                    </div>
-                </div>
-            </div>
-            <div class="admin-panel p-5">
-                <div class="flex items-center gap-4">
-                    <span class="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
-                        <i data-lucide="trending-up" class="h-5 w-5"></i>
-                    </span>
-                    <div class="min-w-0">
-                        <div class="text-xs font-medium text-slate-500">{{ __('admin.authors.stats_average') }}</div>
-                        <div class="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{{ (float) ($stats['avg_articles'] ?? 0) }}</div>
-                    </div>
-                </div>
-            </div>
+            @include('admin.partials.materials-stat-card', ['label' => __('admin.authors.stats_total'), 'value' => (int) ($stats['total_authors'] ?? 0), 'icon' => 'users', 'tone' => 'indigo'])
+            @include('admin.partials.materials-stat-card', ['label' => __('admin.authors.stats_active'), 'value' => (int) ($stats['active_authors'] ?? 0), 'icon' => 'user-check', 'tone' => 'emerald'])
+            @include('admin.partials.materials-stat-card', ['label' => __('admin.authors.stats_average'), 'value' => (float) ($stats['avg_articles'] ?? 0), 'icon' => 'trending-up', 'tone' => 'blue'])
         </div>
 
         <div class="admin-panel p-4">
@@ -87,7 +45,6 @@
             <div class="admin-panel-header">
                 <div>
                     <h2 class="text-base font-semibold text-slate-950">{{ __('admin.authors.list_title') }}</h2>
-                    <p class="mt-1 text-sm text-slate-500">{{ __('admin.authors.list_subtitle') }}</p>
                 </div>
                 <div class="flex items-center gap-2 text-xs text-slate-500">
                     <i data-lucide="list" class="h-4 w-4 text-slate-400"></i>
@@ -171,7 +128,7 @@
                                         data-author-id="{{ (int) $author['id'] }}"
                                         data-author-name="{{ $author['name'] }}"
                                         data-trashed-count="{{ (int) $author['trashed_count'] }}"
-                                        class="admin-btn-danger h-8 px-3 text-xs"
+                                        class="admin-btn-danger-sm"
                                     >
                                         <i data-lucide="trash-2" class="h-3.5 w-3.5"></i>
                                         {{ __('admin.authors.delete') }}
@@ -334,24 +291,6 @@
 @endsection
 
 @push('scripts')
-    <style>
-        .admin-btn-danger {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            gap: 0.4rem;
-            border-radius: 0.5rem;
-            background-color: rgb(220 38 38);
-            padding: 0 0.75rem;
-            font-size: 0.75rem;
-            font-weight: 600;
-            color: white;
-            box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-            transition: all 150ms ease;
-        }
-        .admin-btn-danger:hover { background-color: rgb(185 28 28); }
-        .admin-btn-danger:active { transform: translateY(1px); }
-    </style>
     <script>
         const AUTHORS_I18N = {
             confirmDelete: @json(__('admin.authors.confirm_delete', ['name' => '__NAME__'])),

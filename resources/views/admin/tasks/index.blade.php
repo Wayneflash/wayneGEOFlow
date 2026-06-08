@@ -56,40 +56,24 @@
 @endphp
 
 @section('content')
-    <div class="space-y-6">
-        <div class="admin-panel">
-            <div class="admin-panel-header">
-                <div class="flex items-start gap-3">
-                    <span class="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
+    <div class="tasks-page-shell space-y-5">
+        <div class="task-create-hero admin-panel overflow-hidden">
+            <div class="task-create-hero-glow" aria-hidden="true"></div>
+            <div class="relative flex flex-col gap-4 px-5 py-5 sm:flex-row sm:items-center sm:justify-between">
+                <div class="flex min-w-0 items-start gap-3">
+                    <span class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-sm shadow-blue-600/20">
                         <i data-lucide="workflow" class="h-5 w-5"></i>
                     </span>
-                    <div>
-                        <div class="text-xs font-medium uppercase tracking-widest text-slate-400">{{ __('admin.tasks.eyebrow') }}</div>
-                        <h1 class="mt-1 text-xl font-semibold tracking-tight text-slate-950">{{ __('admin.tasks.page_title') }}</h1>
-                        <p class="hidden">{{ __('admin.tasks.page_subtitle') }}</p>
+                    <div class="min-w-0">
+                        <p class="text-xs font-semibold uppercase tracking-[0.14em] text-blue-600">{{ __('admin.tasks.eyebrow') }}</p>
+                        <h1 class="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{{ __('admin.tasks.page_title') }}</h1>
+                        <p class="mt-1 text-sm text-slate-600">管理 AI 生成任务，点击任务名或统计数字可查看对应文章</p>
                     </div>
                 </div>
-                <div class="flex items-center gap-2">
-                    <a href="{{ route('admin.tasks.create') }}" class="admin-btn-primary">
-                        <i data-lucide="plus" class="h-4 w-4"></i>
-                        {{ __('admin.button.create_task') }}
-                    </a>
-                    <details class="relative">
-                        <summary class="admin-icon-btn cursor-pointer list-none" aria-label="{{ __('admin.common.more') }}">
-                            <i data-lucide="more-horizontal" class="h-4 w-4"></i>
-                        </summary>
-                        <div class="absolute right-0 z-20 mt-2 w-56 overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-xl shadow-slate-200/70">
-                            <button type="button" onclick="executeAllActiveTasks(); this.closest('details')?.removeAttribute('open')" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-50">
-                                <i data-lucide="play" class="h-4 w-4 text-slate-400"></i>
-                                {{ __('admin.button.run_all_tasks') }}
-                            </button>
-                            <a href="{{ route('admin.articles.index') }}" class="flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50">
-                                <i data-lucide="file-text" class="h-4 w-4 text-slate-400"></i>
-                                {{ __('admin.nav.articles') }}
-                            </a>
-                        </div>
-                    </details>
-                </div>
+                <a href="{{ route('admin.tasks.create') }}" class="admin-btn-primary shrink-0 self-start sm:self-center">
+                    <i data-lucide="plus" class="h-4 w-4"></i>
+                    {{ __('admin.button.create_task') }}
+                </a>
             </div>
         </div>
 

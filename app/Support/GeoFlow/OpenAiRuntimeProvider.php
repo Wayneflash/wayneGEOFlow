@@ -321,7 +321,7 @@ final class OpenAiRuntimeProvider
         $content = preg_replace('/^\s*(?:思考过程|推理过程|分析过程|我的思考|Reasoning|Analysis)\s*[:：].*?(?=(?:\R\s*)?(?:#{1,6}\s+|最终文章|文章正文|正文\s*[:：]|以下是))/isu', '', $content) ?? $content;
         $content = trim($content);
 
-        if (preg_match('/^```(?:markdown|md|text)?\s*(.*?)\s*```$/su', $content, $matches) === 1) {
+        if (preg_match('/^```(?:html|markdown|md|text)?\s*(.*?)\s*```$/su', $content, $matches) === 1) {
             $content = trim((string) ($matches[1] ?? $content));
         }
 

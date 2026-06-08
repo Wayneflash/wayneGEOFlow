@@ -144,7 +144,7 @@ class AdminTasksPageTest extends TestCase
             ->assertSee('data-distribution-channel-input', false)
             ->assertSee('syncDistributionChannelsByScope', false)
             ->assertSee('disabled data-distribution-channel-input', false)
-            ->assertDontSee('value="1" checked', false);
+            ->assertDontSee('name="distribution_channel_ids[]" value="1" checked', false);
     }
 
     public function test_local_only_task_submission_ignores_distribution_channel_ids(): void

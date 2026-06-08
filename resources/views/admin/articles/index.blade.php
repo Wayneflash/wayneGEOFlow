@@ -53,12 +53,8 @@
                             <i data-lucide="arrow-left" class="h-4 w-4"></i>
                             {{ __('admin.articles.trash.back') }}
                         </a>
-                    @else
-                        <a href="{{ route('admin.tasks.create') }}" class="admin-btn-primary">
-                            <i data-lucide="sparkles" class="h-4 w-4"></i>
-                            {{ __('admin.button.generate_articles') }}
-                        </a>
                     @endif
+                    @unless($isTrashView)
                     <details class="relative">
                         <summary class="admin-icon-btn cursor-pointer list-none" aria-label="{{ __('admin.common.more') }}">
                             <i data-lucide="more-horizontal" class="h-4 w-4"></i>
@@ -89,81 +85,25 @@
                             </button>
                         </div>
                     </details>
+                    @endunless
                 </div>
             </div>
         </div>
 
-        @if($isTrashView)
-            <div class="admin-panel p-5">
-                <div class="flex items-center gap-4">
-                    <span class="flex h-12 w-12 items-center justify-center rounded-xl bg-orange-50 text-orange-600">
-                        <i data-lucide="archive" class="h-5 w-5"></i>
-                    </span>
-                    <div class="min-w-0">
-                        <div class="text-xs font-medium text-slate-500">{{ __('admin.articles.trash.stats_total') }}</div>
-                        <div class="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{{ (int) ($stats['trashed_total'] ?? 0) }}</div>
-                    </div>
-                </div>
+        <div class="grid gap-3 sm:grid-cols-3">
+            <div class="admin-panel p-4">
+                <div class="text-xs font-medium text-slate-500">{{ $isTrashView ? __('admin.articles.trash.stats_total') : __('admin.articles.stats.total') }}</div>
+                <div class="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{{ (int) ($isTrashView ? ($stats['trashed_total'] ?? 0) : ($stats['total'] ?? 0)) }}</div>
             </div>
-        @else
-            <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-                <div class="admin-panel p-5">
-                    <div class="flex items-center gap-4">
-                        <span class="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
-                            <i data-lucide="file-text" class="h-5 w-5"></i>
-                        </span>
-                        <div class="min-w-0">
-                            <div class="text-xs font-medium text-slate-500">{{ __('admin.articles.stats.total') }}</div>
-                            <div class="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{{ (int) ($stats['total'] ?? 0) }}</div>
-                        </div>
-                    </div>
-                </div>
-                <div class="admin-panel p-5">
-                    <div class="flex items-center gap-4">
-                        <span class="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
-                            <i data-lucide="globe" class="h-5 w-5"></i>
-                        </span>
-                        <div class="min-w-0">
-                            <div class="text-xs font-medium text-slate-500">{{ __('admin.articles.stats.published') }}</div>
-                            <div class="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{{ (int) ($stats['published'] ?? 0) }}</div>
-                        </div>
-                    </div>
-                </div>
-                <div class="admin-panel p-5">
-                    <div class="flex items-center gap-4">
-                        <span class="flex h-12 w-12 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
-                            <i data-lucide="edit" class="h-5 w-5"></i>
-                        </span>
-                        <div class="min-w-0">
-                            <div class="text-xs font-medium text-slate-500">{{ __('admin.articles.stats.draft') }}</div>
-                            <div class="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{{ (int) ($stats['draft'] ?? 0) }}</div>
-                        </div>
-                    </div>
-                </div>
-                <div class="admin-panel p-5">
-                    <div class="flex items-center gap-4">
-                        <span class="flex h-12 w-12 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
-                            <i data-lucide="eye" class="h-5 w-5"></i>
-                        </span>
-                        <div class="min-w-0">
-                            <div class="text-xs font-medium text-slate-500">{{ __('admin.articles.stats.pending_review') }}</div>
-                            <div class="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{{ (int) ($stats['pending_review'] ?? 0) }}</div>
-                        </div>
-                    </div>
-                </div>
-                <div class="admin-panel p-5">
-                    <div class="flex items-center gap-4">
-                        <span class="flex h-12 w-12 items-center justify-center rounded-xl bg-orange-50 text-orange-600">
-                            <i data-lucide="calendar" class="h-5 w-5"></i>
-                        </span>
-                        <div class="min-w-0">
-                            <div class="text-xs font-medium text-slate-500">{{ __('admin.articles.stats.today') }}</div>
-                            <div class="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{{ (int) ($stats['today'] ?? 0) }}</div>
-                        </div>
-                    </div>
-                </div>
+            <div class="admin-panel p-4">
+                <div class="text-xs font-medium text-slate-500">{{ __('admin.articles.stats.pending_review') }}</div>
+                <div class="mt-1 text-2xl font-semibold tracking-tight text-amber-700">{{ (int) ($stats['pending_review'] ?? 0) }}</div>
             </div>
-        @endif
+            <div class="admin-panel p-4">
+                <div class="text-xs font-medium text-slate-500">{{ __('admin.articles.stats.today') }}</div>
+                <div class="mt-1 text-2xl font-semibold tracking-tight text-blue-700">{{ (int) ($stats['today'] ?? 0) }}</div>
+            </div>
+        </div>
 
         <div class="admin-panel">
             <div class="admin-panel-header">
@@ -299,16 +239,10 @@
                             {{ __('admin.articles.trash.back') }}
                         </a>
                     @else
-                        <div class="mt-5 flex flex-wrap items-center justify-center gap-3">
-                            <a href="{{ route('admin.tasks.create') }}" class="admin-btn-primary">
-                                <i data-lucide="bot" class="h-4 w-4"></i>
-                                {{ __('admin.button.generate_articles') }}
-                            </a>
-                            <a href="{{ route('admin.articles.create') }}" class="admin-btn-secondary">
-                                <i data-lucide="file-plus" class="h-4 w-4"></i>
-                                {{ __('admin.button.create_article') }}
-                            </a>
-                        </div>
+                        <a href="{{ route('admin.articles.create') }}" class="admin-btn-primary mt-5">
+                            <i data-lucide="file-plus" class="h-4 w-4"></i>
+                            {{ __('admin.button.create_article') }}
+                        </a>
                     @endif
                 </div>
             @else
@@ -359,36 +293,19 @@
                 </div>
 
                 <div class="overflow-x-auto">
-                    <table class="admin-table min-w-full table-fixed">
-                        <colgroup>
-                            @if($isTrashView)
-                                <col class="w-12">
-                                <col class="w-[50%]">
-                                <col class="w-[18%]">
-                                <col class="w-[14%]">
-                                <col class="w-[15%]">
-                            @else
-                                <col class="w-12">
-                                <col class="w-[42%]">
-                                <col class="w-[17%]">
-                                <col class="w-[14%]">
-                                <col class="w-[10%]">
-                                <col class="w-[14%]">
-                            @endif
-                        </colgroup>
+                    <table class="admin-table admin-articles-table w-full">
                         <thead>
                             <tr>
-                                <th class="batch-checkbox hidden px-6 py-3 text-left">
+                                <th class="batch-checkbox hidden w-10 px-3 py-3 text-left">
                                     <input type="checkbox" id="select-all" class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500">
                                 </th>
-                                <th class="whitespace-nowrap">鎼村繐褰?/th>
-                                <th>{{ __('admin.articles.column.info') }}</th>
-                                <th>{{ __('admin.articles.column.task_author') }}</th>
+                                <th class="min-w-[18rem]">{{ __('admin.articles.column.info') }}</th>
+                                <th class="w-28 whitespace-nowrap">{{ __('admin.articles.column.author') }}</th>
                                 @if(!$isTrashView)
-                                    <th>{{ __('admin.articles.column.workflow') }}</th>
+                                    <th class="w-36">{{ __('admin.articles.column.workflow') }}</th>
                                 @endif
-                                <th>{{ $isTrashView ? __('admin.articles.trash.column.deleted_at') : __('admin.articles.column.created_at') }}</th>
-                                <th>{{ __('admin.articles.column.actions') }}</th>
+                                <th class="w-36 whitespace-nowrap">{{ $isTrashView ? __('admin.articles.trash.column.deleted_at') : __('admin.articles.column.created_at') }}</th>
+                                <th class="w-36 whitespace-nowrap">{{ __('admin.articles.column.actions') }}</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100 bg-white">
@@ -435,71 +352,55 @@
                                     }
                                 @endphp
                                 <tr class="transition hover:bg-slate-50/70">
-                                    <td class="batch-checkbox hidden px-6 py-4">
+                                    <td class="batch-checkbox hidden w-10 px-3 py-4">
                                         <input type="checkbox" value="{{ (int) $article->id }}" class="article-checkbox h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500">
                                     </td>
-                                    <td class="whitespace-nowrap font-mono text-sm text-slate-500">{{ ($articles->firstItem() ?? 1) + $loop->index }}</td>
-                                    <td>
-                                        <div class="text-sm font-medium text-slate-900 truncate">
+                                    <td class="min-w-[18rem] max-w-xl">
+                                        <div class="line-clamp-2 break-words text-sm font-semibold leading-snug text-slate-900">
                                             @if($isTrashView)
                                                 <span>{{ $article->title }}</span>
                                             @else
                                                 <a href="{{ route('admin.articles.edit', ['articleId' => (int) $article->id]) }}" class="transition hover:text-blue-700">{{ $article->title }}</a>
                                             @endif
                                         </div>
-                                        @if((string) ($article->excerpt ?? '') !== '')
-                                            <p class="mt-1 text-xs text-slate-500">{{ \Illuminate\Support\Str::limit((string) $article->excerpt, 100) }}</p>
+                                        @if((string) ($article->category->name ?? '') !== '')
+                                            <div class="mt-1 text-xs text-slate-400">{{ $article->category->name }}</div>
                                         @endif
-                                        @if((string) ($article->keywords ?? '') !== '')
-                                            <div class="mt-1 text-xs text-blue-600">{{ __('admin.articles.keywords') }}: {{ $article->keywords }}</div>
-                                        @endif
-                                        @if(!$isTrashView && (!empty($article->is_hot) || !empty($article->is_featured)))
+                                        @if(!$isTrashView && (!empty($article->is_hot) || !empty($article->is_featured) || $distributionBadge !== null))
                                             <div class="mt-2 flex flex-wrap gap-1.5">
                                                 @if(!empty($article->is_hot))
                                                     <span class="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-xs font-semibold text-rose-700">
-                                                        <span class="h-1.5 w-1.5 rounded-full bg-rose-500"></span>
                                                         {{ __('admin.articles.badge.hot') }}
                                                     </span>
                                                 @endif
                                                 @if(!empty($article->is_featured))
                                                     <span class="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">
-                                                        <span class="h-1.5 w-1.5 rounded-full bg-blue-500"></span>
                                                         {{ __('admin.articles.badge.featured') }}
+                                                    </span>
+                                                @endif
+                                                @if($distributionBadge !== null)
+                                                    <span class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold {{ $distributionBadge['class'] }}">
+                                                        <i data-lucide="send" class="h-3 w-3"></i>
+                                                        {{ $distributionBadge['label'] }}
                                                     </span>
                                                 @endif
                                             </div>
                                         @endif
-                                        @if($distributionBadge !== null)
-                                            <div class="mt-2">
-                                                <span class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold {{ $distributionBadge['class'] }}">
-                                                    <i data-lucide="send" class="h-3 w-3"></i>
-                                                    {{ $distributionBadge['label'] }}
-                                                    <span class="font-mono text-[11px] opacity-80">{{ $distributionBadge['detail'] }}</span>
-                                                </span>
-                                            </div>
-                                        @endif
                                     </td>
-                                    <td class="whitespace-nowrap text-sm text-slate-500">
-                                        @if((string) ($article->task->name ?? '') !== '')
-                                            <div class="text-blue-600">{{ $article->task->name }}</div>
-                                        @endif
-                                        <div>{{ $article->author->name ?? '' }}</div>
-                                        @if((int) ($article->is_ai_generated ?? 0) === 1)
-                                            <span class="mt-1 inline-flex items-center gap-1 rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-xs font-semibold text-violet-700">
-                                                <i data-lucide="zap" class="h-3 w-3"></i>
-                                                {{ __('admin.articles.ai_generated') }}
-                                            </span>
+                                    <td class="w-28 align-top text-sm text-slate-600">
+                                        @if((string) ($article->author->name ?? '') !== '')
+                                            <span class="line-clamp-2 break-words">{{ $article->author->name }}</span>
+                                        @else
+                                            <span class="text-slate-400">—</span>
                                         @endif
                                     </td>
                                     @if(!$isTrashView)
-                                        <td>
-                                            <div class="flex max-w-40 flex-col gap-1">
-                                                <span class="inline-flex w-full items-center justify-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold {{ $statusMeta['class'] }}" title="{{ __('admin.articles.publish_prefix') }}: {{ $statusMeta['label'] }}">
-                                                    <span class="h-1.5 w-1.5 rounded-full bg-current opacity-70"></span>
+                                        <td class="w-36 align-top">
+                                            <div class="flex min-w-[7.5rem] flex-col gap-1">
+                                                <span class="inline-flex w-fit items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold {{ $statusMeta['class'] }}" title="{{ __('admin.articles.publish_prefix') }}: {{ $statusMeta['label'] }}">
                                                     {{ $statusMeta['label'] }}
                                                 </span>
-                                                <span class="inline-flex w-full items-center justify-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold {{ $reviewMeta['class'] }}" title="{{ __('admin.articles.review_prefix') }}: {{ $reviewMeta['label'] }}">
-                                                    <span class="h-1.5 w-1.5 rounded-full bg-current opacity-70"></span>
+                                                <span class="inline-flex w-fit items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold {{ $reviewMeta['class'] }}" title="{{ __('admin.articles.review_prefix') }}: {{ $reviewMeta['label'] }}">
                                                     {{ $reviewMeta['label'] }}
                                                 </span>
                                             </div>
@@ -537,7 +438,7 @@
                                                 <a href="{{ route('admin.articles.edit', ['articleId' => (int) $article->id]) }}" class="admin-icon-btn h-8 w-8" title="{{ __('admin.button.edit') }}" aria-label="{{ __('admin.button.edit') }}">
                                                     <i data-lucide="pencil" class="h-4 w-4"></i>
                                                 </a>
-                                                <a href="{{ route('admin.articles.preview', ['articleId' => (int) $article->id]) }}" target="_blank" rel="noopener" class="admin-icon-btn h-8 w-8 text-blue-600 hover:bg-blue-50 hover:text-blue-700" title="妫板嫯顫? aria-label="妫板嫯顫?>
+                                                <a href="{{ route('admin.articles.preview', ['articleId' => (int) $article->id]) }}" target="_blank" rel="noopener" class="admin-icon-btn h-8 w-8 text-blue-600 hover:bg-blue-50 hover:text-blue-700" title="预览" aria-label="预览">
                                                     <i data-lucide="eye" class="h-4 w-4"></i>
                                                 </a>
                                                 @if((string) $article->review_status === 'pending')
@@ -701,7 +602,9 @@
             const selectAll = document.getElementById('select-all');
             if (selectAll) {
                 selectAll.addEventListener('change', function() {
-                    document.querySelectorAll('.article-checkbox').forEach((node) => node.checked = this.checked;
+                    document.querySelectorAll('.article-checkbox').forEach((node) => {
+                        node.checked = this.checked;
+                    });
                     updateSelectedCount();
                 });
             }

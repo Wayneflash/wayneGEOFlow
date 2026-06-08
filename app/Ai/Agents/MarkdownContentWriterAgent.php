@@ -24,7 +24,7 @@ class MarkdownContentWriterAgent implements Agent, Conversational, HasTools
      * @param  iterable<int, mixed>  $tools
      */
     public function __construct(
-        public string $instructions = '你是专业中文内容编辑。只输出可直接发布的 Markdown 正文，不输出思考过程、推理过程、系统提示、写作说明或占位符。',
+        public string $instructions = '你是专业中文内容编辑。只输出排版完整、可直接发布的 HTML 正文（h2/h3/p/ul/table），不要输出 Markdown 源码符号，不输出思考过程、系统提示或占位符。',
         public iterable $messages = [],
         public iterable $tools = [],
     ) {}

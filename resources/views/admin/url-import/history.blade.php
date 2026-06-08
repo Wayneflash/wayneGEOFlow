@@ -16,28 +16,49 @@
 @endphp
 
 @section('content')
-    <div class="space-y-5">
-        <section class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-                <h1 class="text-2xl font-semibold tracking-tight text-slate-950">采集记录</h1>
-                <p class="mt-1 text-sm text-slate-500">进行中的采集可以打开查看进度，完成后可确认入库。</p>
-            </div>
-            <a href="{{ route('admin.url-import') }}" class="inline-flex h-10 items-center justify-center rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-blue-700">
-                <i data-lucide="plus" class="mr-2 h-4 w-4"></i>
-                新采集
-            </a>
-        </section>
+    <div class="materials-sub-shell">
+        @include('admin.partials.materials-nav', ['active' => 'url-history'])
 
-        <section class="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            @foreach (['total' => '全部', 'completed' => '已完成', 'running' => '进行中', 'failed' => '失败'] as $statKey => $label)
-                <div class="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-                    <div class="text-sm text-slate-500">{{ $label }}</div>
-                    <div class="mt-1 text-2xl font-semibold text-slate-950">{{ (int) $stats[$statKey] }}</div>
+        <div class="admin-panel">
+            <div class="admin-panel-header">
+                <div class="flex min-w-0 items-start gap-3">
+                    <a href="{{ route('admin.materials.index') }}" class="admin-icon-btn shrink-0" aria-label="{{ __('admin.common.back') }}">
+                        <i data-lucide="arrow-left" class="h-4 w-4"></i>
+                    </a>
+                    <div class="min-w-0">
+                        <h1 class="text-xl font-semibold tracking-tight text-slate-950">采集记录</h1>
+                        <p class="mt-1 text-sm text-slate-500">查看进度，完成后可确认入库。</p>
+                    </div>
                 </div>
-            @endforeach
-        </section>
+                <a href="{{ route('admin.url-import') }}" class="admin-btn-teal">
+                    <i data-lucide="plus" class="h-4 w-4"></i>
+                    新采集
+                </a>
+            </div>
+        </div>
 
-        <section class="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+        <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            @foreach (['total' => '全部', 'completed' => '已完成', 'running' => '进行中', 'failed' => '失败'] as $statKey => $label)
+                @include('admin.partials.materials-stat-card', [
+                    'label' => $label,
+                    'value' => (int) $stats[$statKey],
+                    'icon' => match ($statKey) {
+                        'completed' => 'check-circle',
+                        'running' => 'loader-circle',
+                        'failed' => 'circle-x',
+                        default => 'layers',
+                    },
+                    'tone' => match ($statKey) {
+                        'completed' => 'emerald',
+                        'running' => 'blue',
+                        'failed' => 'rose',
+                        default => 'teal',
+                    },
+                ])
+            @endforeach
+        </div>
+
+        <div class="admin-panel overflow-hidden">
             <div class="overflow-x-auto">
                 <table class="min-w-full divide-y divide-slate-100">
                     <thead class="bg-slate-50">
@@ -52,7 +73,7 @@
                         @forelse ($jobs as $job)
                             <tr class="hover:bg-slate-50">
                                 <td class="px-5 py-4 text-sm">
-                                    <a href="{{ route('admin.url-import.show', ['jobId' => $job->id]) }}" class="font-medium text-blue-600 hover:text-blue-800 break-all">{{ $job->url }}</a>
+                                    <a href="{{ route('admin.url-import.show', ['jobId' => $job->id]) }}" class="break-all font-medium text-blue-600 hover:text-blue-800">{{ $job->url }}</a>
                                     @if ($job->source_domain)
                                         <div class="mt-1 text-xs text-slate-400">{{ $job->source_domain }}</div>
                                     @endif
@@ -83,6 +104,6 @@
             <div class="border-t border-slate-100 px-5 py-4">
                 {{ $jobs->links() }}
             </div>
-        </section>
+        </div>
     </div>
 @endsection

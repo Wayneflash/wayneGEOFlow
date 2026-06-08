@@ -230,7 +230,7 @@ class DashboardController extends Controller
     }
 
     /**
-     * 内容生产漏斗：从素材供给到草稿、审核、发布和产生浏览的转化概览。
+     * 内容总览：从素材供给到草稿、审核、发布和产生浏览的阶段概览。
      *
      * @param  array<string, int|float>  $stats
      * @return array{max: int, stages: list<array{key: string, label: string, count: int, tone: string}>}

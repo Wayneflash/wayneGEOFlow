@@ -17,13 +17,13 @@
         'preview' => '生成预览',
     ];
     $stepDescriptions = [
-        'queued' => '正在准备采集任务。',
-        'fetch' => '正在读取网页内容。',
-        'page_json' => '正在保留主要正文。',
-        'knowledge' => '正在整理成可复用素材。',
-        'keywords' => '正在提炼主题词。',
-        'titles' => '正在准备标题建议。',
-        'preview' => '正在生成预览结果。',
+        'queued' => '准备采集任务',
+        'fetch' => '读取网页内容',
+        'page_json' => '提取正文',
+        'knowledge' => '整理素材',
+        'keywords' => '提炼主题词',
+        'titles' => '生成标题建议',
+        'preview' => '生成预览',
     ];
     $stepKeys = array_keys($steps);
     $legacyStepAliases = ['extract' => 'page_json', 'clean' => 'knowledge', 'imported' => 'preview'];
@@ -32,186 +32,223 @@
     $currentStepIndex = $currentStepIndex === false ? 0 : $currentStepIndex;
     $progress = max(0, min(100, (int) $job->progress_percent));
     $sourceUrl = $job->normalized_url ?: $job->url;
+    $libraryBaseName = old(
+        'library_name',
+        (string) data_get($analysis, 'library_name', data_get($page, 'title', $job->source_domain ?: 'URL素材'))
+    );
 @endphp
 
 @section('content')
-    <div
-        class="space-y-5"
-        data-url-import-page
-        data-job-id="{{ $job->id }}"
-        data-status="{{ $job->status }}"
-        data-has-result="{{ $result !== [] ? '1' : '0' }}"
-        data-autostart="{{ $job->status === 'queued' ? '1' : '0' }}"
-        data-run-url="{{ route('admin.url-import.run', ['jobId' => $job->id], false) }}"
-        data-status-url="{{ route('admin.url-import.status', ['jobId' => $job->id], false) }}"
-    >
-        <section class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div class="min-w-0">
-                <div class="flex items-center gap-3">
-                    <a href="{{ route('admin.url-import') }}" class="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-sm hover:border-blue-300 hover:text-blue-600">
-                        <i data-lucide="arrow-left" class="h-4 w-4"></i>
-                    </a>
-                    <h1 class="text-2xl font-semibold tracking-tight text-slate-950">采集进度</h1>
-                </div>
-                <p class="mt-2 break-all pl-12 text-sm text-slate-500">{{ $sourceUrl }}</p>
-            </div>
-            <div class="flex flex-wrap gap-3">
-                <a href="{{ route('admin.url-import') }}" class="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:border-blue-300 hover:text-blue-600">
-                    新采集
-                </a>
-                <a href="{{ route('admin.url-import.history') }}" class="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:border-blue-300 hover:text-blue-600">
-                    采集记录
-                </a>
-            </div>
-        </section>
+    <div class="materials-sub-shell">
+        @include('admin.partials.materials-nav', ['active' => 'url-import'])
 
-        @if (session('message'))
-            <div class="rounded-lg border border-green-200 bg-green-50 px-5 py-4 text-sm font-medium text-green-700">
-                {{ session('message') }}
-            </div>
-        @endif
-
-        @if ($errors->any())
-            <div class="rounded-lg border border-red-200 bg-red-50 px-5 py-4 text-sm font-medium text-red-700">
-                {{ $errors->first() }}
-            </div>
-        @endif
-
-        <div class="hidden rounded-lg border border-red-200 bg-red-50 px-5 py-4 text-sm font-medium text-red-700" data-runtime-error></div>
-        <div class="hidden rounded-lg border border-blue-200 bg-blue-50 px-5 py-4 text-sm font-medium text-blue-800" data-runtime-notice></div>
-
-        <section class="rounded-lg border border-slate-200 bg-white shadow-sm">
-            <div class="grid gap-5 border-b border-slate-100 p-5 lg:grid-cols-[1fr_12rem] lg:items-center">
-                <div class="flex items-start gap-4">
-                    <span class="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
-                        <i data-lucide="{{ $job->status === 'completed' ? 'check' : ($job->status === 'failed' ? 'triangle-alert' : 'loader-circle') }}" class="h-5 w-5 {{ in_array($job->status, ['queued', 'running'], true) ? 'animate-spin' : '' }}" data-status-icon></i>
-                    </span>
-                    <div>
-                        <h2 class="text-lg font-semibold text-slate-950" data-status-title>
-                            @if ($job->status === 'completed')
-                                采集完成
-                            @elseif ($job->status === 'failed')
-                                采集失败
-                            @else
-                                正在采集
-                            @endif
-                        </h2>
-                        <p class="mt-1 text-sm leading-6 text-slate-500" data-status-text>{{ $stepDescriptions[$currentStepKey] ?? '正在处理页面内容。' }}</p>
-                        <div class="mt-3 inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
-                            <i data-lucide="clock-3" class="mr-1.5 h-3.5 w-3.5"></i>
-                            可以离开页面，后台会继续采集。
-                        </div>
-                    </div>
-                </div>
-                <div class="rounded-lg bg-slate-50 px-4 py-3 text-right">
-                    <div class="text-3xl font-semibold tracking-tight text-blue-600" data-progress-number>{{ $progress }}%</div>
-                    <div class="mt-1 text-xs text-slate-500">当前进度</div>
-                </div>
-                <div class="lg:col-span-2">
-                    <div class="h-2 overflow-hidden rounded-full bg-slate-100">
-                        <div class="h-full rounded-full bg-blue-600 transition-all duration-500" data-progress-bar style="width: {{ $progress }}%"></div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="grid gap-px bg-slate-100 md:grid-cols-4 xl:grid-cols-7">
-                @foreach ($steps as $stepKey => $stepLabel)
-                    @php
-                        $stepIndex = array_search($stepKey, $stepKeys, true);
-                        $done = $job->status === 'completed' ? $stepIndex <= $currentStepIndex : $stepIndex < $currentStepIndex;
-                        $current = in_array($job->status, ['queued', 'running'], true) && $stepKey === $currentStepKey;
-                        $failed = $job->status === 'failed' && $stepKey === $currentStepKey;
-                    @endphp
-                    <div class="bg-white p-4" data-step-row="{{ $stepKey }}">
+        <div
+            class="space-y-5"
+            data-url-import-page
+            data-job-id="{{ $job->id }}"
+            data-status="{{ $job->status }}"
+            data-has-result="{{ $result !== [] ? '1' : '0' }}"
+            data-autostart="{{ $job->status === 'queued' ? '1' : '0' }}"
+            data-run-url="{{ route('admin.url-import.run', ['jobId' => $job->id], false) }}"
+            data-status-url="{{ route('admin.url-import.status', ['jobId' => $job->id], false) }}"
+        >
+            <div class="admin-panel">
+                <div class="admin-panel-header">
+                    <div class="min-w-0">
                         <div class="flex items-center gap-3">
-                            <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full {{ $done ? 'bg-green-500 text-white' : ($current ? 'bg-blue-600 text-white' : ($failed ? 'bg-red-500 text-white' : 'bg-slate-100 text-slate-400')) }}" data-step-icon-shell>
-                                <i data-lucide="{{ $done ? 'check' : ($current ? 'loader-circle' : ($failed ? 'x' : 'circle')) }}" class="h-4 w-4 {{ $current ? 'animate-spin' : '' }}"></i>
-                            </span>
-                            <div class="min-w-0">
-                                <div class="text-sm font-semibold text-slate-800">{{ $stepLabel }}</div>
-                                <div class="mt-0.5 truncate text-xs text-slate-500">{{ $stepDescriptions[$stepKey] }}</div>
-                            </div>
+                            <a href="{{ route('admin.url-import') }}" class="admin-icon-btn shrink-0" aria-label="{{ __('admin.common.back') }}">
+                                <i data-lucide="arrow-left" class="h-4 w-4"></i>
+                            </a>
+                            <h1 class="text-xl font-semibold tracking-tight text-slate-950">采集进度</h1>
                         </div>
+                        <p class="mt-2 break-all pl-[3.25rem] text-sm text-slate-500">{{ $sourceUrl }}</p>
                     </div>
-                @endforeach
+                    <div class="flex flex-wrap gap-2">
+                        <a href="{{ route('admin.url-import') }}" class="admin-btn-secondary">
+                            新采集
+                        </a>
+                        <a href="{{ route('admin.url-import.history') }}" class="admin-btn-secondary">
+                            采集记录
+                        </a>
+                    </div>
+                </div>
             </div>
-        </section>
 
-        @if ($job->status === 'failed')
-            <section class="rounded-lg border border-red-200 bg-red-50 p-5">
-                <h3 class="text-base font-semibold text-red-800">采集失败</h3>
-                <p class="mt-2 text-sm leading-6 text-red-700">请确认网址可以正常打开，页面不是登录后才能访问，再重新采集。</p>
-            </section>
-        @endif
-
-        @if ($result !== [])
-            <section class="rounded-lg border border-slate-200 bg-white shadow-sm">
-                <div class="flex flex-col gap-4 border-b border-slate-100 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
-                    <div>
-                        <h3 class="text-lg font-semibold text-slate-950">采集预览</h3>
-                        <p class="mt-1 text-sm text-slate-500">确认内容没问题后再写入素材库。</p>
-                    </div>
-                    @if ($job->status === 'completed' && $importStatus !== 'imported')
-                        <form method="POST" action="{{ route('admin.url-import.commit', ['jobId' => $job->id]) }}">
-                            @csrf
-                            <button type="submit" class="inline-flex h-10 items-center rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-blue-700">
-                                确认入库
-                            </button>
-                        </form>
-                    @elseif ($importStatus === 'imported')
-                        <span class="inline-flex rounded-full bg-green-50 px-3 py-1 text-sm font-medium text-green-700">已入库</span>
-                    @endif
+            @if (session('message'))
+                <div class="admin-panel p-5 text-sm font-medium text-green-700">
+                    {{ session('message') }}
                 </div>
+            @endif
 
-                <div class="space-y-5 p-5">
-                    <div class="grid gap-4 lg:grid-cols-3">
-                        <div class="rounded-lg border border-slate-200 p-4 lg:col-span-2">
-                            <div class="text-sm font-medium text-slate-500">内容摘要</div>
-                            <h4 class="mt-2 text-lg font-semibold text-slate-950">{{ data_get($page, 'title', $job->page_title ?: $job->source_domain) }}</h4>
-                            <p class="mt-2 text-sm leading-6 text-slate-600">{{ data_get($analysis, 'summary') ?: data_get($page, 'summary', '暂无摘要') }}</p>
-                        </div>
-                        <div class="rounded-lg border border-slate-200 p-4">
-                            <div class="text-sm font-medium text-slate-500">来源页面</div>
-                            <p class="mt-2 break-all text-sm text-slate-700">{{ data_get($result, 'source.normalized_url', $job->normalized_url) }}</p>
-                            <p class="mt-2 text-xs text-slate-500">{{ data_get($result, 'source.domain', $job->source_domain) }}</p>
-                        </div>
-                    </div>
+            @if ($errors->any())
+                <div class="admin-panel p-5 text-sm font-medium text-red-700">
+                    {{ $errors->first() }}
+                </div>
+            @endif
 
-                    <div class="rounded-lg border border-slate-200 p-4">
-                        <h4 class="text-base font-semibold text-slate-950">正文素材</h4>
-                        <pre class="mt-3 max-h-[360px] overflow-auto whitespace-pre-wrap rounded-lg bg-slate-50 p-4 text-sm leading-6 text-slate-700">{{ data_get($analysis, 'knowledge_markdown', '暂无正文素材') }}</pre>
-                    </div>
+            <div class="hidden admin-panel p-5 text-sm font-medium text-red-700" data-runtime-error></div>
+            <div class="hidden admin-panel p-5 text-sm font-medium text-blue-800" data-runtime-notice></div>
 
-                    <div class="grid gap-4 lg:grid-cols-2">
-                        <div class="rounded-lg border border-slate-200 p-4">
-                            <h4 class="text-base font-semibold text-slate-950">主题词</h4>
-                            <div class="mt-3 flex flex-wrap gap-2">
-                                @forelse (array_slice($keywords, 0, 40) as $keyword)
-                                    <span class="rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">{{ $keyword }}</span>
-                                @empty
-                                    <span class="text-sm text-slate-500">暂无</span>
-                                @endforelse
+            <section class="url-import-progress-panel">
+                <div class="relative grid gap-5 border-b border-slate-100/80 p-5 lg:grid-cols-[1fr_7rem] lg:items-center">
+                    <div class="flex items-start gap-4">
+                        <span class="url-import-progress-ring {{ $job->status === 'completed' ? 'is-done' : ($job->status === 'failed' ? 'is-failed' : '') }}" data-status-ring>
+                            <i data-lucide="{{ $job->status === 'completed' ? 'check' : ($job->status === 'failed' ? 'triangle-alert' : 'loader-circle') }}" class="relative z-10 h-6 w-6 {{ in_array($job->status, ['queued', 'running'], true) ? 'animate-spin' : '' }}" data-status-icon></i>
+                        </span>
+                        <div>
+                            <p class="url-import-eyebrow">Processing</p>
+                            <h2 class="text-lg font-semibold text-slate-950" data-status-title>
+                                @if ($job->status === 'completed')
+                                    采集完成
+                                @elseif ($job->status === 'failed')
+                                    采集失败
+                                @else
+                                    正在采集
+                                @endif
+                            </h2>
+                            <p class="mt-1 text-sm leading-6 text-slate-500" data-status-text>{{ $stepDescriptions[$currentStepKey] ?? '处理中' }}</p>
+                            <div class="mt-3 inline-flex items-center rounded-full border border-slate-200/80 bg-white/80 px-3 py-1 text-xs font-medium text-slate-500">
+                                <i data-lucide="cpu" class="mr-1.5 h-3.5 w-3.5 text-blue-500"></i>
+                                后台异步 · 可离开页面
                             </div>
                         </div>
-                        <div class="rounded-lg border border-slate-200 p-4">
-                            <h4 class="text-base font-semibold text-slate-950">标题建议</h4>
-                            <ol class="mt-3 list-decimal space-y-2 pl-5 text-sm leading-6 text-slate-700">
-                                @forelse (array_slice($titles, 0, 12) as $title)
-                                    <li>{{ $title }}</li>
-                                @empty
-                                    <li class="list-none text-slate-500">暂无</li>
-                                @endforelse
-                            </ol>
+                    </div>
+                    <div class="text-right">
+                        <div class="url-import-progress-percent" data-progress-number>{{ $progress }}%</div>
+                        <div class="mt-1 text-xs text-slate-500">当前进度</div>
+                    </div>
+                    <div class="lg:col-span-2">
+                        <div class="url-import-progress-track">
+                            <div class="url-import-progress-fill" data-progress-bar style="width: {{ $progress }}%"></div>
                         </div>
                     </div>
                 </div>
+
+                <div class="url-import-pipeline">
+                    @foreach ($steps as $stepKey => $stepLabel)
+                        @php
+                            $stepIndex = array_search($stepKey, $stepKeys, true);
+                            $done = $job->status === 'completed' ? $stepIndex <= $currentStepIndex : $stepIndex < $currentStepIndex;
+                            $current = in_array($job->status, ['queued', 'running'], true) && $stepKey === $currentStepKey;
+                            $failed = $job->status === 'failed' && $stepKey === $currentStepKey;
+                        @endphp
+                        <div
+                            class="url-import-pipeline-step {{ $done ? 'is-done' : '' }} {{ $current ? 'is-current' : '' }} {{ $failed ? 'is-failed' : '' }}"
+                            data-step-row="{{ $stepKey }}"
+                        >
+                            <div class="flex items-center gap-3">
+                                <span
+                                    class="url-import-step-dot {{ $done ? 'is-done' : '' }} {{ $current ? 'is-current' : '' }} {{ $failed ? 'is-failed' : '' }}"
+                                    data-step-icon-shell
+                                >
+                                    <i data-lucide="{{ $done ? 'check' : ($current ? 'loader-circle' : ($failed ? 'x' : 'circle')) }}" class="h-4 w-4 {{ $current ? 'animate-spin' : '' }}"></i>
+                                </span>
+                                <div class="min-w-0">
+                                    <div class="text-sm font-semibold text-slate-800">{{ $stepLabel }}</div>
+                                    <div class="mt-0.5 truncate text-xs text-slate-500">{{ $stepDescriptions[$stepKey] }}</div>
+                                </div>
+                            </div>
+                        </div>
+                    @endforeach
+                </div>
             </section>
-        @else
-            <section class="rounded-lg border border-blue-100 bg-blue-50 p-5" data-processing-panel>
-                <h3 class="text-base font-semibold text-blue-900" data-processing-title>正在处理页面内容</h3>
-                <p class="mt-2 text-sm leading-6 text-blue-800" data-processing-message>{{ $stepDescriptions[$currentStepKey] ?? '请稍候，结果生成后会自动刷新。' }}</p>
-            </section>
-        @endif
+
+            @if ($job->status === 'failed')
+                <section class="admin-panel p-5 text-red-800">
+                    <h3 class="text-base font-semibold">采集失败</h3>
+                    <p class="mt-2 text-sm leading-6 text-red-700">请确认网址可公开访问后重试。</p>
+                </section>
+            @endif
+
+            @if ($result !== [])
+                <section class="admin-panel">
+                    <div class="flex flex-col gap-4 border-b border-slate-100 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+                        <div>
+                            <h3 class="text-lg font-semibold text-slate-950">采集预览</h3>
+                            <p class="mt-1 text-sm text-slate-500">确认后写入素材库。</p>
+                        </div>
+                        @if ($job->status === 'completed' && $importStatus !== 'imported')
+                            <form method="POST" action="{{ route('admin.url-import.commit', ['jobId' => $job->id]) }}" class="flex w-full max-w-xl flex-col gap-3 lg:max-w-md">
+                                @csrf
+                                <div class="admin-field">
+                                    <label for="library_name" class="admin-label">{{ __('admin.url_import.field.project_name') }}</label>
+                                    <input
+                                        id="library_name"
+                                        name="library_name"
+                                        type="text"
+                                        required
+                                        maxlength="120"
+                                        value="{{ $libraryBaseName }}"
+                                        class="admin-input"
+                                    >
+                                    <p class="mt-1.5 text-xs text-slate-500">
+                                        将创建：<span class="font-medium text-slate-700">{{ $libraryBaseName }} 知识库</span>、
+                                        <span class="font-medium text-slate-700">{{ $libraryBaseName }} 关键词库</span>、
+                                        <span class="font-medium text-slate-700">{{ $libraryBaseName }} 标题库</span>
+                                    </p>
+                                </div>
+                                @error('library_name')
+                                    <p class="text-sm text-red-600">{{ $message }}</p>
+                                @enderror
+                                <button type="submit" class="admin-btn-teal self-start">
+                                    确认入库
+                                </button>
+                            </form>
+                        @elseif ($importStatus === 'imported')
+                            <span class="inline-flex rounded-full bg-green-50 px-3 py-1 text-sm font-medium text-green-700">已入库</span>
+                        @endif
+                    </div>
+
+                    <div class="space-y-5 p-5">
+                        <div class="grid gap-4 lg:grid-cols-3">
+                            <div class="rounded-lg border border-slate-200 p-4 lg:col-span-2">
+                                <div class="text-sm font-medium text-slate-500">内容摘要</div>
+                                <h4 class="mt-2 text-lg font-semibold text-slate-950">{{ data_get($page, 'title', $job->page_title ?: $job->source_domain) }}</h4>
+                                <p class="mt-2 text-sm leading-6 text-slate-600">{{ data_get($analysis, 'summary') ?: data_get($page, 'summary', '暂无摘要') }}</p>
+                            </div>
+                            <div class="rounded-lg border border-slate-200 p-4">
+                                <div class="text-sm font-medium text-slate-500">来源页面</div>
+                                <p class="mt-2 break-all text-sm text-slate-700">{{ data_get($result, 'source.normalized_url', $job->normalized_url) }}</p>
+                                <p class="mt-2 text-xs text-slate-500">{{ data_get($result, 'source.domain', $job->source_domain) }}</p>
+                            </div>
+                        </div>
+
+                        <div class="rounded-lg border border-slate-200 p-4">
+                            <h4 class="text-base font-semibold text-slate-950">正文素材</h4>
+                            <pre class="mt-3 max-h-[360px] overflow-auto whitespace-pre-wrap rounded-lg bg-slate-50 p-4 text-sm leading-6 text-slate-700">{{ data_get($analysis, 'knowledge_markdown', '暂无正文素材') }}</pre>
+                        </div>
+
+                        <div class="grid gap-4 lg:grid-cols-2">
+                            <div class="rounded-lg border border-slate-200 p-4">
+                                <h4 class="text-base font-semibold text-slate-950">主题词</h4>
+                                <div class="mt-3 flex flex-wrap gap-2">
+                                    @forelse (array_slice($keywords, 0, 40) as $keyword)
+                                        <span class="rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">{{ $keyword }}</span>
+                                    @empty
+                                        <span class="text-sm text-slate-500">暂无</span>
+                                    @endforelse
+                                </div>
+                            </div>
+                            <div class="rounded-lg border border-slate-200 p-4">
+                                <h4 class="text-base font-semibold text-slate-950">标题建议</h4>
+                                <ol class="mt-3 list-decimal space-y-2 pl-5 text-sm leading-6 text-slate-700">
+                                    @forelse (array_slice($titles, 0, 12) as $title)
+                                        <li>{{ $title }}</li>
+                                    @empty
+                                        <li class="list-none text-slate-500">暂无</li>
+                                    @endforelse
+                                </ol>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            @else
+                <section class="admin-panel p-5" data-processing-panel>
+                    <h3 class="text-base font-semibold text-blue-900" data-processing-title>正在处理页面内容</h3>
+                    <p class="mt-2 text-sm leading-6 text-blue-800" data-processing-message>{{ $stepDescriptions[$currentStepKey] ?? '结果生成后会自动刷新。' }}</p>
+                </section>
+            @endif
+        </div>
     </div>
 
     <script>
@@ -267,7 +304,7 @@
                 runtimeNotice.innerHTML = `
                     <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <span>${escapeHtml(message)}</span>
-                        <button type="button" class="inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700" data-refresh-result>刷新查看</button>
+                        <button type="button" class="admin-btn-teal" data-refresh-result>刷新查看</button>
                     </div>
                 `;
                 runtimeNotice.classList.remove('hidden');
@@ -289,8 +326,8 @@
                 }
                 if (statusText) {
                     statusText.textContent = payload.status === 'completed'
-                        ? '结果已经准备好。'
-                        : (payload.status === 'failed' ? '请确认网址可以正常打开后重试。' : (stepDescriptions[currentStep] || '正在处理页面内容。'));
+                        ? '结果已准备好。'
+                        : (payload.status === 'failed' ? '请确认网址可公开访问后重试。' : (stepDescriptions[currentStep] || '处理中'));
                 }
                 if (statusIcon) {
                     statusIcon.setAttribute('data-lucide', iconForStatus(payload.status));
@@ -306,35 +343,47 @@
                     const shell = row.querySelector('[data-step-icon-shell]');
                     if (!shell) return;
 
+                    row.className = [
+                        'url-import-pipeline-step',
+                        done ? 'is-done' : '',
+                        current ? 'is-current' : '',
+                        failed ? 'is-failed' : '',
+                    ].filter(Boolean).join(' ');
+
                     shell.className = [
-                        'flex h-8 w-8 shrink-0 items-center justify-center rounded-full',
-                        done ? 'bg-green-500 text-white' : '',
-                        current ? 'bg-blue-600 text-white' : '',
-                        failed ? 'bg-red-500 text-white' : '',
-                        (!done && !current && !failed) ? 'bg-slate-100 text-slate-400' : '',
+                        'url-import-step-dot',
+                        done ? 'is-done' : '',
+                        current ? 'is-current' : '',
+                        failed ? 'is-failed' : '',
                     ].filter(Boolean).join(' ');
                     shell.innerHTML = `<i data-lucide="${done ? 'check' : (failed ? 'x' : (current ? 'loader-circle' : 'circle'))}" class="h-4 w-4 ${current ? 'animate-spin' : ''}"></i>`;
                 });
 
+                const statusRing = root.querySelector('[data-status-ring]');
+                if (statusRing) {
+                    statusRing.classList.toggle('is-done', payload.status === 'completed');
+                    statusRing.classList.toggle('is-failed', payload.status === 'failed');
+                }
+
                 if (processingPanel && processingTitle && processingMessage) {
                     if (payload.status === 'failed') {
-                        processingPanel.className = 'rounded-lg border border-red-200 bg-red-50 p-5';
+                        processingPanel.className = 'admin-panel p-5';
                         processingTitle.className = 'text-base font-semibold text-red-800';
                         processingTitle.textContent = '采集失败';
                         processingMessage.className = 'mt-2 text-sm leading-6 text-red-700';
-                        processingMessage.textContent = '请确认网址可以正常打开，页面不是登录后才能访问，再重新采集。';
+                        processingMessage.textContent = '请确认网址可公开访问后重试。';
                     } else if (payload.status === 'completed') {
-                        processingPanel.className = 'rounded-lg border border-green-200 bg-green-50 p-5';
+                        processingPanel.className = 'admin-panel p-5';
                         processingTitle.className = 'text-base font-semibold text-green-800';
                         processingTitle.textContent = '采集完成';
                         processingMessage.className = 'mt-2 text-sm leading-6 text-green-700';
-                        processingMessage.textContent = '结果已经准备好，页面会自动刷新。';
+                        processingMessage.textContent = '结果已准备好，页面会自动刷新。';
                     } else {
-                        processingPanel.className = 'rounded-lg border border-blue-100 bg-blue-50 p-5';
+                        processingPanel.className = 'admin-panel p-5';
                         processingTitle.className = 'text-base font-semibold text-blue-900';
                         processingTitle.textContent = '正在处理页面内容';
                         processingMessage.className = 'mt-2 text-sm leading-6 text-blue-800';
-                        processingMessage.textContent = stepDescriptions[currentStep] || '请稍候，结果生成后会自动刷新。';
+                        processingMessage.textContent = stepDescriptions[currentStep] || '结果生成后会自动刷新。';
                     }
                 }
 

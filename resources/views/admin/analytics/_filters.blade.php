@@ -23,30 +23,24 @@
     $activeDimensionCount += ($filterData['log_source'] ?? 'local') !== 'local' ? 1 : 0;
 @endphp
 
-<section class="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm" data-analytics-filter-shell>
-    <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div class="min-w-0">
-            <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-blue-600">
-                <i data-lucide="sliders-horizontal" class="h-4 w-4"></i>
-                {{ __('admin.analytics.filters.title') }}
-            </div>
-            <div class="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-600">
-                <span class="inline-flex min-h-8 max-w-full items-center gap-2 rounded-lg bg-slate-50 px-3 py-1.5 text-slate-700">
-                    <i data-lucide="calendar-days" class="h-4 w-4 text-slate-400"></i>
-                    <span class="truncate">{{ __('admin.analytics.filters.current_range', ['range' => $rangeText]) }}</span>
+<section class="analytics-card" data-analytics-filter-shell>
+    <div class="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div class="flex min-w-0 flex-wrap items-center gap-2 text-sm text-slate-600">
+            <span class="inline-flex max-w-full items-center gap-1.5 rounded-lg bg-slate-50 px-2.5 py-1.5 text-[13px] text-slate-700">
+                <i data-lucide="calendar-days" class="h-3.5 w-3.5 shrink-0 text-slate-400"></i>
+                <span class="truncate">{{ str_replace('-', '/', $filterData['date_from']) }} – {{ str_replace('-', '/', $filterData['date_to']) }}</span>
+            </span>
+            @if ($activeDimensionCount > 0)
+                <span class="inline-flex items-center rounded-lg bg-blue-50 px-2.5 py-1.5 text-[13px] font-medium text-blue-700">
+                    {{ __('admin.analytics.filters.selected_filters', ['count' => $activeDimensionCount]) }}
                 </span>
-                @if ($activeDimensionCount > 0)
-                    <span class="inline-flex min-h-8 items-center rounded-lg bg-blue-50 px-3 py-1.5 text-blue-700">
-                        {{ __('admin.analytics.filters.selected_filters', ['count' => $activeDimensionCount]) }}
-                    </span>
-                @endif
-            </div>
+            @endif
         </div>
-        <div class="flex flex-wrap items-center gap-2">
-            <a href="{{ route('admin.analytics') }}" class="admin-btn-secondary h-10">{{ __('admin.analytics.filters.reset') }}</a>
-            <button type="button" class="admin-btn-primary h-10 px-4" data-analytics-filter-panel-toggle aria-expanded="false">
-                <i data-lucide="filter" class="h-4 w-4"></i>
-                {{ __('admin.analytics.filters.open_panel') }}
+        <div class="flex shrink-0 items-center gap-2">
+            <a href="{{ route('admin.analytics') }}" class="admin-btn-secondary h-9 px-3 text-[13px]">{{ __('admin.analytics.filters.reset') }}</a>
+            <button type="button" class="admin-btn-primary h-9 px-3 text-[13px]" data-analytics-filter-panel-toggle aria-expanded="false">
+                <i data-lucide="sliders-horizontal" class="h-3.5 w-3.5"></i>
+                筛选
             </button>
         </div>
     </div>

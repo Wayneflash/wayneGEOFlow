@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Prompt;
 use App\Models\Task;
 use App\Support\AdminWeb;
+use App\Support\GeoFlow\ContentPromptPresets;
 use App\Support\GeoFlow\PromptGuide;
 use App\Support\Tenancy\AdminTenant;
 use Illuminate\Http\RedirectResponse;
@@ -32,6 +33,8 @@ class AiPromptController extends Controller
             'activeMenu' => 'ai_config',
             'adminSiteName' => AdminWeb::siteName(),
             'prompts' => $this->loadPrompts(),
+            'presets' => ContentPromptPresets::templates(),
+            'categories' => ContentPromptPresets::categories(),
         ]);
     }
 
@@ -131,6 +134,8 @@ class AiPromptController extends Controller
                     'name' => (string) $prompt->name,
                     'content' => (string) $prompt->content,
                     'description' => PromptGuide::description((string) $prompt->name),
+                    'category' => PromptGuide::categoryLabel((string) $prompt->name),
+                    'category_key' => ContentPromptPresets::categoryForName((string) $prompt->name),
                     'task_count' => (int) ($prompt->tasks_count ?? 0),
                     'created_at' => optional($prompt->created_at)?->format('Y-m-d H:i'),
                 ];

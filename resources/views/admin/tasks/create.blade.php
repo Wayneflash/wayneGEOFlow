@@ -3,446 +3,290 @@
 @php
     $isEdit = (bool) ($isEdit ?? false);
     $taskForm = is_array($taskForm ?? null) ? $taskForm : [];
+    $taskDefaults = is_array($taskDefaults ?? null) ? $taskDefaults : [];
     $hasCategories = (bool) ($hasCategories ?? true);
     $categoryCreateUrl = (string) ($categoryCreateUrl ?? route('admin.categories.create'));
     $t = static fn (string $key, array $replace = []): string => __("admin.$key", $replace);
+    $fieldValue = static function (string $key, string $fallback = '') use ($isEdit, $taskForm, $taskDefaults): string {
+        $old = old($key);
+        if ($old !== null) {
+            return (string) $old;
+        }
+        if ($isEdit) {
+            return (string) ($taskForm[$key] ?? $fallback);
+        }
+
+        return (string) ($taskDefaults[$key] ?? $fallback);
+    };
     $selectedDistributionChannelIds = collect(old('distribution_channel_ids', $taskForm['distribution_channel_ids'] ?? []))
         ->map(static fn ($id): string => (string) $id)
         ->all();
     $publishScope = (string) old('publish_scope', (string) ($taskForm['publish_scope'] ?? 'local_and_distribution'));
     $distributionChannelsDisabled = $publishScope === 'local_only';
+    $categoryMode = (string) old('category_mode', (string) ($taskForm['category_mode'] ?? 'smart'));
+    $imageCountValue = (string) old('image_count', (string) ($taskForm['image_count'] ?? '1'));
 @endphp
 
 @section('content')
-    <div class="px-4 sm:px-0">
-        <div class="flex items-center justify-between mb-6">
-            <div class="flex items-center space-x-4">
-                <a href="{{ route('admin.tasks.index') }}" class="text-gray-400 hover:text-gray-600">
-                    <i data-lucide="arrow-left" class="w-5 h-5"></i>
-                </a>
-                <div>
-                    <h1 class="text-2xl font-bold text-gray-900">{{ $isEdit ? $t('task_edit.page_heading') : $t('task_create.page_heading') }}</h1>
-                    <p class="mt-1 text-sm text-gray-600">{{ $t('task_create.page_subtitle') }}</p>
+    <div class="task-form-shell" data-task-form-shell>
+        <div class="task-create-hero admin-panel overflow-hidden">
+            <div class="task-create-hero-glow" aria-hidden="true"></div>
+            <div class="relative flex flex-col gap-4 px-5 py-5 sm:flex-row sm:items-start sm:justify-between">
+                <div class="flex min-w-0 items-start gap-3">
+                    <a href="{{ route('admin.tasks.index') }}" class="admin-icon-btn shrink-0 bg-white/80" aria-label="{{ __('admin.common.back') }}">
+                        <i data-lucide="arrow-left" class="h-4 w-4"></i>
+                    </a>
+                    <div class="min-w-0">
+                        <p class="text-xs font-semibold uppercase tracking-[0.14em] text-blue-600">{{ $isEdit ? __('admin.nav.tasks') : '内容生产' }}</p>
+                        <h1 class="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{{ $isEdit ? $t('task_edit.page_heading') : $t('task_create.page_heading') }}</h1>
+                        <p class="mt-1 max-w-2xl text-sm leading-6 text-slate-600">
+                            {{ $isEdit ? $t('task_create.page_subtitle') : '填写任务名称并选择标题库即可开始；配图在主表单设置，其余项在右侧弹窗调整。' }}
+                        </p>
+                    </div>
                 </div>
+                @unless ($isEdit)
+                    <a href="{{ route('admin.articles.index') }}" class="admin-btn-secondary shrink-0 self-start bg-white/90 text-xs">
+                        <i data-lucide="file-text" class="h-3.5 w-3.5"></i>
+                        查看文章
+                    </a>
+                @endunless
             </div>
         </div>
 
-        <div data-task-form-shell class="w-full">
-            @if (! $hasCategories)
-                <div class="bg-amber-50 border border-amber-200 rounded-lg p-5">
-                    <h3 class="text-base font-semibold text-amber-900">{{ $t('task_create.error.no_categories_configured') }}</h3>
-                    <p class="mt-2 text-sm text-amber-800">{{ $t('task_create.help.no_categories_configured') }}</p>
-                    <div class="mt-4">
-                        <a href="{{ $categoryCreateUrl }}" class="inline-flex items-center px-4 py-2 border border-amber-300 rounded-md text-sm font-medium text-amber-900 bg-white hover:bg-amber-100">
-                            <i data-lucide="folder-plus" class="w-4 h-4 mr-2"></i>
-                            {{ $t('categories.add') }}
-                        </a>
-                    </div>
-                </div>
-            @else
-            <div class="mb-6 rounded-2xl border border-slate-200 bg-white px-6 py-5 shadow-sm">
-                <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                    <div>
-                        <div class="inline-flex items-center rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 ring-1 ring-blue-100">
-                            任务会按标题库逐篇生成文章
-                        </div>
-                        <p class="mt-3 max-w-3xl text-sm leading-6 text-slate-600">
-                            必填项只需要先选标题库、正文提示词和 AI 模型；图片、分发、分类、循环发布属于增强项，可以后续在任务设置里调整。
-                        </p>
-                    </div>
-                    <a href="{{ route('admin.articles.index') }}" class="inline-flex w-fit items-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
-                        <i data-lucide="file-text" class="mr-2 h-4 w-4"></i>
-                        查看已生成文章
-                    </a>
-                </div>
+        @if (! $hasCategories)
+            <div class="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4">
+                <h3 class="text-sm font-semibold text-amber-900">{{ $t('task_create.error.no_categories_configured') }}</h3>
+                <p class="mt-1 text-sm text-amber-800">{{ $t('task_create.help.no_categories_configured') }}</p>
+                <a href="{{ $categoryCreateUrl }}" class="admin-btn-secondary mt-4">
+                    <i data-lucide="folder-plus" class="h-4 w-4"></i>
+                    {{ $t('categories.add') }}
+                </a>
             </div>
-            <div class="sticky top-16 z-30 mb-6 rounded-xl border border-slate-200 bg-white/92 p-2 shadow-sm backdrop-blur" data-task-tabs role="tablist" aria-label="{{ $isEdit ? $t('task_edit.page_heading') : $t('task_create.page_heading') }}">
-                <div class="flex gap-2 overflow-x-auto">
-                    <button type="button" class="admin-tab-button is-active" data-task-tab="foundation" role="tab" aria-selected="true">
-                        <i data-lucide="settings-2" class="h-4 w-4"></i>
-                        基础与模型
-                    </button>
-                    <button type="button" class="admin-tab-button" data-task-tab="delivery" role="tab" aria-selected="false">
-                        <i data-lucide="send" class="h-4 w-4"></i>
-                        图片与分发
-                    </button>
-                    <button type="button" class="admin-tab-button" data-task-tab="taxonomy" role="tab" aria-selected="false">
-                        <i data-lucide="folder-tree" class="h-4 w-4"></i>
-                        分类与 SEO
-                    </button>
-                    <button type="button" class="admin-tab-button" data-task-tab="advanced" role="tab" aria-selected="false">
-                        <i data-lucide="sliders-horizontal" class="h-4 w-4"></i>
-                        高级限制
-                    </button>
-                </div>
-            </div>
-            <form method="POST" action="{{ $isEdit ? route('admin.tasks.update', ['taskId' => $taskId]) : route('admin.tasks.store') }}" class="grid grid-cols-1 gap-6 xl:grid-cols-12">
+        @else
+            <form id="geoflow-task-form" method="POST" action="{{ $isEdit ? route('admin.tasks.update', ['taskId' => $taskId]) : route('admin.tasks.store') }}" class="xl:grid xl:grid-cols-12 gap-5">
                 @csrf
                 @if ($isEdit)
                     @method('PUT')
+                @else
+                    <input type="hidden" name="status" value="active">
+                    <input type="hidden" name="model_selection_mode" value="fixed">
                 @endif
 
-                <div class="admin-form-section xl:col-span-12" data-task-section="foundation">
-                    <div class="px-6 py-4 border-b border-gray-200">
-                        <h3 class="text-lg font-medium text-gray-900">{{ $t('task_create.section.basic_title') }}</h3>
-                        <p class="mt-1 text-sm text-gray-600">{{ $t('task_create.section.basic_desc') }}</p>
-                    </div>
-                    <div class="px-6 py-4">
-                        <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
-                            <div class="lg:col-span-3">
-                                <label for="task_name" class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.task_name') }} *</label>
-                                <input type="text" name="task_name" id="task_name" required value="{{ old('task_name', (string) ($taskForm['task_name'] ?? '')) }}"
-                                       class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                                       placeholder="{{ $t('task_create.placeholder.task_name') }}">
+                <div class="space-y-5 xl:col-span-8">
+                    <section class="admin-panel overflow-hidden" data-task-section="foundation">
+                        <div class="border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white px-5 py-4">
+                            <div class="flex items-center gap-2">
+                                <span class="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-600 text-white shadow-sm shadow-blue-600/25">
+                                    <i data-lucide="sparkles" class="h-4 w-4"></i>
+                                </span>
+                                <div>
+                                    <h2 class="text-base font-semibold text-slate-950">开始生成</h2>
+                                    <p class="text-xs text-slate-500">仅需 4 项即可创建，其余已有合理默认</p>
+                                </div>
                             </div>
-                            <div class="lg:col-span-2">
-                                <label for="title_library_id" class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.title_library') }} *</label>
-                                <select name="title_library_id" id="title_library_id" required class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                        </div>
+                        <div class="space-y-5 px-5 py-5">
+                            <div class="admin-field">
+                                <label for="task_name" class="admin-label">{{ $t('task_create.field.task_name') }} <span class="text-red-500">*</span></label>
+                                <input type="text" name="task_name" id="task_name" required value="{{ $fieldValue('task_name') }}" class="admin-input text-base" placeholder="{{ $t('task_create.placeholder.task_name') }}">
+                            </div>
+
+                            <div class="admin-field">
+                                <label for="title_library_id" class="admin-label">{{ $t('task_create.field.title_library') }} <span class="text-red-500">*</span></label>
+                                <select name="title_library_id" id="title_library_id" required class="admin-input">
                                     <option value="">{{ $t('task_create.option.select_title_library') }}</option>
                                     @foreach ($formOptions['titleLibraries'] as $library)
-                                        <option value="{{ $library['id'] }}" @selected((string) old('title_library_id', (string) ($taskForm['title_library_id'] ?? '')) === (string) $library['id'])>
+                                        <option value="{{ $library['id'] }}" @selected($fieldValue('title_library_id') === (string) $library['id'])>
                                             {{ $t('task_create.option.library_count', ['name' => $library['name'], 'count' => $library['count']]) }}
                                         </option>
                                     @endforeach
                                 </select>
                             </div>
-                            <div>
-                                <label for="status" class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.task_status') }}</label>
-                                <select name="status" id="status" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
-                                    <option value="active" @selected(old('status', (string) ($taskForm['status'] ?? 'active')) === 'active')>{{ $t('task_create.option.status_active') }}</option>
-                                    <option value="paused" @selected(old('status', (string) ($taskForm['status'] ?? 'active')) === 'paused')>{{ $t('task_create.option.status_paused') }}</option>
-                                </select>
-                            </div>
-                        </div>
-                    </div>
-                </div>
 
-                <div class="admin-form-section xl:col-span-12" data-task-section="foundation">
-                    <div class="px-6 py-4 border-b border-gray-200">
-                        <h3 class="text-lg font-medium text-gray-900">{{ $t('task_create.section.content_title') }}</h3>
-                        <p class="mt-1 text-sm text-gray-600">{{ $t('task_create.section.content_desc') }}</p>
-                    </div>
-                    <div class="px-6 py-4">
-                        <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
-                            <div>
-                                <label for="prompt_id" class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.content_prompt') }} *</label>
-                                <select name="prompt_id" id="prompt_id" required class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
-                                    <option value="">{{ $t('task_create.option.select_prompt') }}</option>
-                                    @foreach ($formOptions['prompts'] as $prompt)
-                                        <option value="{{ $prompt['id'] }}" data-description="{{ $prompt['description'] }}" @selected((string) old('prompt_id', (string) ($taskForm['prompt_id'] ?? '')) === (string) $prompt['id'])>{{ $prompt['name'] }}</option>
-                                    @endforeach
-                                </select>
-                                <p id="prompt-help" class="mt-2 min-h-[1.25rem] text-sm text-blue-700"></p>
+                            <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
+                                <div class="admin-field lg:col-span-2">
+                                    <label for="prompt_id" class="admin-label">{{ $t('task_create.field.content_prompt') }} <span class="text-red-500">*</span></label>
+                                    <select name="prompt_id" id="prompt_id" required class="admin-input">
+                                        <option value="">{{ $t('task_create.option.select_prompt') }}</option>
+                                        @foreach ($formOptions['prompts'] as $prompt)
+                                            <option value="{{ $prompt['id'] }}" data-description="{{ $prompt['description'] }}" @selected($fieldValue('prompt_id') === (string) $prompt['id'])>{{ $prompt['name'] }}</option>
+                                        @endforeach
+                                    </select>
+                                    <p id="prompt-help" class="mt-1.5 min-h-[1.25rem] text-xs text-blue-700"></p>
+                                </div>
+                                <div class="admin-field">
+                                    <label for="ai_model_id" class="admin-label">{{ $t('task_create.field.ai_model') }} <span class="text-red-500">*</span></label>
+                                    <select name="ai_model_id" id="ai_model_id" required class="admin-input">
+                                        <option value="">{{ $t('task_create.option.select_ai_model') }}</option>
+                                        @foreach ($formOptions['aiModels'] as $model)
+                                            <option value="{{ $model['id'] }}" @selected($fieldValue('ai_model_id') === (string) $model['id'])>{{ $model['name'] }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
                             </div>
-                            <div>
-                                <label for="ai_model_id" class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.ai_model') }} *</label>
-                                <select name="ai_model_id" id="ai_model_id" required class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
-                                    <option value="">{{ $t('task_create.option.select_ai_model') }}</option>
-                                    @foreach ($formOptions['aiModels'] as $model)
-                                        <option value="{{ $model['id'] }}" @selected((string) old('ai_model_id', (string) ($taskForm['ai_model_id'] ?? '')) === (string) $model['id'])>{{ $model['name'] }}</option>
-                                    @endforeach
-                                </select>
-                            </div>
-                            <div>
-                                <label for="model_selection_mode" class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.model_selection_mode') }}</label>
-                                <select name="model_selection_mode" id="model_selection_mode" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
-                                    <option value="fixed" @selected(old('model_selection_mode', (string) ($taskForm['model_selection_mode'] ?? 'fixed')) === 'fixed')>{{ $t('task_create.option.model_selection_fixed') }}</option>
-                                    <option value="smart_failover" @selected(old('model_selection_mode', (string) ($taskForm['model_selection_mode'] ?? 'fixed')) === 'smart_failover')>{{ $t('task_create.option.model_selection_smart_failover') }}</option>
-                                </select>
-                                <p class="mt-1 text-sm text-gray-500">{!! $t('task_create.help.model_selection_mode') !!}</p>
-                            </div>
-                            <div>
-                                <label for="knowledge_base_id" class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.knowledge_base') }}</label>
-                                <select name="knowledge_base_id" id="knowledge_base_id" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+
+                            <div class="admin-field">
+                                <label for="knowledge_base_id" class="admin-label">{{ $t('task_create.field.knowledge_base') }}</label>
+                                <select name="knowledge_base_id" id="knowledge_base_id" class="admin-input">
                                     <option value="">{{ $t('task_create.option.no_knowledge_base') }}</option>
                                     @foreach ($formOptions['knowledgeBases'] as $kb)
-                                        <option value="{{ $kb['id'] }}" @selected((string) old('knowledge_base_id', (string) ($taskForm['knowledge_base_id'] ?? '')) === (string) $kb['id'])>{{ $kb['name'] }}</option>
+                                        <option value="{{ $kb['id'] }}" @selected($fieldValue('knowledge_base_id') === (string) $kb['id'])>{{ $kb['name'] }}</option>
                                     @endforeach
                                 </select>
+                                <p class="mt-1.5 text-xs text-slate-500">{{ $t('task_create.help.knowledge_base') }}</p>
                             </div>
-                            <div>
-                                <label for="author_id" class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.author') }}</label>
-                                <select name="author_id" id="author_id" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
-                                    <option value="0">{{ $t('task_create.option.random_author') }}</option>
-                                    @foreach ($formOptions['authors'] as $author)
-                                        <option value="{{ $author['id'] }}" @selected((string) old('author_id', (string) ($taskForm['author_id'] ?? '0')) === (string) $author['id'])>{{ $author['name'] }}</option>
-                                    @endforeach
-                                </select>
-                            </div>
-                        </div>
-                    </div>
-                </div>
 
-                <div class="admin-form-section xl:col-span-6" data-task-section="delivery">
-                    <div class="px-6 py-4 border-b border-gray-200">
-                        <h3 class="text-lg font-medium text-gray-900">{{ $t('task_create.section.image_title') }}</h3>
-                        <p class="mt-1 text-sm text-gray-600">{{ $t('task_create.section.image_desc') }}</p>
-                    </div>
-                    <div class="px-6 py-4">
-                        @php($imageCountValue = (string) old('image_count', (string) ($taskForm['image_count'] ?? '1')))
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div>
-                                <label for="image_library_id" class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.image_library') }}</label>
-                                <select name="image_library_id" id="image_library_id" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
-                                    <option value="">{{ $t('task_create.option.no_images') }}</option>
-                                    @foreach ($formOptions['imageLibraries'] as $library)
-                                        <option value="{{ $library['id'] }}" @selected((string) old('image_library_id', (string) ($taskForm['image_library_id'] ?? '')) === (string) $library['id'])>
-                                            {{ $t('task_create.option.image_library_count', ['name' => $library['name'], 'count' => $library['count']]) }}
-                                        </option>
-                                    @endforeach
-                                </select>
-                            </div>
-                            <div>
-                                <label for="image_count" class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.image_count') }}</label>
-                                <select name="image_count" id="image_count" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
-                                    <option value="0" @selected($imageCountValue === '0')>{{ $t('task_create.option.no_image_count') }}</option>
-                                    <option value="1" @selected($imageCountValue === '1')>{{ $t('task_create.option.image_count', ['count' => 1]) }}</option>
-                                    <option value="2" @selected($imageCountValue === '2')>{{ $t('task_create.option.image_count', ['count' => 2]) }}</option>
-                                    <option value="3" @selected($imageCountValue === '3')>{{ $t('task_create.option.image_count', ['count' => 3]) }}</option>
-                                    <option value="4" @selected($imageCountValue === '4')>{{ $t('task_create.option.image_count', ['count' => 4]) }}</option>
-                                    <option value="5" @selected($imageCountValue === '5')>{{ $t('task_create.option.image_count', ['count' => 5]) }}</option>
-                                </select>
-                                <p class="mt-1 text-sm text-gray-500">{{ $t('task_create.help.image_count') }}</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="admin-form-section xl:col-span-6" data-task-section="delivery">
-                    <div class="px-6 py-4 border-b border-gray-200">
-                        <h3 class="text-lg font-medium text-gray-900">{{ $t('task_create.section.publish_title') }}</h3>
-                        <p class="mt-1 text-sm text-gray-600">{{ $t('task_create.section.publish_desc') }}</p>
-                    </div>
-                    <div class="px-6 py-4">
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div>
-                                <div class="flex items-center">
-                                    <input type="checkbox" name="need_review" id="need_review" @checked((bool) old('need_review', (bool) ($taskForm['need_review'] ?? false)))
-                                           class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
-                                    <label for="need_review" class="ml-2 block text-sm text-gray-900">{{ $t('task_create.field.need_review') }}</label>
-                                </div>
-                                <p class="mt-1 text-sm text-gray-500">{{ $t('task_create.help.need_review') }}</p>
-                            </div>
-                            <div>
-                                <label for="publish_interval" class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.publish_interval') }}</label>
-                                <input type="number" name="publish_interval" id="publish_interval" min="1" value="{{ old('publish_interval', (string) ($taskForm['publish_interval'] ?? 60)) }}"
-                                       class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
-                                <p class="mt-1 text-sm text-gray-500">{{ $t('task_create.help.publish_interval') }}</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="admin-form-section xl:col-span-12" data-task-section="delivery">
-                    <div class="px-6 py-4 border-b border-gray-200">
-                        <h3 class="text-lg font-medium text-gray-900">{{ $t('task_create.section.distribution_title') }}</h3>
-                        <p class="mt-1 text-sm text-gray-600">{{ $t('task_create.section.distribution_desc') }}</p>
-                    </div>
-                    <div class="px-6 py-4">
-                        <fieldset class="mb-5">
-                            <legend class="text-sm font-medium text-gray-900">{{ $t('task_create.distribution.scope_title') }}</legend>
-                            <p class="mt-1 text-sm text-gray-500">{{ $t('task_create.distribution.scope_help') }}</p>
-                            <div class="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
-                                <label class="flex cursor-pointer gap-3 rounded-md border border-gray-200 px-4 py-3 text-sm hover:border-blue-300 hover:bg-blue-50">
-                                    <input type="radio" name="publish_scope" value="local_and_distribution" @checked($publishScope === 'local_and_distribution') data-publish-scope-option class="mt-1 h-4 w-4 border-gray-300 text-blue-600 focus:ring-blue-500">
-                                    <span>
-                                        <span class="block font-medium text-gray-900">{{ $t('task_create.distribution.scope_local_and_distribution') }}</span>
-                                        <span class="block text-gray-500">{{ $t('task_create.distribution.scope_local_and_distribution_desc') }}</span>
+                            <div class="rounded-xl border border-teal-100 bg-teal-50/40 px-4 py-4" data-task-section="delivery">
+                                <div class="mb-3 flex items-center gap-2">
+                                    <span class="flex h-7 w-7 items-center justify-center rounded-lg bg-teal-600 text-white">
+                                        <i data-lucide="image" class="h-3.5 w-3.5"></i>
                                     </span>
-                                </label>
-                                <label class="flex cursor-pointer gap-3 rounded-md border border-gray-200 px-4 py-3 text-sm hover:border-blue-300 hover:bg-blue-50">
-                                    <input type="radio" name="publish_scope" value="distribution_only" @checked($publishScope === 'distribution_only') data-publish-scope-option class="mt-1 h-4 w-4 border-gray-300 text-blue-600 focus:ring-blue-500">
-                                    <span>
-                                        <span class="block font-medium text-gray-900">{{ $t('task_create.distribution.scope_distribution_only') }}</span>
-                                        <span class="block text-gray-500">{{ $t('task_create.distribution.scope_distribution_only_desc') }}</span>
-                                    </span>
-                                </label>
-                                <label class="flex cursor-pointer gap-3 rounded-md border border-gray-200 px-4 py-3 text-sm hover:border-blue-300 hover:bg-blue-50">
-                                    <input type="radio" name="publish_scope" value="local_only" @checked($publishScope === 'local_only') data-publish-scope-option class="mt-1 h-4 w-4 border-gray-300 text-blue-600 focus:ring-blue-500">
-                                    <span>
-                                        <span class="block font-medium text-gray-900">{{ $t('task_create.distribution.scope_local_only') }}</span>
-                                        <span class="block text-gray-500">{{ $t('task_create.distribution.scope_local_only_desc') }}</span>
-                                    </span>
-                                </label>
-                            </div>
-                        </fieldset>
-
-                        @if (empty($formOptions['distributionChannels']))
-                            <div class="rounded-md bg-gray-50 px-4 py-3 text-sm text-gray-600">
-                                {{ $t('task_create.distribution.empty') }}
-                                <a href="{{ route('admin.distribution.create') }}" class="font-medium text-blue-600 hover:text-blue-700">{{ $t('task_create.distribution.create_link') }}</a>
-                            </div>
-                        @else
-                            <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                                @foreach ($formOptions['distributionChannels'] as $channel)
-                                    @php($channelId = (string) $channel['id'])
-                                    <label data-distribution-channel-card @class([
-                                        'flex items-start gap-3 rounded-md border border-gray-200 px-4 py-3 text-sm transition',
-                                        'cursor-pointer hover:border-blue-300 hover:bg-blue-50' => ! $distributionChannelsDisabled,
-                                        'cursor-not-allowed bg-gray-50 opacity-50' => $distributionChannelsDisabled,
-                                    ])>
-                                        <input type="checkbox" name="distribution_channel_ids[]" value="{{ $channelId }}" @checked(! $distributionChannelsDisabled && in_array($channelId, $selectedDistributionChannelIds, true)) @disabled($distributionChannelsDisabled) data-distribution-channel-input
-                                               class="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50">
-                                        <span class="min-w-0">
-                                            <span class="block font-medium text-gray-900">{{ $channel['name'] }}</span>
-                                            <span class="block break-all text-gray-500">{{ $channel['domain'] }}</span>
-                                        </span>
-                                    </label>
-                                @endforeach
-                            </div>
-                            <p class="mt-3 text-sm text-gray-500">{{ $t('task_create.distribution.help') }}</p>
-                        @endif
-                    </div>
-                </div>
-
-                <div class="admin-form-section xl:col-span-12" data-task-section="taxonomy">
-                    <div class="px-6 py-4 border-b border-gray-200">
-                        <h3 class="text-lg font-medium text-gray-900">{{ $t('task_create.section.seo_title') }}</h3>
-                        <p class="mt-1 text-sm text-gray-600">{{ $t('task_create.section.seo_desc') }}</p>
-                    </div>
-                    <div class="px-6 py-4">
-                        <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
-                            <div>
-                                <div class="flex items-center">
-                                    <input type="checkbox" name="auto_keywords" id="auto_keywords" @checked(old('auto_keywords', (string) ($taskForm['auto_keywords'] ?? '1')) === '1')
-                                           class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
-                                    <label for="auto_keywords" class="ml-2 block text-sm text-gray-900">{{ $t('task_create.field.auto_keywords') }}</label>
-                                </div>
-                                <p class="mt-1 text-sm text-gray-500">{{ $t('task_create.help.auto_keywords') }}</p>
-                            </div>
-                            <div>
-                                <div class="flex items-center">
-                                    <input type="checkbox" name="auto_description" id="auto_description" @checked(old('auto_description', (string) ($taskForm['auto_description'] ?? '1')) === '1')
-                                           class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
-                                    <label for="auto_description" class="ml-2 block text-sm text-gray-900">{{ $t('task_create.field.auto_description') }}</label>
-                                </div>
-                                <p class="mt-1 text-sm text-gray-500">{{ $t('task_create.help.auto_description') }}</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="admin-form-section xl:col-span-8" data-task-section="taxonomy">
-                    <div class="px-6 py-4 border-b border-gray-200">
-                        <h3 class="text-lg font-medium text-gray-900">{{ $t('task_create.section.category_title') }}</h3>
-                        <p class="mt-1 text-sm text-gray-600">{{ $t('task_create.section.category_desc') }}</p>
-                    </div>
-                    @php($categoryMode = (string) old('category_mode', (string) ($taskForm['category_mode'] ?? 'smart')))
-                    <div class="px-6 py-4 space-y-4">
-                        <div>
-                            <label class="text-base font-medium text-gray-900">{{ $t('task_create.field.category_mode') }}</label>
-                            <p class="text-sm leading-5 text-gray-500">{{ $t('task_create.help.category_mode') }}</p>
-                            <fieldset class="mt-4">
-                                <legend class="sr-only">{{ $t('task_create.field.category_mode') }}</legend>
-                                <div class="grid grid-cols-1 gap-3 lg:grid-cols-3">
-                                    <div class="flex items-start rounded-md border border-gray-200 px-4 py-3">
-                                        <div class="flex items-center h-5">
-                                            <input id="category_smart" name="category_mode" type="radio" value="smart" @checked($categoryMode === 'smart')
-                                                   class="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300">
-                                        </div>
-                                        <div class="ml-3 text-sm">
-                                            <label for="category_smart" class="font-medium text-gray-700">{{ $t('task_create.option.category_smart') }}</label>
-                                            <p class="text-gray-500">{{ $t('task_create.help.category_smart') }}</p>
-                                        </div>
-                                    </div>
-                                    <div class="flex items-start rounded-md border border-gray-200 px-4 py-3">
-                                        <div class="flex items-center h-5">
-                                            <input id="category_fixed" name="category_mode" type="radio" value="fixed" @checked($categoryMode === 'fixed')
-                                                   class="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300">
-                                        </div>
-                                        <div class="ml-3 text-sm">
-                                            <label for="category_fixed" class="font-medium text-gray-700">{{ $t('task_create.option.category_fixed') }}</label>
-                                            <p class="text-gray-500">{{ $t('task_create.help.category_fixed') }}</p>
-                                        </div>
-                                    </div>
-                                    <div class="flex items-start rounded-md border border-gray-200 px-4 py-3">
-                                        <div class="flex items-center h-5">
-                                            <input id="category_random" name="category_mode" type="radio" value="random" @checked($categoryMode === 'random')
-                                                   class="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300">
-                                        </div>
-                                        <div class="ml-3 text-sm">
-                                            <label for="category_random" class="font-medium text-gray-700">{{ $t('task_create.option.category_random') }}</label>
-                                            <p class="text-gray-500">{{ $t('task_create.help.category_random') }}</p>
-                                        </div>
+                                    <div>
+                                        <h3 class="text-sm font-semibold text-slate-900">配图</h3>
+                                        <p class="text-xs text-slate-500">{{ $t('task_create.help.image_count') }}</p>
                                     </div>
                                 </div>
-                            </fieldset>
-                        </div>
-                        <div id="fixed-category-section" class="hidden">
-                            <label for="fixed_category_id" class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.fixed_category') }}</label>
-                            <select name="fixed_category_id" id="fixed_category_id" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
-                                <option value="">{{ $t('task_create.option.select_category') }}</option>
-                                @foreach ($formOptions['categories'] as $category)
-                                    <option value="{{ $category['id'] }}" @selected((string) old('fixed_category_id', (string) ($taskForm['fixed_category_id'] ?? '')) === (string) $category['id'])>{{ $category['name'] }}</option>
-                                @endforeach
-                            </select>
-                            <p class="mt-2 text-sm text-gray-500">{{ $t('task_create.help.fixed_category') }}</p>
-                        </div>
-                        <div class="bg-gray-50 rounded-lg p-4">
-                            <h4 class="text-sm font-medium text-gray-900 mb-2">{{ $t('task_create.preview.categories_title') }}</h4>
-                            <div class="flex flex-wrap gap-2">
-                                @foreach ($formOptions['categories'] as $category)
-                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">{{ $category['name'] }}</span>
-                                @endforeach
-                            </div>
-                            <p class="mt-2 text-xs text-gray-500">{{ $t('task_create.preview.categories_count', ['count' => count($formOptions['categories'])]) }}</p>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="admin-form-section xl:col-span-4" data-task-section="advanced">
-                    <div class="px-6 py-4 border-b border-gray-200">
-                        <h3 class="text-lg font-medium text-gray-900">{{ $t('task_create.section.advanced_title') }}</h3>
-                        <p class="mt-1 text-sm text-gray-600">{{ $t('task_create.section.advanced_desc') }}</p>
-                    </div>
-                    <div class="px-6 py-4">
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div>
-                                <label for="article_limit" class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.article_limit') }}</label>
-                                <input type="number" name="article_limit" id="article_limit" min="1" value="{{ old('article_limit', (string) ($taskForm['article_limit'] ?? 10)) }}"
-                                       class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
-                                <p class="mt-1 text-sm text-gray-500">{{ $t('task_create.help.article_limit') }}</p>
-                            </div>
-                            <div>
-                                <label for="draft_limit" class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.draft_limit') }}</label>
-                                <input type="number" name="draft_limit" id="draft_limit" min="1" value="{{ old('draft_limit', (string) ($taskForm['draft_limit'] ?? 10)) }}"
-                                       class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
-                                <p class="mt-1 text-sm text-gray-500">{{ $t('task_create.help.draft_limit') }}</p>
-                            </div>
-                            <div>
-                                <div class="flex items-center">
-                                    <input type="checkbox" name="is_loop" id="is_loop" @checked(old('is_loop', (string) ($taskForm['is_loop'] ?? '1')) === '1')
-                                           class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
-                                    <label for="is_loop" class="ml-2 block text-sm text-gray-900">{{ $t('task_create.field.loop_mode') }}</label>
+                                <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                    <div class="admin-field">
+                                        <label for="image_library_id" class="admin-label">{{ $t('task_create.field.image_library') }}</label>
+                                        <select name="image_library_id" id="image_library_id" class="admin-input">
+                                            <option value="">{{ $t('task_create.option.no_images') }}</option>
+                                            @foreach ($formOptions['imageLibraries'] as $library)
+                                                <option value="{{ $library['id'] }}" @selected($fieldValue('image_library_id') === (string) $library['id'])>
+                                                    {{ $t('task_create.option.image_library_count', ['name' => $library['name'], 'count' => $library['count']]) }}
+                                                </option>
+                                            @endforeach
+                                        </select>
+                                    </div>
+                                    <div class="admin-field">
+                                        <label for="image_count" class="admin-label">{{ $t('task_create.field.image_count') }}</label>
+                                        <select name="image_count" id="image_count" class="admin-input">
+                                            <option value="0" @selected($imageCountValue === '0')>{{ $t('task_create.option.no_image_count') }}</option>
+                                            @foreach ([1, 2, 3, 4, 5] as $count)
+                                                <option value="{{ $count }}" @selected($imageCountValue === (string) $count)>{{ $t('task_create.option.image_count', ['count' => $count]) }}</option>
+                                            @endforeach
+                                        </select>
+                                    </div>
                                 </div>
-                                <p class="mt-1 text-sm text-gray-500">{{ $t('task_create.help.loop_mode') }}</p>
+                                <p class="mt-2 text-xs text-teal-800/80">图库图片可打标签，生成时会按正文小节智能匹配并插入对应位置。</p>
                             </div>
+
+                            @if ($isEdit)
+                                <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                    <div class="admin-field">
+                                        <label for="status" class="admin-label">{{ $t('task_create.field.task_status') }}</label>
+                                        <select name="status" id="status" class="admin-input">
+                                            <option value="active" @selected($fieldValue('status', 'active') === 'active')>{{ $t('task_create.option.status_active') }}</option>
+                                            <option value="paused" @selected($fieldValue('status', 'active') === 'paused')>{{ $t('task_create.option.status_paused') }}</option>
+                                        </select>
+                                    </div>
+                                    <div class="admin-field">
+                                        <label for="model_selection_mode" class="admin-label">{{ $t('task_create.field.model_selection_mode') }}</label>
+                                        <select name="model_selection_mode" id="model_selection_mode" class="admin-input">
+                                            <option value="fixed" @selected($fieldValue('model_selection_mode', 'fixed') === 'fixed')>{{ $t('task_create.option.model_selection_fixed') }}</option>
+                                            <option value="smart_failover" @selected($fieldValue('model_selection_mode', 'fixed') === 'smart_failover')>{{ $t('task_create.option.model_selection_smart_failover') }}</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            @endif
                         </div>
+                    </section>
+
+                    <div class="admin-sticky-actions flex justify-end gap-3">
+                        <a href="{{ route('admin.tasks.index') }}" class="admin-btn-secondary">{{ __('admin.button.cancel') }}</a>
+                        <button type="submit" data-loading-label="{{ __('admin.message.processing') }}" class="admin-btn-primary px-5">
+                            <i data-lucide="{{ $isEdit ? 'save' : 'rocket' }}" class="h-4 w-4"></i>
+                            {{ $isEdit ? __('admin.task_edit.button.save_changes') : __('admin.button.create_task') }}
+                        </button>
                     </div>
                 </div>
 
-                <div class="admin-sticky-actions flex justify-end gap-3 xl:col-span-12">
-                    <a href="{{ route('admin.tasks.index') }}" class="admin-btn-secondary">
-                        {{ __('admin.button.cancel') }}
-                    </a>
-                    <button type="submit" data-loading-label="{{ __('admin.message.processing') }}" class="admin-btn-primary">
-                        <i data-lucide="{{ $isEdit ? 'save' : 'plus' }}" class="h-4 w-4"></i>
-                        {{ $isEdit ? __('admin.task_edit.button.save_changes') : __('admin.button.create_task') }}
-                    </button>
-                </div>
+                <aside class="space-y-4 xl:col-span-4">
+                    <div class="admin-panel p-4">
+                        <h3 class="text-sm font-semibold text-slate-900">更多设置</h3>
+                        <p class="mt-1 text-xs text-slate-500">点击打开弹窗，按需调整；不设置也能直接创建</p>
+                        <div class="mt-4 space-y-2">
+                            <button type="button" class="task-setting-tile" data-task-open-modal="author">
+                                <span class="task-setting-tile-icon bg-violet-50 text-violet-600"><i data-lucide="user-round" class="h-4 w-4"></i></span>
+                                <span class="min-w-0 flex-1 text-left">
+                                    <span class="block text-sm font-medium text-slate-900">作者</span>
+                                    <span class="block truncate text-xs text-slate-500" data-task-summary="author">系统随机</span>
+                                </span>
+                                <i data-lucide="chevron-right" class="h-4 w-4 shrink-0 text-slate-300"></i>
+                            </button>
+                            <button type="button" class="task-setting-tile" data-task-open-modal="publish">
+                                <span class="task-setting-tile-icon bg-blue-50 text-blue-600"><i data-lucide="send" class="h-4 w-4"></i></span>
+                                <span class="min-w-0 flex-1 text-left">
+                                    <span class="block text-sm font-medium text-slate-900">发布与分发</span>
+                                    <span class="block truncate text-xs text-slate-500" data-task-summary="publish">本地 + 分发 · 60 分钟</span>
+                                </span>
+                                <i data-lucide="chevron-right" class="h-4 w-4 shrink-0 text-slate-300"></i>
+                            </button>
+                            <button type="button" class="task-setting-tile" data-task-open-modal="taxonomy">
+                                <span class="task-setting-tile-icon bg-amber-50 text-amber-600"><i data-lucide="tags" class="h-4 w-4"></i></span>
+                                <span class="min-w-0 flex-1 text-left">
+                                    <span class="block text-sm font-medium text-slate-900">分类与 SEO</span>
+                                    <span class="block truncate text-xs text-slate-500" data-task-summary="taxonomy">智能分类 · 自动 SEO</span>
+                                </span>
+                                <i data-lucide="chevron-right" class="h-4 w-4 shrink-0 text-slate-300"></i>
+                            </button>
+                            <button type="button" class="task-setting-tile" data-task-open-modal="advanced">
+                                <span class="task-setting-tile-icon bg-slate-100 text-slate-600"><i data-lucide="sliders-horizontal" class="h-4 w-4"></i></span>
+                                <span class="min-w-0 flex-1 text-left">
+                                    <span class="block text-sm font-medium text-slate-900">高级限制</span>
+                                    <span class="block truncate text-xs text-slate-500" data-task-summary="advanced">上限 10 篇 · 循环生成</span>
+                                </span>
+                                <i data-lucide="chevron-right" class="h-4 w-4 shrink-0 text-slate-300"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="task-create-tip rounded-2xl border border-blue-100 bg-blue-50/70 px-4 py-4">
+                        <div class="flex gap-3">
+                            <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-blue-600 shadow-sm">
+                                <i data-lucide="lightbulb" class="h-4 w-4"></i>
+                            </span>
+                            <div class="min-w-0 text-sm leading-6 text-blue-900">
+                                <p class="font-medium">配图怎么跟内容一致？</p>
+                                <p class="mt-1 text-xs text-blue-800/90">上传图片时填写标签（如「CRM、企业服务」），生成时会按文章标题/关键词匹配标签选图并插入正文。无匹配时随机选图。</p>
+                                <a href="{{ route('admin.image-libraries.index') }}" class="mt-2 inline-flex items-center gap-1 text-xs font-medium text-blue-700 hover:text-blue-900">
+                                    去图库添加标签
+                                    <i data-lucide="arrow-up-right" class="h-3 w-3"></i>
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </aside>
             </form>
-            @endif
-        </div>
+        @endif
     </div>
+@endsection
+
+@section('modals')
+    @if ($hasCategories)
+        @include('admin.tasks.partials.setting-modals', [
+            'taskForm' => $taskForm,
+            'formOptions' => $formOptions,
+            'fieldValue' => $fieldValue,
+            'selectedDistributionChannelIds' => $selectedDistributionChannelIds,
+            'publishScope' => $publishScope,
+            'distributionChannelsDisabled' => $distributionChannelsDisabled,
+            'categoryMode' => $categoryMode,
+            't' => $t,
+        ])
+    @endif
 @endsection
 
 @push('scripts')
     <script>
         document.addEventListener('DOMContentLoaded', function () {
-            const isEditMode = @json($isEdit);
-
             if (typeof lucide !== 'undefined') {
                 lucide.createIcons();
+            }
+
+            const form = document.querySelector('[data-task-form-shell] form');
+            if (!form) {
+                return;
             }
 
             const imageLibrarySelect = document.getElementById('image_library_id');
@@ -458,15 +302,123 @@
             const distributionChannelInputs = document.querySelectorAll('[data-distribution-channel-input]');
             const promptSelect = document.getElementById('prompt_id');
             const promptHelp = document.getElementById('prompt-help');
-            const form = document.querySelector('form');
-            const tabButtons = document.querySelectorAll('[data-task-tab]');
-            const sections = document.querySelectorAll('[data-task-section]');
+            const authorSelect = document.getElementById('author_id');
+            const autoKeywordsCheckbox = document.getElementById('auto_keywords');
+            const autoDescriptionCheckbox = document.getElementById('auto_description');
+            const isLoopCheckbox = document.getElementById('is_loop');
 
-            if (!form) {
-                return;
+            const modalMap = {
+                author: document.getElementById('task-modal-author'),
+                publish: document.getElementById('task-modal-publish'),
+                taxonomy: document.getElementById('task-modal-taxonomy'),
+                advanced: document.getElementById('task-modal-advanced'),
+            };
+            let modalBackdropGuardUntil = 0;
+
+            function setModalOpen(open) {
+                document.documentElement.classList.toggle('admin-modal-open', open);
+            }
+
+            function openTaskModal(key) {
+                const modal = modalMap[key];
+                if (!modal) {
+                    return;
+                }
+                modal.classList.remove('hidden');
+                setModalOpen(true);
+                modalBackdropGuardUntil = Date.now() + 320;
+                window.lucide?.createIcons?.();
+            }
+
+            function closeTaskModal(key) {
+                const modal = modalMap[key];
+                if (!modal) {
+                    return;
+                }
+                modal.classList.add('hidden');
+                const anyOpen = Object.values(modalMap).some((node) => node && !node.classList.contains('hidden'));
+                if (!anyOpen) {
+                    setModalOpen(false);
+                }
+            }
+
+            document.querySelectorAll('[data-task-open-modal]').forEach((button) => {
+                button.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    openTaskModal(button.dataset.taskOpenModal);
+                });
+            });
+
+            document.querySelectorAll('[data-task-close-modal]').forEach((button) => {
+                button.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    closeTaskModal(button.dataset.taskCloseModal);
+                });
+            });
+
+            document.querySelectorAll('[data-task-modal-backdrop]').forEach((backdrop) => {
+                backdrop.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    if (Date.now() < modalBackdropGuardUntil) {
+                        return;
+                    }
+                    closeTaskModal(backdrop.dataset.taskModalBackdrop);
+                });
+            });
+
+            function selectedOptionLabel(select) {
+                if (!select || select.selectedIndex < 0) {
+                    return '';
+                }
+                return (select.options[select.selectedIndex]?.textContent || '').trim();
+            }
+
+            function syncSummaries() {
+                const authorSummary = document.querySelector('[data-task-summary="author"]');
+                if (authorSummary) {
+                    authorSummary.textContent = selectedOptionLabel(authorSelect) || '系统随机';
+                }
+
+                const publishSummary = document.querySelector('[data-task-summary="publish"]');
+                if (publishSummary) {
+                    const scope = document.querySelector('input[name="publish_scope"]:checked');
+                    const scopeLabels = {
+                        local_and_distribution: '本地 + 分发',
+                        distribution_only: '仅分发',
+                        local_only: '仅本地',
+                    };
+                    const scopeText = scopeLabels[scope?.value] || '本地 + 分发';
+                    const review = needReviewCheckbox?.checked ? ' · 需审核' : '';
+                    const interval = publishIntervalInput?.value || '60';
+                    publishSummary.textContent = `${scopeText}${review} · ${interval} 分钟`;
+                }
+
+                const taxonomySummary = document.querySelector('[data-task-summary="taxonomy"]');
+                if (taxonomySummary) {
+                    const mode = document.querySelector('input[name="category_mode"]:checked');
+                    const modeLabels = { smart: '智能分类', fixed: '固定分类', random: '随机分类' };
+                    const seoParts = [];
+                    if (autoKeywordsCheckbox?.checked) seoParts.push('关键词');
+                    if (autoDescriptionCheckbox?.checked) seoParts.push('描述');
+                    const seoText = seoParts.length ? `自动 ${seoParts.join('/')}` : '手动 SEO';
+                    taxonomySummary.textContent = `${modeLabels[mode?.value] || '智能分类'} · ${seoText}`;
+                }
+
+                const advancedSummary = document.querySelector('[data-task-summary="advanced"]');
+                if (advancedSummary) {
+                    const limit = articleLimitInput?.value || '10';
+                    const loop = isLoopCheckbox?.checked ? '循环生成' : '单次生成';
+                    advancedSummary.textContent = `上限 ${limit} 篇 · ${loop}`;
+                }
             }
 
             function toggleImageCountByLibrary() {
+                if (!imageLibrarySelect || !imageCountSelect) {
+                    return;
+                }
                 if (!imageLibrarySelect.value) {
                     imageCountSelect.value = '0';
                     imageCountSelect.disabled = true;
@@ -476,9 +428,13 @@
                         imageCountSelect.value = '1';
                     }
                 }
+                syncSummaries();
             }
 
             function togglePublishInterval() {
+                if (!needReviewCheckbox || !publishIntervalInput) {
+                    return;
+                }
                 if (needReviewCheckbox.checked) {
                     publishIntervalInput.disabled = true;
                     publishIntervalInput.parentElement.style.opacity = '0.5';
@@ -486,11 +442,12 @@
                     publishIntervalInput.disabled = false;
                     publishIntervalInput.parentElement.style.opacity = '1';
                 }
+                syncSummaries();
             }
 
             function handleCategoryModeChange() {
                 const selected = document.querySelector('input[name="category_mode"]:checked');
-                if (!selected) {
+                if (!selected || !fixedCategorySection || !fixedCategorySelect) {
                     return;
                 }
 
@@ -502,14 +459,19 @@
                     fixedCategorySelect.required = false;
                     fixedCategorySelect.value = '';
                 }
+                syncSummaries();
             }
 
             function syncDraftLimitMax() {
+                if (!articleLimitInput || !draftLimitInput) {
+                    return;
+                }
                 const articleLimit = Math.max(1, Number(articleLimitInput.value || 1));
                 draftLimitInput.max = String(articleLimit);
                 if (Number(draftLimitInput.value || 1) > articleLimit) {
                     draftLimitInput.value = String(articleLimit);
                 }
+                syncSummaries();
             }
 
             function syncDistributionChannelsByScope() {
@@ -528,46 +490,32 @@
                     }
 
                     card.classList.toggle('cursor-pointer', !isLocalOnly);
-                    card.classList.toggle('hover:border-blue-300', !isLocalOnly);
-                    card.classList.toggle('hover:bg-blue-50', !isLocalOnly);
+                    card.classList.toggle('hover:border-blue-200', !isLocalOnly);
+                    card.classList.toggle('hover:bg-blue-50/40', !isLocalOnly);
                     card.classList.toggle('cursor-not-allowed', isLocalOnly);
-                    card.classList.toggle('bg-gray-50', isLocalOnly);
+                    card.classList.toggle('bg-slate-50', isLocalOnly);
                     card.classList.toggle('opacity-50', isLocalOnly);
                 });
+                syncSummaries();
             }
 
             function syncPromptHelp() {
                 if (!promptSelect || !promptHelp) {
                     return;
                 }
-
                 const option = promptSelect.options[promptSelect.selectedIndex];
                 promptHelp.textContent = option ? (option.dataset.description || '') : '';
             }
 
-            function showTaskTab(tabName, scrollToTabs = false) {
-                const targetTab = tabName || 'foundation';
-
-                tabButtons.forEach((button) => {
-                    const isActive = button.dataset.taskTab === targetTab;
-                    button.classList.toggle('is-active', isActive);
-                    button.setAttribute('aria-selected', isActive ? 'true' : 'false');
-                });
-
-                sections.forEach((section) => {
-                    section.classList.toggle('hidden', section.dataset.taskSection !== targetTab);
-                });
-
-                window.sessionStorage?.setItem('geoflow.taskFormTab', targetTab);
-                if (scrollToTabs) {
-                    document.querySelector('[data-task-tabs]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                }
-            }
-
             function revealElementSection(element) {
-                const section = element?.closest?.('[data-task-section]');
-                if (section?.dataset?.taskSection) {
-                    showTaskTab(section.dataset.taskSection, true);
+                const modalKey = element?.closest?.('[data-task-modal-key]')?.dataset?.taskModalKey;
+                if (modalKey) {
+                    openTaskModal(modalKey);
+                }
+
+                if (element && typeof element.focus === 'function') {
+                    element.focus({ preventScroll: true });
+                    element.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 }
             }
 
@@ -575,28 +523,26 @@
                 if (window.AdminUtils && typeof window.AdminUtils.showToast === 'function') {
                     window.AdminUtils.showToast(message, 'error');
                 }
-
-                if (element && typeof element.focus === 'function') {
-                    revealElementSection(element);
-                    element.focus({ preventScroll: true });
-                    element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                }
+                revealElementSection(element);
             }
 
-            tabButtons.forEach((button) => {
-                button.addEventListener('click', () => showTaskTab(button.dataset.taskTab || 'foundation'));
-            });
-            imageLibrarySelect.addEventListener('change', toggleImageCountByLibrary);
-            needReviewCheckbox.addEventListener('change', togglePublishInterval);
-            articleLimitInput.addEventListener('input', syncDraftLimitMax);
+            imageLibrarySelect?.addEventListener('change', toggleImageCountByLibrary);
+            needReviewCheckbox?.addEventListener('change', togglePublishInterval);
+            articleLimitInput?.addEventListener('input', syncDraftLimitMax);
+            authorSelect?.addEventListener('change', syncSummaries);
+            autoKeywordsCheckbox?.addEventListener('change', syncSummaries);
+            autoDescriptionCheckbox?.addEventListener('change', syncSummaries);
+            isLoopCheckbox?.addEventListener('change', syncSummaries);
             categoryModeRadios.forEach((radio) => radio.addEventListener('change', handleCategoryModeChange));
             publishScopeRadios.forEach((radio) => radio.addEventListener('change', syncDistributionChannelsByScope));
             promptSelect?.addEventListener('change', syncPromptHelp);
+            publishIntervalInput?.addEventListener('input', syncSummaries);
+            imageCountSelect?.addEventListener('change', syncSummaries);
 
             form.addEventListener('submit', function (event) {
                 const taskNameInput = document.getElementById('task_name');
                 const titleLibrarySelect = document.getElementById('title_library_id');
-                const promptSelect = document.getElementById('prompt_id');
+                const promptSelectEl = document.getElementById('prompt_id');
                 const aiModelSelect = document.getElementById('ai_model_id');
 
                 if (!taskNameInput.value.trim()) {
@@ -611,9 +557,9 @@
                     return;
                 }
 
-                if (!promptSelect.value) {
+                if (!promptSelectEl.value) {
                     event.preventDefault();
-                    showFormError(@json(__('admin.task_create.error.prompt_required')), promptSelect);
+                    showFormError(@json(__('admin.task_create.error.prompt_required')), promptSelectEl);
                     return;
                 }
 
@@ -623,25 +569,24 @@
                     return;
                 }
 
-                if (Number(draftLimitInput.value || 0) > Number(articleLimitInput.value || 0)) {
+                if (draftLimitInput && articleLimitInput && Number(draftLimitInput.value || 0) > Number(articleLimitInput.value || 0)) {
                     event.preventDefault();
                     showFormError(@json(__('admin.task_create.error.draft_limit_too_large')), draftLimitInput);
                     return;
                 }
-
             });
 
             form.addEventListener('invalid', function (event) {
                 revealElementSection(event.target);
             }, true);
 
-            showTaskTab(window.sessionStorage?.getItem('geoflow.taskFormTab') || 'foundation');
             toggleImageCountByLibrary();
             togglePublishInterval();
             handleCategoryModeChange();
             syncDraftLimitMax();
             syncDistributionChannelsByScope();
             syncPromptHelp();
+            syncSummaries();
         });
     </script>
 @endpush

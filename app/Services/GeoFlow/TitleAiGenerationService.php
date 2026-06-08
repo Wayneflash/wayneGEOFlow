@@ -34,6 +34,55 @@ class TitleAiGenerationService
      *   fallback_reason:?string
      * }
      */
+    /**
+     * 基于单个种子关键词蒸馏用户提问式标题（GEO 场景）。
+     *
+     * @return array{
+     *   titles:list<string>,
+     *   fallback_used:bool,
+     *   fallback_reason:?string
+     * }
+     */
+    public function distillUserQueryTitles(
+        AiModel $aiModel,
+        string $seedKeyword,
+        int $count,
+        string $brandContext = '',
+        string $customPrompt = '',
+        string $style = 'question'
+    ): array {
+        try {
+            $content = $this->requestDistilledTitlesFromModel(
+                $aiModel,
+                $seedKeyword,
+                $count,
+                $brandContext,
+                $customPrompt,
+                $style
+            );
+            $titles = $this->parseGeneratedTitles($content);
+            if ($titles !== []) {
+                return [
+                    'titles' => $titles,
+                    'fallback_used' => false,
+                    'fallback_reason' => null,
+                ];
+            }
+        } catch (Throwable $exception) {
+            return [
+                'titles' => app(TitleDistillationService::class)->expandUserQueryTitles($seedKeyword, $brandContext, $count),
+                'fallback_used' => true,
+                'fallback_reason' => $exception->getMessage(),
+            ];
+        }
+
+        return [
+            'titles' => app(TitleDistillationService::class)->expandUserQueryTitles($seedKeyword, $brandContext, $count),
+            'fallback_used' => true,
+            'fallback_reason' => 'empty_result',
+        ];
+    }
+
     public function generateTitles(
         AiModel $aiModel,
         array $keywords,
@@ -64,6 +113,78 @@ class TitleAiGenerationService
             'fallback_used' => true,
             'fallback_reason' => 'empty_result',
         ];
+    }
+
+    private function requestDistilledTitlesFromModel(
+        AiModel $aiModel,
+        string $seedKeyword,
+        int $count,
+        string $brandContext,
+        string $customPrompt,
+        string $style = 'question'
+    ): string {
+        $providerUrl = OpenAiRuntimeProvider::resolveChatBaseUrl((string) ($aiModel->api_url ?? ''));
+        if ($providerUrl === '') {
+            throw new \RuntimeException('ai_url_missing');
+        }
+
+        $apiKey = $this->decryptApiKey((string) ($aiModel->getRawOriginal('api_key') ?? ''));
+        if ($apiKey === '') {
+            throw new \RuntimeException('ai_key_missing');
+        }
+
+        $driver = OpenAiRuntimeProvider::resolveChatDriver($providerUrl, (string) ($aiModel->model_id ?? ''));
+        $providerName = OpenAiRuntimeProvider::registerProvider('title_distill', $driver, $providerUrl, $apiKey);
+
+        $keyword = trim($seedKeyword);
+        $brand = trim($brandContext);
+        $styleMap = [
+            'professional' => '专业严谨',
+            'attractive' => '吸引眼球',
+            'seo' => 'SEO 优化',
+            'creative' => '创意新颖',
+            'question' => '疑问式、像用户提问',
+        ];
+        $styleDescription = $styleMap[$style] ?? $styleMap['question'];
+        $systemPrompt = '你是深联云 GEO 的标题生成器。你的任务是把业务关键词改写成适合软文选题和 AI 答案引擎引用的中文标题。只输出 JSON，不要解释。';
+        $userPrompt = "请围绕种子关键词「{$keyword}」生成 {$count} 个{$styleDescription}的中文标题。\n\n";
+        if ($brand !== '') {
+            $userPrompt .= "可结合这些品牌/公司名自然融入部分标题：{$brand}\n\n";
+        }
+        if ($customPrompt !== '') {
+            $userPrompt .= "额外要求：{$customPrompt}\n\n";
+        }
+        $userPrompt .= "要求：\n"
+            ."1. 返回 JSON：{\"titles\":[\"标题1\",\"标题2\"]}\n"
+            ."2. 每个标题必须像一个真实用户向 AI 提问或搜索，而不是广告口号\n"
+            ."3. 覆盖这些意图：是什么、怎么选、哪家好、多少钱、怎么做、注意事项、适不适合、和XX区别、常见问题\n"
+            ."4. 句式要多样，禁止机械替换形容词（如靠谱/专业/好用轮换堆砌）\n"
+            ."5. 每个标题 12-28 字，自然包含关键词或同义表达\n"
+            ."6. 不虚构排名、价格、年份，不用“第一/最好/最强”等绝对化词\n"
+            ."7. 不要 Markdown 代码块、编号或解释文字";
+
+        try {
+            $response = agent($systemPrompt)->prompt(
+                $userPrompt,
+                [],
+                $providerName,
+                (string) ($aiModel->model_id ?? '')
+            );
+        } catch (Throwable $exception) {
+            throw new \RuntimeException(OpenAiRuntimeProvider::normalizeApiException($exception, $providerUrl), 0, $exception);
+        }
+
+        $rawContent = (string) ($response->text ?? '');
+        $content = OpenAiRuntimeProvider::normalizeGeneratedText($rawContent);
+        if ($content === '') {
+            if (OpenAiRuntimeProvider::looksLikeSseCompletionPayload($rawContent)) {
+                throw new \RuntimeException('ai_empty_stream_content');
+            }
+
+            throw new \RuntimeException('ai_empty_content');
+        }
+
+        return $content;
     }
 
     /**

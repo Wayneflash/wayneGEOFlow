@@ -23,7 +23,7 @@ final class AdminWeb
 
     public static function siteName(): string
     {
-        return 'GEO Console';
+        return '内容运营控制台';
     }
 
     public static function basePath(): string

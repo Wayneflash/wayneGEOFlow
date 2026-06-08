@@ -5,20 +5,20 @@
     }
 @endphp
 
-<div class="flex h-56 items-end gap-3 overflow-x-auto border-b border-gray-200 pb-2">
+<div class="flex h-40 items-end gap-2 border-b border-slate-100 pb-2">
     @foreach ($series as $row)
         @php
             $segments = [
                 ['key' => 'completed', 'class' => 'bg-emerald-500'],
-                ['key' => 'failed', 'class' => 'bg-red-500'],
+                ['key' => 'failed', 'class' => 'bg-rose-500'],
                 ['key' => 'running', 'class' => 'bg-blue-500'],
-                ['key' => 'pending', 'class' => 'bg-amber-500'],
+                ['key' => 'pending', 'class' => 'bg-amber-400'],
             ];
             $total = max(0, (int) $row['completed'] + (int) $row['failed'] + (int) $row['running'] + (int) $row['pending']);
-            $height = max(8, (int) round(($total / $max) * 190));
+            $height = max(6, (int) round(($total / $max) * 140));
         @endphp
-        <div class="flex min-w-[3.25rem] flex-col items-center" title="{{ substr((string) $row['date'], 5) }}">
-            <div class="flex w-8 flex-col justify-end overflow-hidden rounded-t bg-gray-100" style="height: {{ $height }}px">
+        <div class="flex min-w-0 flex-1 flex-col items-center" title="{{ substr((string) $row['date'], 5) }}">
+            <div class="flex w-full max-w-8 flex-col justify-end overflow-hidden rounded-t bg-slate-100" style="height: {{ $height }}px">
                 @foreach ($segments as $segment)
                     @php
                         $value = (int) $row[$segment['key']];

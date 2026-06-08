@@ -64,6 +64,13 @@ class KnowledgeBaseController extends Controller
     {
         $knowledgeBase = KnowledgeBase::query()->visibleToAdmin()->whereKey($knowledgeBaseId)->firstOrFail();
 
+        $content = trim((string) ($knowledgeBase->content ?? ''));
+        if ($content !== '' && $this->countChunks($knowledgeBaseId) === 0) {
+            $this->chunkSyncService->sync($knowledgeBaseId, $content);
+        }
+
+        $chunkDuplicateIndex = $this->buildChunkDuplicateIndex($knowledgeBaseId);
+
         return view('admin.knowledge-bases.detail', [
             'pageTitle' => __('admin.knowledge_detail.page_title'),
             'activeMenu' => 'materials',
@@ -71,7 +78,11 @@ class KnowledgeBaseController extends Controller
             'knowledgeBase' => $knowledgeBase,
             'relatedTasks' => $this->loadRelatedTasks($knowledgeBaseId),
             'chunkStats' => $this->loadChunkStats($knowledgeBaseId),
-            'chunkPreviewRows' => $this->loadChunkPreviewRows($knowledgeBaseId),
+            'chunkDuplicateSummary' => [
+                'duplicate_group_count' => (int) ($chunkDuplicateIndex['duplicate_group_count'] ?? 0),
+                'duplicate_chunk_count' => (int) ($chunkDuplicateIndex['duplicate_chunk_count'] ?? 0),
+            ],
+            'chunkPreviewRows' => $this->loadChunkPreviewRows($knowledgeBaseId, $chunkDuplicateIndex),
         ]);
     }
 
@@ -106,10 +117,13 @@ class KnowledgeBaseController extends Controller
             $this->chunkSyncService->sync((int) $knowledgeBase->id, $content);
         });
 
-        return redirect()->route('admin.knowledge-bases.detail', ['knowledgeBaseId' => $knowledgeBaseId])->with(
-            'message',
-            __('admin.knowledge_bases.message.update_success', ['count' => $this->countChunks($knowledgeBaseId)])
-        );
+        return redirect()
+            ->route('admin.knowledge-bases.detail', ['knowledgeBaseId' => $knowledgeBaseId])
+            ->withFragment('chunk-preview')
+            ->with(
+                'message',
+                __('admin.knowledge_bases.message.update_success', ['count' => $this->countChunks($knowledgeBaseId)])
+            );
     }
 
     /**
@@ -426,40 +440,81 @@ class KnowledgeBaseController extends Controller
     }
 
     /**
+     * @return array{by_fingerprint: array<string, array<int, int>>, duplicate_group_count: int, duplicate_chunk_count: int}
+     */
+    private function buildChunkDuplicateIndex(int $knowledgeBaseId): array
+    {
+        $byFingerprint = [];
+
+        KnowledgeChunk::query()
+            ->select(['chunk_index', 'content'])
+            ->where('knowledge_base_id', $knowledgeBaseId)
+            ->orderBy('chunk_index')
+            ->each(static function (KnowledgeChunk $chunk) use (&$byFingerprint): void {
+                $fingerprint = self::chunkContentFingerprint((string) $chunk->content);
+                $byFingerprint[$fingerprint][] = (int) $chunk->chunk_index;
+            });
+
+        $duplicateGroups = array_filter(
+            $byFingerprint,
+            static fn (array $indices): bool => count($indices) > 1
+        );
+
+        return [
+            'by_fingerprint' => $byFingerprint,
+            'duplicate_group_count' => count($duplicateGroups),
+            'duplicate_chunk_count' => array_sum(array_map('count', $duplicateGroups)),
+        ];
+    }
+
+    private static function chunkContentFingerprint(string $content): string
+    {
+        $normalized = mb_strtolower(trim($content), 'UTF-8');
+        $normalized = preg_replace('/\s+/u', ' ', $normalized) ?? $normalized;
+
+        return hash('sha256', $normalized);
+    }
+
+    /**
+     * @param  array{by_fingerprint: array<string, array<int, int>>, duplicate_group_count: int, duplicate_chunk_count: int}  $chunkDuplicateIndex
      * @return Collection<int, array<string, mixed>>
      */
-    private function loadChunkPreviewRows(int $knowledgeBaseId): Collection
+    private function loadChunkPreviewRows(int $knowledgeBaseId, array $chunkDuplicateIndex): Collection
     {
+        $byFingerprint = $chunkDuplicateIndex['by_fingerprint'] ?? [];
+
         return KnowledgeChunk::query()
             ->select([
                 'chunk_index',
                 'content',
                 'chunk_title',
                 'section_path',
-                'chunk_strategy',
-                'token_count',
                 'embedding_model_id',
                 'embedding_dimensions',
-                'embedding_provider',
             ])
             ->where('knowledge_base_id', $knowledgeBaseId)
             ->orderBy('chunk_index')
-            ->limit(20)
+            ->limit(100)
             ->get()
-            ->map(static function (KnowledgeChunk $chunk): array {
-                $preview = mb_substr(trim((string) $chunk->content), 0, 160, 'UTF-8');
+            ->map(static function (KnowledgeChunk $chunk) use ($byFingerprint): array {
+                $content = trim((string) $chunk->content);
+                $chunkIndex = (int) $chunk->chunk_index;
+                $fingerprint = self::chunkContentFingerprint($content);
+                $groupIndices = $byFingerprint[$fingerprint] ?? [$chunkIndex];
+                $duplicateSiblings = array_values(array_filter(
+                    $groupIndices,
+                    static fn (int $index): bool => $index !== $chunkIndex
+                ));
 
                 return [
-                    'chunk_index' => (int) $chunk->chunk_index,
-                    'content_length' => mb_strlen((string) $chunk->content, 'UTF-8'),
-                    'token_count' => (int) ($chunk->token_count ?? 0),
-                    'embedding_model_id' => $chunk->embedding_model_id !== null ? (int) $chunk->embedding_model_id : null,
-                    'embedding_dimensions' => (int) ($chunk->embedding_dimensions ?? 0),
-                    'embedding_provider' => (string) ($chunk->embedding_provider ?? ''),
+                    'chunk_index' => $chunkIndex,
+                    'content' => $content,
+                    'is_duplicate' => count($duplicateSiblings) > 0,
+                    'duplicate_group_size' => count($groupIndices),
+                    'duplicate_siblings' => $duplicateSiblings,
+                    'is_vectorized' => $chunk->embedding_model_id !== null && (int) $chunk->embedding_dimensions > 0,
                     'chunk_title' => (string) ($chunk->chunk_title ?? ''),
                     'section_path' => (string) ($chunk->section_path ?? ''),
-                    'chunk_strategy' => (string) ($chunk->chunk_strategy ?? 'structured_rule'),
-                    'content_preview' => $preview,
                 ];
             });
     }

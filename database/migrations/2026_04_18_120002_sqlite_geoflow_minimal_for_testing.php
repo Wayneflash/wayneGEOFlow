@@ -154,6 +154,10 @@ return new class extends Migration
             $table->integer('width')->default(0);
             $table->integer('height')->default(0);
             $table->text('tags')->nullable();
+            $table->text('description')->nullable();
+            $table->string('ai_tag_status', 20)->default('pending');
+            $table->timestamp('ai_tagged_at')->nullable();
+            $table->string('ai_tag_error', 500)->nullable();
             $table->integer('used_count')->default(0);
             $table->integer('usage_count')->default(0);
             $table->timestamp('created_at')->nullable();

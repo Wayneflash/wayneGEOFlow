@@ -21,3 +21,8 @@ Schedule::command('horizon:snapshot')->everyFiveMinutes();
  * GeoFlow 任务调度：每分钟扫描一次可执行任务并入队（对齐 bak cron 逻辑）。
  */
 Schedule::command('geoflow:schedule-tasks')->everyMinute();
+
+/**
+ * 图片 AI 识图兜底：每分钟扫描 pending 记录并投递队列，配合 queue worker 后台慢慢跑。
+ */
+Schedule::command('geoflow:process-pending-image-tags')->everyMinute();

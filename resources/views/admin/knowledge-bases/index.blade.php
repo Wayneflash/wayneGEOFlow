@@ -6,80 +6,27 @@
         $knowledgeBases = is_array($knowledgeBases ?? null) ? $knowledgeBases : [];
         $hasDefaultEmbeddingModel = (bool) ($hasDefaultEmbeddingModel ?? false);
     @endphp
-    <div class="space-y-6">
-        <div class="admin-panel">
-            <div class="admin-panel-header">
-                <div class="flex items-start gap-3">
-                    <a href="{{ route('admin.materials.index') }}" class="admin-icon-btn" aria-label="{{ __('admin.common.back') }}">
-                        <i data-lucide="arrow-left" class="h-4 w-4"></i>
-                    </a>
-                    <div>
-                        <div class="text-xs font-medium uppercase tracking-widest text-slate-400">{{ __('admin.knowledge_bases.eyebrow') }}</div>
-                        <h1 class="mt-1 text-xl font-semibold tracking-tight text-slate-950">{{ __('admin.knowledge_bases.heading') }}</h1>
-                        <p class="mt-1 text-sm text-slate-500">{{ __('admin.knowledge_bases.subtitle') }}</p>
-                    </div>
-                </div>
-                <div class="flex flex-wrap items-center gap-2">
-                    <button type="button" onclick="showUploadModal()" class="admin-btn-primary">
-                        <i data-lucide="upload" class="h-4 w-4"></i>
-                        {{ __('admin.knowledge_bases.upload') }}
-                    </button>
-                </div>
-            </div>
-        </div>
+    <div class="materials-sub-shell">
+        @include('admin.partials.materials-nav', ['active' => 'overview'])
+
+        @component('admin.partials.materials-page-header', ['title' => __('admin.knowledge_bases.heading')])
+            <button type="button" onclick="showUploadModal()" class="admin-btn-teal">
+                <i data-lucide="upload" class="h-4 w-4"></i>
+                {{ __('admin.knowledge_bases.upload') }}
+            </button>
+        @endcomponent
 
         <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div class="admin-panel p-5">
-                <div class="flex items-center gap-4">
-                    <span class="flex h-12 w-12 items-center justify-center rounded-xl bg-orange-50 text-orange-600">
-                        <i data-lucide="brain" class="h-5 w-5"></i>
-                    </span>
-                    <div class="min-w-0">
-                        <div class="text-xs font-medium text-slate-500">{{ __('admin.knowledge_bases.total') }}</div>
-                        <div class="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{{ (int) ($stats['total_knowledge'] ?? 0) }}</div>
-                    </div>
-                </div>
-            </div>
-            <div class="admin-panel p-5">
-                <div class="flex items-center gap-4">
-                    <span class="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
-                        <i data-lucide="file-text" class="h-5 w-5"></i>
-                    </span>
-                    <div class="min-w-0">
-                        <div class="text-xs font-medium text-slate-500">{{ __('admin.knowledge_bases.total_words') }}</div>
-                        <div class="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{{ number_format((int) ($stats['total_words'] ?? 0)) }}</div>
-                    </div>
-                </div>
-            </div>
-            <div class="admin-panel p-5">
-                <div class="flex items-center gap-4">
-                    <span class="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
-                        <i data-lucide="hash" class="h-5 w-5"></i>
-                    </span>
-                    <div class="min-w-0">
-                        <div class="text-xs font-medium text-slate-500">{{ __('admin.knowledge_bases.markdown_count') }}</div>
-                        <div class="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{{ (int) ($stats['markdown_count'] ?? 0) }}</div>
-                    </div>
-                </div>
-            </div>
-            <div class="admin-panel p-5">
-                <div class="flex items-center gap-4">
-                    <span class="flex h-12 w-12 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
-                        <i data-lucide="file" class="h-5 w-5"></i>
-                    </span>
-                    <div class="min-w-0">
-                        <div class="text-xs font-medium text-slate-500">{{ __('admin.knowledge_bases.word_count') }}</div>
-                        <div class="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{{ (int) ($stats['word_count'] ?? 0) }}</div>
-                    </div>
-                </div>
-            </div>
+            @include('admin.partials.materials-stat-card', ['label' => __('admin.knowledge_bases.total'), 'value' => (int) ($stats['total_knowledge'] ?? 0), 'icon' => 'brain', 'tone' => 'amber'])
+            @include('admin.partials.materials-stat-card', ['label' => __('admin.knowledge_bases.total_words'), 'value' => number_format((int) ($stats['total_words'] ?? 0)), 'icon' => 'file-text', 'tone' => 'blue'])
+            @include('admin.partials.materials-stat-card', ['label' => __('admin.knowledge_bases.markdown_count'), 'value' => (int) ($stats['markdown_count'] ?? 0), 'icon' => 'hash', 'tone' => 'emerald'])
+            @include('admin.partials.materials-stat-card', ['label' => __('admin.knowledge_bases.word_count'), 'value' => (int) ($stats['word_count'] ?? 0), 'icon' => 'file', 'tone' => 'violet'])
         </div>
 
         <div class="admin-panel">
             <div class="admin-panel-header">
                 <div>
                     <h2 class="text-base font-semibold text-slate-950">{{ __('admin.knowledge_bases.list_title') }}</h2>
-                    <p class="mt-1 text-sm text-slate-500">{{ __('admin.knowledge_bases.list_subtitle') }}</p>
                 </div>
                 <div class="flex items-center gap-2 text-xs text-slate-500">
                     <i data-lucide="library" class="h-4 w-4 text-slate-400"></i>
@@ -211,7 +158,7 @@
                                     </a>
                                     <form method="POST" action="{{ route('admin.knowledge-bases.delete', ['knowledgeBaseId' => (int) $item['id']]) }}" onsubmit="return confirm(@js(__('admin.knowledge_bases.confirm_delete', ['name' => $item['name']])));" class="inline-block">
                                         @csrf
-                                        <button type="submit" class="admin-btn-danger h-8 px-3 text-xs">
+                                        <button type="submit" class="admin-btn-danger-sm">
                                             <i data-lucide="trash-2" class="h-3.5 w-3.5"></i>
                                             {{ __('admin.button.delete') }}
                                         </button>
@@ -406,24 +353,6 @@
 @endsection
 
 @push('scripts')
-    <style>
-        .admin-btn-danger {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            gap: 0.4rem;
-            border-radius: 0.5rem;
-            background-color: rgb(220 38 38);
-            padding: 0 0.75rem;
-            font-size: 0.75rem;
-            font-weight: 600;
-            color: white;
-            box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-            transition: all 150ms ease;
-        }
-        .admin-btn-danger:hover { background-color: rgb(185 28 28); }
-        .admin-btn-danger:active { transform: translateY(1px); }
-    </style>
     <script>
         let pendingRefreshChunksForm = null;
         let refreshChunksTimer = null;

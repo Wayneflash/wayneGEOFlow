@@ -10,6 +10,8 @@ use App\Models\Category;
 use App\Models\DistributionChannel;
 use App\Models\SiteSetting;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 /**
@@ -227,6 +229,34 @@ class AdminArticlesPageTest extends TestCase
             ->assertSee('文章预览')
             ->assertSee('预览测试文章')
             ->assertSee('article-preview-content', false);
+    }
+
+    public function test_admin_can_upload_inline_image_for_article_editor(): void
+    {
+        Storage::fake('public');
+
+        $admin = Admin::query()->create([
+            'username' => 'articles_image_admin',
+            'password' => 'secret-123',
+            'email' => 'articles-image@example.com',
+            'display_name' => 'Articles Image Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+
+        $response = $this->actingAs($admin, 'admin')
+            ->post(route('admin.articles.upload-image'), [
+                'image' => UploadedFile::fake()->image('paste-demo.png', 640, 480),
+            ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonStructure(['url', 'markdown']);
+
+        $url = (string) $response->json('url');
+        $this->assertStringStartsWith('/storage/uploads/images/', $url);
+        $this->assertStringContainsString($url, (string) $response->json('markdown'));
     }
 
     public function test_admin_brand_stays_neutral_when_public_site_name_changes_without_logo(): void

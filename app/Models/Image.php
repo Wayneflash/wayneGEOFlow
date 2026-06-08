@@ -23,6 +23,10 @@ class Image extends Model
         'width',
         'height',
         'tags',
+        'description',
+        'ai_tag_status',
+        'ai_tagged_at',
+        'ai_tag_error',
         'used_count',
         'usage_count',
     ];
@@ -36,6 +40,7 @@ class Image extends Model
             'height' => 'integer',
             'used_count' => 'integer',
             'usage_count' => 'integer',
+            'ai_tagged_at' => 'datetime',
         ];
     }
 

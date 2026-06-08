@@ -117,6 +117,7 @@ Route::prefix($adminPrefix)->name('admin.')->middleware(['surface.port:admin', '
             Route::post('trash/empty', [ArticleController::class, 'emptyTrash'])->name('trash.empty');
             Route::get('create', [ArticleController::class, 'create'])->name('create');
             Route::post('create', [ArticleController::class, 'store'])->name('store');
+            Route::post('upload-image', [ArticleController::class, 'uploadInlineImage'])->name('upload-image');
             Route::post('{articleId}/restore', [ArticleController::class, 'restore'])->name('restore')->whereNumber('articleId');
             Route::post('{articleId}/force-delete', [ArticleController::class, 'forceDelete'])->name('force-delete')->whereNumber('articleId');
             Route::get('{articleId}/preview', [ArticleController::class, 'preview'])->name('preview')->whereNumber('articleId');
@@ -152,6 +153,7 @@ Route::prefix($adminPrefix)->name('admin.')->middleware(['surface.port:admin', '
             Route::post('create', [KeywordLibraryController::class, 'store'])->name('store');
             Route::get('{libraryId}/edit', [KeywordLibraryController::class, 'edit'])->name('edit');
             Route::get('{libraryId}/detail', [KeywordLibraryController::class, 'detail'])->name('detail');
+            Route::get('{libraryId}/keywords/options', [KeywordLibraryController::class, 'keywordOptions'])->name('keywords.options');
             Route::post('{libraryId}/keywords', [KeywordLibraryController::class, 'storeKeyword'])->name('keywords.store');
             Route::post('{libraryId}/keywords/delete', [KeywordLibraryController::class, 'destroyKeywords'])->name('keywords.delete');
             Route::post('{libraryId}/import', [KeywordLibraryController::class, 'importKeywords'])->name('import');
@@ -172,6 +174,8 @@ Route::prefix($adminPrefix)->name('admin.')->middleware(['surface.port:admin', '
             Route::post('{libraryId}/import', [TitleLibraryController::class, 'importTitles'])->name('import');
             Route::get('{libraryId}/ai-generate', [TitleLibraryController::class, 'aiGenerate'])->name('ai-generate');
             Route::post('{libraryId}/ai-generate', [TitleLibraryController::class, 'generateWithAi'])->name('ai-generate.submit');
+            Route::post('{libraryId}/distill/preview', [TitleLibraryController::class, 'previewDistill'])->name('distill.preview');
+            Route::post('{libraryId}/distill/ai', [TitleLibraryController::class, 'distillWithAi'])->name('distill.ai');
             Route::put('{libraryId}', [TitleLibraryController::class, 'update'])->name('update');
             Route::post('{libraryId}/delete', [TitleLibraryController::class, 'destroy'])->name('delete');
         });
@@ -184,6 +188,10 @@ Route::prefix($adminPrefix)->name('admin.')->middleware(['surface.port:admin', '
             Route::get('{libraryId}/edit', [ImageLibraryController::class, 'edit'])->name('edit');
             Route::get('{libraryId}/detail', [ImageLibraryController::class, 'detail'])->name('detail');
             Route::post('{libraryId}/images/upload', [ImageLibraryController::class, 'uploadImages'])->name('images.upload');
+            Route::get('{libraryId}/images/vision-status', [ImageLibraryController::class, 'imageVisionStatus'])->name('images.vision-status');
+            Route::put('{libraryId}/images/{imageId}', [ImageLibraryController::class, 'updateImage'])->name('images.update')->whereNumber('imageId');
+            Route::post('{libraryId}/images/{imageId}/retag', [ImageLibraryController::class, 'retagImage'])->name('images.retag');
+            Route::post('{libraryId}/images/retag', [ImageLibraryController::class, 'retagImages'])->name('images.retag-batch');
             Route::post('{libraryId}/images/delete', [ImageLibraryController::class, 'destroyImages'])->name('images.delete');
             Route::put('{libraryId}/detail', [ImageLibraryController::class, 'updateFromDetail'])->name('detail.update');
             Route::put('{libraryId}', [ImageLibraryController::class, 'update'])->name('update');

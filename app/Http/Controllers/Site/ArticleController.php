@@ -44,7 +44,7 @@ class ArticleController extends Controller
             $excerpt = ArticleHtmlPresenter::stripLeadingTitleHeading($excerpt, (string) $article->title);
         }
 
-        $contentHtml = ArticleHtmlPresenter::markdownToHtml($body);
+        $contentHtml = ArticleHtmlPresenter::contentToHtml($body, (string) $article->title);
 
         $tags = $this->keywordTags((string) $article->keywords);
 

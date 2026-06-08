@@ -49,6 +49,7 @@
     </main>
 @include('admin.partials.footer')
 @include('admin.partials.welcome-modal')
+@yield('modals')
 <div id="admin-toast-region" class="fixed right-4 top-4 z-[70] flex w-[min(24rem,calc(100vw-2rem))] flex-col gap-3" aria-live="polite" aria-atomic="true"></div>
 <script>
     (() => {
@@ -107,14 +108,17 @@
             }, 180);
         };
 
+        const sameDocumentPath = (url) => url.pathname + url.search + url.hash === window.location.pathname + window.location.search + window.location.hash;
+
         const prefetchUrl = (href) => {
             if (!href || prefetchedUrls.has(href)) return;
             const url = new URL(href, window.location.href);
-            if (url.origin !== window.location.origin || url.href === window.location.href) return;
-            prefetchedUrls.add(url.href);
+            const cacheKey = url.pathname + url.search;
+            if (prefetchedUrls.has(cacheKey) || sameDocumentPath(url)) return;
+            prefetchedUrls.add(cacheKey);
             const link = document.createElement('link');
             link.rel = 'prefetch';
-            link.href = url.href;
+            link.href = cacheKey;
             link.as = 'document';
             document.head.appendChild(link);
         };
@@ -213,7 +217,7 @@
             const href = link.getAttribute('href') || '';
             if (href === '' || href.startsWith('#') || href.startsWith('javascript:') || href.startsWith('mailto:') || href.startsWith('tel:')) return;
             const url = new URL(href, window.location.href);
-            if (url.origin !== window.location.origin || url.href === window.location.href) return;
+            if (sameDocumentPath(url)) return;
             startProgress();
         });
 

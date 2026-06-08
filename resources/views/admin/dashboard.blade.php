@@ -38,24 +38,20 @@
         $knowledgeChunks = (int) ($materialHealth['knowledge_chunks'] ?? 0);
         $activeTasks = (int) ($taskHealth['active_tasks'] ?? $stats['active_tasks'] ?? 0);
 
-        $hour = (int) now()->format('G');
-        $greeting = $hour < 6 ? '夜深了' : ($hour < 12 ? '早上好' : ($hour < 14 ? '中午好' : ($hour < 18 ? '下午好' : '晚上好')));
         $trendMax = max(1, max(array_column($articleTrendRows, 'count') ?: [1]));
 
         $quickActions = [
-            ['label' => '新建任务', 'desc' => '创建内容生产任务', 'href' => route('admin.tasks.create'), 'icon' => 'plus-circle', 'gradient' => 'from-blue-500 via-indigo-500 to-violet-600', 'shadow' => 'shadow-blue-500/20'],
-            ['label' => '素材管理', 'desc' => '知识/标题/图片库', 'href' => route('admin.materials.index'), 'icon' => 'database', 'gradient' => 'from-emerald-500 via-teal-500 to-cyan-600', 'shadow' => 'shadow-emerald-500/20'],
-            ['label' => 'AI 配置', 'desc' => '模型与提示词', 'href' => route('admin.ai.configurator'), 'icon' => 'sparkles', 'gradient' => 'from-violet-500 via-purple-500 to-fuchsia-600', 'shadow' => 'shadow-violet-500/20'],
-            ['label' => '数据分析', 'desc' => '运营总览', 'href' => route('admin.analytics'), 'icon' => 'chart-no-axes-combined', 'gradient' => 'from-amber-500 via-orange-500 to-red-500', 'shadow' => 'shadow-amber-500/20'],
-            ['label' => '文章列表', 'desc' => '管理已生成文章', 'href' => route('admin.articles.index'), 'icon' => 'file-text', 'gradient' => 'from-sky-500 via-blue-500 to-indigo-600', 'shadow' => 'shadow-sky-500/20'],
-            ['label' => '分发管理', 'desc' => '多站点分发', 'href' => route('admin.distribution.index'), 'icon' => 'radio-tower', 'gradient' => 'from-rose-500 via-pink-500 to-fuchsia-600', 'shadow' => 'shadow-rose-500/20'],
+            ['label' => '素材管理', 'desc' => '知识/标题/图片库', 'href' => route('admin.materials.index'), 'icon' => 'database', 'gradient' => 'linear-gradient(135deg, #10b981 0%, #14b8a6 52%, #0891b2 100%)', 'shadow' => 'rgba(16, 185, 129, 0.22)'],
+            ['label' => '数据分析', 'desc' => '运营总览', 'href' => route('admin.analytics'), 'icon' => 'chart-no-axes-combined', 'gradient' => 'linear-gradient(135deg, #f59e0b 0%, #f97316 52%, #ef4444 100%)', 'shadow' => 'rgba(245, 158, 11, 0.22)'],
+            ['label' => '文章列表', 'desc' => '管理已生成文章', 'href' => route('admin.articles.index'), 'icon' => 'file-text', 'gradient' => 'linear-gradient(135deg, #0ea5e9 0%, #3b82f6 52%, #4f46e5 100%)', 'shadow' => 'rgba(14, 165, 233, 0.22)'],
+            ['label' => '分发管理', 'desc' => '多站点分发', 'href' => route('admin.distribution.index'), 'icon' => 'radio-tower', 'gradient' => 'linear-gradient(135deg, #f43f5e 0%, #ec4899 52%, #c026d3 100%)', 'shadow' => 'rgba(244, 63, 94, 0.22)'],
         ];
 
         $healthColors = [
-            'emerald' => ['icon' => 'from-emerald-400 to-teal-600', 'bar' => 'from-emerald-400 to-teal-500'],
-            'blue' => ['icon' => 'from-blue-400 to-indigo-600', 'bar' => 'from-blue-400 to-indigo-500'],
-            'violet' => ['icon' => 'from-violet-400 to-fuchsia-600', 'bar' => 'from-violet-400 to-fuchsia-500'],
-            'amber' => ['icon' => 'from-amber-400 to-orange-600', 'bar' => 'from-amber-400 to-orange-500'],
+            'emerald' => ['icon' => 'linear-gradient(135deg, #34d399, #0d9488)', 'bar' => 'linear-gradient(90deg, #34d399, #14b8a6)'],
+            'blue' => ['icon' => 'linear-gradient(135deg, #60a5fa, #4f46e5)', 'bar' => 'linear-gradient(90deg, #60a5fa, #6366f1)'],
+            'violet' => ['icon' => 'linear-gradient(135deg, #a78bfa, #c026d3)', 'bar' => 'linear-gradient(90deg, #a78bfa, #d946ef)'],
+            'amber' => ['icon' => 'linear-gradient(135deg, #fbbf24, #ea580c)', 'bar' => 'linear-gradient(90deg, #fbbf24, #f97316)'],
         ];
         $healthCards = [
             ['label' => '发布率', 'value' => $publishedRate.'%', 'sub' => '已发布/总文章', 'icon' => 'trending-up', 'color' => 'emerald', 'bar' => $publishedRate, 'detail' => "草稿 {$draftArticles} · 待审 {$pendingReview}"],
@@ -64,22 +60,12 @@
             ['label' => '知识向量', 'value' => $vectorizedChunks, 'sub' => '已嵌入片段', 'icon' => 'layers', 'color' => 'amber', 'bar' => $knowledgeChunks > 0 ? min(100, ($vectorizedChunks / $knowledgeChunks) * 100) : 0, 'detail' => "总块 {$knowledgeChunks}"],
         ];
 
-        $navLinks = [
-            ['label' => '任务管理', 'href' => route('admin.tasks.index'), 'icon' => 'workflow', 'tint' => 'bg-indigo-50 text-indigo-600'],
-            ['label' => '文章列表', 'href' => route('admin.articles.index'), 'icon' => 'file-text', 'tint' => 'bg-sky-50 text-sky-600'],
-            ['label' => '提示词', 'href' => route('admin.ai-prompts'), 'icon' => 'message-square-text', 'tint' => 'bg-violet-50 text-violet-600'],
-            ['label' => '特殊提示词', 'href' => route('admin.ai-special-prompts'), 'icon' => 'wand-sparkles', 'tint' => 'bg-fuchsia-50 text-fuchsia-600'],
-            ['label' => '分发管理', 'href' => route('admin.distribution.index'), 'icon' => 'radio-tower', 'tint' => 'bg-rose-50 text-rose-600'],
-            ['label' => '分发队列', 'href' => route('admin.distribution.jobs'), 'icon' => 'list-checks', 'tint' => 'bg-pink-50 text-pink-600'],
-            ['label' => '网站设置', 'href' => route('admin.site-settings.index'), 'icon' => 'network', 'tint' => 'bg-emerald-50 text-emerald-600'],
-            ['label' => 'URL 采集', 'href' => route('admin.url-import'), 'icon' => 'globe', 'tint' => 'bg-teal-50 text-teal-600'],
-        ];
     @endphp
 
     <div class="space-y-5">
 
         {{-- 1) HERO：渐变 + 招呼语 + 关键数字 + 实时 --}}
-        <section class="relative overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-600 via-blue-600 to-violet-700 px-6 py-7 text-white shadow-2xl shadow-indigo-500/30 sm:px-8">
+        <section class="relative overflow-hidden rounded-3xl px-6 py-7 text-white shadow-2xl sm:px-8" style="background: linear-gradient(135deg, #4338ca 0%, #2563eb 52%, #6d28d9 100%); box-shadow: 0 24px 60px rgba(67, 56, 202, 0.28);">
             <div class="pointer-events-none absolute -right-20 -top-20 h-72 w-72 rounded-full bg-white/10 blur-3xl"></div>
             <div class="pointer-events-none absolute -bottom-24 left-1/3 h-64 w-64 rounded-full bg-fuchsia-400/20 blur-3xl"></div>
             <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_30%,rgba(255,255,255,0.15),transparent_50%)]"></div>
@@ -90,20 +76,7 @@
                         <span class="inline-flex h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-300"></span>
                         实时同步 · {{ now()->format('Y-m-d H:i') }}
                     </div>
-                    <h1 class="mt-3 text-3xl font-bold leading-tight tracking-tight sm:text-4xl">{{ $greeting }}，欢迎回到 GEOFlow</h1>
-                    <p class="mt-2 max-w-xl text-sm text-blue-100/90 sm:text-base">
-                        今天已经生产 <span class="font-semibold text-white">{{ $todayAdded }}</span> 篇文章，队列里还有 <span class="font-semibold text-white">{{ $pendingJobs }}</span> 个任务在等待，{{ $failedJobs > 0 ? '<span class="font-semibold text-amber-200">'.$failedJobs.'</span> 个失败待处理' : '系统一切正常' }}。
-                    </p>
-                    <div class="mt-5 flex flex-wrap gap-2">
-                        <a href="{{ route('admin.tasks.create') }}" class="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-indigo-700 shadow-lg shadow-indigo-900/20 transition hover:bg-blue-50 hover:shadow-xl">
-                            <i data-lucide="plus" class="h-4 w-4"></i>
-                            新建任务
-                        </a>
-                        <a href="{{ route('admin.ai.configurator') }}" class="inline-flex items-center gap-2 rounded-xl border border-white/30 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white backdrop-blur transition hover:bg-white/20">
-                            <i data-lucide="settings-2" class="h-4 w-4"></i>
-                            AI 配置
-                        </a>
-                    </div>
+                    <h1 class="mt-3 text-3xl font-bold leading-tight tracking-tight sm:text-4xl">让 AI 推荐你</h1>
                 </div>
 
                 <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -132,9 +105,9 @@
         </section>
 
         {{-- 2) 6 个快捷操作（渐变大按钮） --}}
-        <section class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+        <section class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             @foreach ($quickActions as $action)
-                <a href="{{ $action['href'] }}" class="group relative overflow-hidden rounded-2xl bg-gradient-to-br {{ $action['gradient'] }} p-4 text-white shadow-lg {{ $action['shadow'] }} transition hover:-translate-y-0.5 hover:shadow-xl">
+                <a href="{{ $action['href'] }}" class="group relative overflow-hidden rounded-2xl p-4 text-white shadow-lg transition hover:-translate-y-0.5 hover:shadow-xl" style="background: {{ $action['gradient'] }}; box-shadow: 0 14px 30px {{ $action['shadow'] }};">
                     <div class="pointer-events-none absolute -right-6 -top-6 h-20 w-20 rounded-full bg-white/15 blur-2xl transition group-hover:bg-white/25"></div>
                     <div class="relative flex items-start justify-between">
                         <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-white/20 backdrop-blur">
@@ -148,7 +121,7 @@
             @endforeach
         </section>
 
-        {{-- 3) 趋势图 + 生产漏斗 --}}
+        {{-- 3) 趋势图 + 内容总览 --}}
         <section class="grid gap-4 lg:grid-cols-3">
             <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:col-span-2">
                 <div class="flex items-center justify-between border-b border-slate-100 px-5 py-4">
@@ -178,8 +151,8 @@
                             <i data-lucide="git-branch" class="h-4 w-4"></i>
                         </span>
                         <div>
-                            <div class="text-sm font-bold text-slate-900">生产漏斗</div>
-                            <div class="text-xs text-slate-400">从标题到发布</div>
+                            <div class="text-sm font-bold text-slate-900">内容总览</div>
+                            <div class="text-xs text-slate-400">各阶段数量</div>
                         </div>
                     </div>
                 </div>
@@ -212,12 +185,12 @@
                             <div class="mt-2 text-3xl font-bold leading-none text-slate-900 tracking-tight">{{ $card['value'] }}</div>
                             <div class="mt-1 text-[11px] text-slate-400">{{ $card['sub'] }}</div>
                         </div>
-                        <span class="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br {{ $healthColors[$card['color']]['icon'] ?? 'from-slate-400 to-slate-600' }} text-white shadow-md">
+                        <span class="flex h-10 w-10 items-center justify-center rounded-xl text-white shadow-md" style="background: {{ $healthColors[$card['color']]['icon'] ?? 'linear-gradient(135deg, #94a3b8, #475569)' }};">
                             <i data-lucide="{{ $card['icon'] }}" class="h-4 w-4"></i>
                         </span>
                     </div>
                     <div class="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100">
-                        <div class="h-full rounded-full bg-gradient-to-r {{ $healthColors[$card['color']]['bar'] ?? 'from-slate-400 to-slate-500' }}" style="width: {{ min(100, max(0, (float) $card['bar'])) }}%"></div>
+                        <div class="h-full rounded-full" style="width: {{ min(100, max(0, (float) $card['bar'])) }}%; background: {{ $healthColors[$card['color']]['bar'] ?? 'linear-gradient(90deg, #94a3b8, #64748b)' }}"></div>
                     </div>
                     <div class="mt-1.5 text-[10px] text-slate-400">{{ $card['detail'] }}</div>
                 </div>
@@ -388,27 +361,6 @@
                         </div>
                     @endforelse
                 </div>
-            </div>
-        </section>
-
-        {{-- 8) 全部功能入口（图标 grid） --}}
-        <section class="overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div class="mb-3 flex items-center gap-2.5">
-                <span class="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
-                    <i data-lucide="layout-grid" class="h-3.5 w-3.5"></i>
-                </span>
-                <div>
-                    <div class="text-sm font-bold text-slate-900">全部功能入口</div>
-                    <div class="text-xs text-slate-400">点击跳转到对应模块</div>
-                </div>
-            </div>
-            <div class="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-8">
-                @foreach ($navLinks as $link)
-                    <a href="{{ $link['href'] }}" class="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2.5 text-xs font-medium text-slate-600 transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-sm {{ $link['tint'] }}">
-                        <i data-lucide="{{ $link['icon'] }}" class="h-3.5 w-3.5"></i>
-                        <span class="truncate">{{ $link['label'] }}</span>
-                    </a>
-                @endforeach
             </div>
         </section>
 

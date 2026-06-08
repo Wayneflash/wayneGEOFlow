@@ -26,7 +26,7 @@ class DistributionPayloadBuilder
         $title = (string) $article->title;
         $content = (string) $article->content;
         $body = ArticleHtmlPresenter::stripLeadingTitleHeading($content, $title);
-        $contentHtml = ArticleHtmlPresenter::markdownToHtml($body);
+        $contentHtml = ArticleHtmlPresenter::contentToHtml($body, (string) $article->title);
         $heroImageUrl = $this->heroImageUrl($article);
 
         return [

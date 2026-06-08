@@ -8,6 +8,7 @@ use App\Models\Keyword;
 use App\Models\KeywordLibrary;
 use App\Support\AdminWeb;
 use App\Support\Tenancy\AdminTenant;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -57,6 +58,41 @@ class KeywordLibraryController extends Controller
             'keywords' => $keywords,
             'usageTotal' => $usageTotal,
         ]);
+    }
+
+    /**
+     * 供标题拓词等功能快速读取关键词列表。
+     */
+    public function keywordOptions(int $libraryId): JsonResponse
+    {
+        KeywordLibrary::query()->visibleToAdmin()->whereKey($libraryId)->firstOrFail();
+
+        $keywords = Keyword::query()
+            ->where('library_id', $libraryId)
+            ->orderBy('keyword')
+            ->limit(300)
+            ->pluck('keyword')
+            ->map(static fn (mixed $value): string => trim((string) $value))
+            ->filter(static fn (string $keyword): bool => $keyword !== '')
+            ->values();
+
+        $safeKeywords = $keywords
+            ->map(static function (string $keyword): string {
+                if (mb_check_encoding($keyword, 'UTF-8')) {
+                    return $keyword;
+                }
+
+                $converted = @iconv('UTF-8', 'UTF-8//IGNORE', $keyword);
+
+                return is_string($converted) ? $converted : '';
+            })
+            ->filter(static fn (string $keyword): bool => $keyword !== '')
+            ->values();
+
+        return response()->json([
+            'keywords' => $safeKeywords,
+            'count' => $safeKeywords->count(),
+        ], 200, [], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
     }
 
     /**

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Prompt;
 use App\Support\AdminWeb;
+use App\Support\GeoFlow\SpecialPromptDefaults;
 use App\Support\Tenancy\AdminTenant;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -29,8 +30,8 @@ class AiSpecialPromptController extends Controller
             'pageTitle' => __('admin.ai_special.page_title'),
             'activeMenu' => 'ai_config',
             'adminSiteName' => AdminWeb::siteName(),
-            'keywordPromptContent' => $this->loadLatestPromptContent('keyword'),
-            'descriptionPromptContent' => $this->loadLatestPromptContent('description'),
+            'keywordPromptContent' => $this->loadLatestPromptContent('keyword') ?: SpecialPromptDefaults::keyword(),
+            'descriptionPromptContent' => $this->loadLatestPromptContent('description') ?: SpecialPromptDefaults::description(),
         ]);
     }
 

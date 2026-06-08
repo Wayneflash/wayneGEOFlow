@@ -134,6 +134,7 @@ class TaskController extends Controller
             'activeMenu' => 'tasks',
             'adminSiteName' => AdminWeb::siteName(),
             'formOptions' => $formOptions,
+            'taskDefaults' => $this->buildTaskFormDefaults($formOptions),
             'hasCategories' => ! empty($formOptions['categories']),
             'categoryCreateUrl' => route('admin.categories.create'),
             'isEdit' => false,
@@ -194,6 +195,7 @@ class TaskController extends Controller
             'activeMenu' => 'tasks',
             'adminSiteName' => AdminWeb::siteName(),
             'formOptions' => $formOptions,
+            'taskDefaults' => $this->buildTaskFormDefaults($formOptions),
             'hasCategories' => ! empty($formOptions['categories']),
             'categoryCreateUrl' => route('admin.categories.create'),
             'isEdit' => true,
@@ -510,6 +512,25 @@ class TaskController extends Controller
             'authors' => $authors,
             'categories' => $categories,
             'distributionChannels' => $distributionChannels,
+        ];
+    }
+
+    /**
+     * 新建任务时的智能默认值（模型、知识库等）。
+     *
+     * @param  array<string, mixed>  $formOptions
+     * @return array{ai_model_id: string, knowledge_base_id: string, prompt_id: string}
+     */
+    private function buildTaskFormDefaults(array $formOptions): array
+    {
+        $aiModels = is_array($formOptions['aiModels'] ?? null) ? $formOptions['aiModels'] : [];
+        $knowledgeBases = is_array($formOptions['knowledgeBases'] ?? null) ? $formOptions['knowledgeBases'] : [];
+        $prompts = is_array($formOptions['prompts'] ?? null) ? $formOptions['prompts'] : [];
+
+        return [
+            'ai_model_id' => (string) (($aiModels[0]['id'] ?? '') ?: ''),
+            'knowledge_base_id' => (string) (($knowledgeBases[0]['id'] ?? '') ?: ''),
+            'prompt_id' => (string) (($prompts[0]['id'] ?? '') ?: ''),
         ];
     }
 

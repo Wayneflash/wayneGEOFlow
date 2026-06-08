@@ -99,4 +99,10 @@ return [
     // 会话空闲超时（秒）
     'session_timeout_seconds' => (int) env('GEOFLOW_SESSION_TIMEOUT', 2592000),
 
+    // 图片 AI 识图：queue=投递到 Redis 队列由 worker 异步执行；sync=上传请求内同步识图（测试/无队列环境）
+    'image_vision_tagging' => [
+        'driver' => env('GEOFLOW_IMAGE_VISION_TAGGING_DRIVER', 'queue'),
+        'pending_scan_limit' => max(1, min(100, (int) env('GEOFLOW_IMAGE_VISION_PENDING_SCAN_LIMIT', 30))),
+    ],
+
 ];

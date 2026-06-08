@@ -472,7 +472,9 @@ class AdminMaterialsPagesTest extends TestCase
         ]);
 
         $this->actingAs($admin, 'admin')
-            ->post(route('admin.url-import.commit', ['jobId' => (int) $job->id]))
+            ->post(route('admin.url-import.commit', ['jobId' => (int) $job->id]), [
+                'library_name' => 'GEO 内容报告',
+            ])
             ->assertRedirect(route('admin.url-import.show', ['jobId' => (int) $job->id]));
 
         $this->assertDatabaseHas('knowledge_bases', ['name' => 'GEO 内容报告 知识库']);
@@ -998,13 +1000,273 @@ class AdminMaterialsPagesTest extends TestCase
             'title' => '标题A',
         ]);
 
-        $this->actingAs($admin, 'admin')->post(route('admin.title-libraries.ai-generate.submit', ['libraryId' => (int) $titleLibrary->id]), [
-            'keyword_library_id' => (int) $keywordLibrary->id,
-            'ai_model_id' => 1,
-            'title_count' => 3,
-            'title_style' => 'professional',
-            'custom_prompt' => '',
-        ])->assertSessionHasErrors();
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.title-libraries.ai-generate.submit', ['libraryId' => (int) $titleLibrary->id]), [
+                'keyword_library_id' => (int) $keywordLibrary->id,
+                'ai_model_id' => 1,
+                'title_count' => 3,
+                'title_style' => 'professional',
+                'custom_prompt' => '',
+            ])
+            ->assertRedirect(route('admin.title-libraries.detail', [
+                'libraryId' => (int) $titleLibrary->id,
+                'distill' => 1,
+            ]));
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.title-libraries.ai-generate', ['libraryId' => (int) $titleLibrary->id]))
+            ->assertRedirect(route('admin.title-libraries.detail', [
+                'libraryId' => (int) $titleLibrary->id,
+                'distill' => 1,
+            ]));
+    }
+
+    public function test_image_upload_without_ai_vision_skips_tagging_status(): void
+    {
+        Storage::fake('public');
+
+        $admin = Admin::query()->create([
+            'username' => 'image_tag_admin',
+            'password' => 'secret-123',
+            'email' => 'image-tag-admin@example.com',
+            'display_name' => 'Image Tag Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+
+        $imageLibrary = ImageLibrary::query()->create([
+            'name' => '识图库',
+            'description' => 'desc',
+            'image_count' => 0,
+            'used_task_count' => 0,
+        ]);
+
+        $image = UploadedFile::fake()->image('tagged.png', 80, 80);
+        $this->actingAs($admin, 'admin')->post(route('admin.image-libraries.images.upload', ['libraryId' => (int) $imageLibrary->id]), [
+            'images' => [$image],
+            'image_tags' => 'CRM,办公',
+        ])->assertRedirect(route('admin.image-libraries.detail', ['libraryId' => (int) $imageLibrary->id]));
+
+        $storedImage = Image::query()
+            ->where('library_id', (int) $imageLibrary->id)
+            ->where('original_name', 'tagged.png')
+            ->firstOrFail();
+
+        $this->assertSame('skipped', (string) $storedImage->ai_tag_status);
+        $this->assertSame('CRM,办公', (string) $storedImage->tags);
+    }
+
+    public function test_image_upload_with_ai_vision_allows_batch_and_requires_model(): void
+    {
+        Storage::fake('public');
+
+        $admin = Admin::query()->create([
+            'username' => 'image_ai_admin',
+            'password' => 'secret-123',
+            'email' => 'image-ai-admin@example.com',
+            'display_name' => 'Image AI Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+
+        $visionModel = AiModel::query()->create([
+            'name' => 'GPT-4o Vision',
+            'model_id' => 'gpt-4o',
+            'model_type' => 'chat',
+            'api_url' => 'https://api.openai.com',
+            'api_key' => 'test-key',
+            'status' => 'active',
+        ]);
+
+        $imageLibrary = ImageLibrary::query()->create([
+            'name' => 'AI识图库',
+            'description' => 'desc',
+            'image_count' => 0,
+            'used_task_count' => 0,
+        ]);
+
+        $this->actingAs($admin, 'admin')->post(route('admin.image-libraries.images.upload', ['libraryId' => (int) $imageLibrary->id]), [
+            'enable_ai_vision' => '1',
+            'images' => [
+                UploadedFile::fake()->image('one.png', 80, 80),
+                UploadedFile::fake()->image('two.png', 80, 80),
+            ],
+        ])->assertSessionHasErrors('vision_model_id');
+
+        $this->actingAs($admin, 'admin')->post(route('admin.image-libraries.images.upload', ['libraryId' => (int) $imageLibrary->id]), [
+            'enable_ai_vision' => '1',
+            'images' => [
+                UploadedFile::fake()->image('one.png', 80, 80),
+                UploadedFile::fake()->image('two.png', 80, 80),
+            ],
+            'vision_model_id' => (int) $visionModel->id,
+        ])->assertRedirect(route('admin.image-libraries.detail', ['libraryId' => (int) $imageLibrary->id]));
+
+        $this->assertDatabaseHas('images', [
+            'library_id' => (int) $imageLibrary->id,
+            'original_name' => 'one.png',
+        ]);
+        $this->assertDatabaseHas('images', [
+            'library_id' => (int) $imageLibrary->id,
+            'original_name' => 'two.png',
+        ]);
+    }
+
+    public function test_admin_can_update_image_tags_and_description_from_detail_flow(): void
+    {
+        $admin = Admin::query()->create([
+            'username' => 'image_edit_admin',
+            'password' => 'secret-123',
+            'email' => 'image-edit-admin@example.com',
+            'display_name' => 'Image Edit Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+
+        $imageLibrary = ImageLibrary::query()->create([
+            'name' => '可编辑图片库',
+            'description' => 'desc',
+            'image_count' => 1,
+            'used_task_count' => 0,
+        ]);
+
+        $image = Image::query()->create([
+            'library_id' => (int) $imageLibrary->id,
+            'filename' => 'demo.jpg',
+            'original_name' => 'demo.jpg',
+            'file_name' => 'demo.jpg',
+            'file_path' => 'storage/uploads/images/2026/06/demo.jpg',
+            'file_size' => 1024,
+            'mime_type' => 'image/jpeg',
+            'width' => 100,
+            'height' => 100,
+            'tags' => '旧标签',
+            'description' => '旧描述',
+            'ai_tag_status' => 'completed',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->put(route('admin.image-libraries.images.update', [
+                'libraryId' => (int) $imageLibrary->id,
+                'imageId' => (int) $image->id,
+            ]), [
+                'tags' => 'CRM, 企业服务, SaaS',
+                'description' => '修正后的图片描述',
+            ])
+            ->assertRedirect();
+
+        $image->refresh();
+        $this->assertSame('CRM,企业服务,SaaS', (string) $image->tags);
+        $this->assertSame('修正后的图片描述', (string) $image->description);
+    }
+
+    public function test_admin_can_update_image_tags_via_json_request(): void
+    {
+        $admin = Admin::query()->create([
+            'username' => 'image_json_admin',
+            'password' => 'secret-123',
+            'email' => 'image-json-admin@example.com',
+            'display_name' => 'Image Json Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+
+        $imageLibrary = ImageLibrary::query()->create([
+            'name' => 'JSON 图片库',
+            'description' => 'desc',
+            'image_count' => 1,
+            'used_task_count' => 0,
+        ]);
+
+        $image = Image::query()->create([
+            'library_id' => (int) $imageLibrary->id,
+            'filename' => 'demo.jpg',
+            'original_name' => 'demo.jpg',
+            'file_name' => 'demo.jpg',
+            'file_path' => 'storage/uploads/images/2026/06/demo.jpg',
+            'file_size' => 1024,
+            'mime_type' => 'image/jpeg',
+            'width' => 100,
+            'height' => 100,
+            'tags' => '旧标签',
+            'description' => '旧描述',
+            'ai_tag_status' => 'completed',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->putJson(route('admin.image-libraries.images.update', [
+                'libraryId' => (int) $imageLibrary->id,
+                'imageId' => (int) $image->id,
+            ]), [
+                'tags' => '新标签, 测试',
+                'description' => 'JSON 保存描述',
+            ])
+            ->assertOk()
+            ->assertJsonPath('image.tags', '新标签,测试')
+            ->assertJsonPath('image.description', 'JSON 保存描述');
+
+        $image->refresh();
+        $this->assertSame('新标签,测试', (string) $image->tags);
+        $this->assertSame('JSON 保存描述', (string) $image->description);
+    }
+
+    public function test_admin_can_fetch_image_vision_status_for_detail_page(): void
+    {
+        $admin = Admin::query()->create([
+            'username' => 'image_status_admin',
+            'password' => 'secret-123',
+            'email' => 'image-status-admin@example.com',
+            'display_name' => 'Image Status Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+
+        $imageLibrary = ImageLibrary::query()->create([
+            'name' => '识图状态库',
+            'description' => 'desc',
+            'image_count' => 2,
+            'used_task_count' => 0,
+        ]);
+
+        $pendingImage = Image::query()->create([
+            'library_id' => (int) $imageLibrary->id,
+            'filename' => 'pending.jpg',
+            'original_name' => 'pending.jpg',
+            'file_name' => 'pending.jpg',
+            'file_path' => 'storage/uploads/images/2026/06/pending.jpg',
+            'file_size' => 1024,
+            'mime_type' => 'image/jpeg',
+            'width' => 100,
+            'height' => 100,
+            'tags' => '',
+            'description' => '',
+            'ai_tag_status' => 'pending',
+        ]);
+
+        $completedImage = Image::query()->create([
+            'library_id' => (int) $imageLibrary->id,
+            'filename' => 'done.jpg',
+            'original_name' => 'done.jpg',
+            'file_name' => 'done.jpg',
+            'file_path' => 'storage/uploads/images/2026/06/done.jpg',
+            'file_size' => 1024,
+            'mime_type' => 'image/jpeg',
+            'width' => 100,
+            'height' => 100,
+            'tags' => '完成标签',
+            'description' => '完成描述',
+            'ai_tag_status' => 'completed',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->getJson(route('admin.image-libraries.images.vision-status', [
+                'libraryId' => (int) $imageLibrary->id,
+                'image_ids' => [(int) $pendingImage->id, (int) $completedImage->id],
+            ]))
+            ->assertOk()
+            ->assertJsonPath('pending_count', 1)
+            ->assertJsonPath('images.'.(int) $pendingImage->id.'.aiStatus', 'pending')
+            ->assertJsonPath('images.'.(int) $completedImage->id.'.tags', '完成标签');
     }
 
     public function test_admin_can_upload_image_and_knowledge_file_from_detail_flow(): void
@@ -1054,5 +1316,39 @@ class AdminMaterialsPagesTest extends TestCase
         $this->assertDatabaseHas('knowledge_bases', [
             'name' => '上传知识库',
         ]);
+    }
+
+    public function test_admin_can_preview_title_distill_with_classic_geo_matrix(): void
+    {
+        $admin = Admin::query()->create([
+            'username' => 'title_distill_admin',
+            'password' => 'secret-123',
+            'email' => 'title-distill-admin@example.com',
+            'display_name' => 'Title Distill Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+
+        $titleLibrary = TitleLibrary::query()->create([
+            'name' => '标题库拓词',
+            'description' => 'desc',
+            'title_count' => 0,
+            'generation_type' => 'manual',
+            'generation_rounds' => 1,
+            'is_ai_generated' => 0,
+        ]);
+
+        $response = $this->actingAs($admin, 'admin')
+            ->postJson(route('admin.title-libraries.distill.preview', ['libraryId' => (int) $titleLibrary->id]), [
+                'seed_keyword' => '厦门AI服务商',
+                'expand_mode' => 'classic',
+                'title_count' => 50,
+            ])
+            ->assertOk()
+            ->json();
+
+        $this->assertIsArray($response['titles'] ?? null);
+        $this->assertContains('厦门AI服务商排名', $response['titles']);
+        $this->assertContains('厦门靠谱的AI服务商哪家好', $response['titles']);
     }
 }

@@ -1,350 +1,204 @@
 @extends('admin.layouts.app')
 
 @section('content')
-    <div class="space-y-6">
-        <div class="admin-panel">
-            <div class="admin-panel-header">
-            <div class="flex items-center space-x-4">
-                <a href="{{ route('admin.ai.configurator') }}" class="admin-icon-btn" aria-label="{{ __('admin.common.back') }}">
-                    <i data-lucide="arrow-left" class="h-4 w-4"></i>
-                </a>
-                <div>
-                    <div class="text-xs font-medium uppercase tracking-widest text-blue-600">{{ __('admin.nav.ai_configurator') }}</div>
-                    <h1 class="mt-1 text-xl font-semibold tracking-tight text-slate-950">{{ __('admin.ai_models.page_title') }}</h1>
-                    <p class="mt-1 text-sm text-slate-500">{{ __('admin.ai_models.page_subtitle') }}</p>
-                </div>
-            </div>
-            <button type="button" onclick="showCreateModelModal()" class="admin-btn-primary">
-                <i data-lucide="plus" class="h-4 w-4"></i>
-                {{ __('admin.ai_models.create') }}
+    <div class="ai-config-shell">
+        @include('admin.partials.ai-config-header', [
+            'title' => __('admin.ai_models.page_title'),
+            'subtitle' => '管理 Chat / Embedding 模型接入',
+            'actionButton' => '<button type="button" onclick="showCreateModelModal()" class="admin-btn-primary h-9 px-3 text-[13px]"><i data-lucide="plus" class="h-3.5 w-3.5"></i>'.e(__('admin.ai_models.create')).'</button>',
+        ])
+
+        <nav class="analytics-tabs" data-ai-model-tabs>
+            <button type="button" class="admin-tab-button is-active" data-ai-model-tab="models" aria-pressed="true">
+                <i data-lucide="cpu" class="h-3.5 w-3.5"></i>
+                模型列表
             </button>
-            </div>
-        </div>
+            <button type="button" class="admin-tab-button" data-ai-model-tab="advanced" aria-pressed="false">
+                <i data-lucide="sliders-horizontal" class="h-3.5 w-3.5"></i>
+                向量与切片
+            </button>
+        </nav>
 
-        <div class="rounded-2xl border border-slate-200 bg-white/95 p-2 shadow-sm backdrop-blur" data-ai-model-tabs>
-            <div class="grid gap-2 md:grid-cols-2">
-                <button type="button" class="admin-tab-button is-active" data-ai-model-tab="models" aria-pressed="true">
-                    <i data-lucide="cpu" class="h-4 w-4"></i>
-                    {{ __('admin.ai_models.list_title') }}
-                </button>
-                <button type="button" class="admin-tab-button" data-ai-model-tab="advanced" aria-pressed="false">
-                    <i data-lucide="sliders-horizontal" class="h-4 w-4"></i>
-                    {{ __('admin.ai_models.vector_title') }}
-                </button>
-            </div>
-        </div>
-
-        <div class="hidden grid grid-cols-1 gap-4 lg:grid-cols-3" data-ai-model-panel="advanced" aria-hidden="true">
-            <div class="admin-panel overflow-hidden">
-                <div class="border-b border-slate-200 px-5 py-4">
-                    <h3 class="text-base font-semibold text-slate-950">{{ __('admin.ai_models.vector_title') }}</h3>
-                    <p class="mt-1 text-sm text-slate-500">{{ __('admin.ai_models.vector_desc') }}</p>
+        <div data-ai-model-panel="models" aria-hidden="false">
+            @if (empty($models))
+                <div class="ai-config-card px-4 py-16 text-center">
+                    <i data-lucide="cpu" class="mx-auto h-8 w-8 text-slate-300"></i>
+                    <p class="mt-3 text-sm text-slate-500">{{ __('admin.ai_models.empty') }}</p>
+                    <button type="button" onclick="showCreateModelModal()" class="admin-btn-primary mt-4">{{ __('admin.ai_models.add_first') }}</button>
                 </div>
-                <div class="space-y-4 px-5 py-5">
-                    <div class="flex items-center justify-between">
-                        <span class="text-sm text-slate-600">{{ __('admin.ai_models.pgvector') }}</span>
-                        <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full {{ $pgvectorEnabled ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800' }}">
-                            {{ $pgvectorEnabled ? __('admin.ai_models.pgvector_enabled') : __('admin.ai_models.pgvector_fallback') }}
-                        </span>
-                    </div>
-
-                    <form method="POST" action="{{ route('admin.ai-models.default-embedding') }}" class="space-y-3">
-                        @csrf
-                        <div>
-                            <label for="default_embedding_model_id" class="admin-label">{{ __('admin.ai_models.default_embedding') }}</label>
-                            <select name="default_embedding_model_id" id="default_embedding_model_id" class="admin-input mt-1">
-                                <option value="0">{{ __('admin.ai_models.embedding_auto') }}</option>
-                                @foreach ($embeddingModels as $embeddingModel)
-                                    <option value="{{ (int) $embeddingModel['id'] }}" @selected($defaultEmbeddingModelId === (int) $embeddingModel['id'])>
-                                        {{ $embeddingModel['name'].' ('.$embeddingModel['model_id'].')' }}
-                                    </option>
-                                @endforeach
-                            </select>
-                            <p class="mt-1 text-xs text-slate-500">{{ __('admin.ai_models.embedding_help') }}</p>
-                        </div>
-                        <div class="flex justify-end">
-                            <button type="submit" class="admin-btn-primary">
-                                {{ __('admin.ai_models.save_default') }}
-                            </button>
-                        </div>
-                    </form>
-                </div>
-            </div>
-
-            <div class="admin-panel overflow-hidden">
-                <div class="border-b border-slate-200 px-5 py-4">
-                    <h3 class="text-base font-semibold text-slate-950">{{ __('admin.ai_models.type_title') }}</h3>
-                    <p class="mt-1 text-sm text-slate-500">{{ __('admin.ai_models.type_desc') }}</p>
-                </div>
-                <div class="space-y-3 px-5 py-5 text-sm leading-6 text-slate-600">
-                    <p>{{ __('admin.ai_models.type_chat') }}</p>
-                    <p>{{ __('admin.ai_models.type_embedding') }}</p>
-                    <details class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                        <summary class="cursor-pointer font-semibold text-slate-800">{{ __('admin.ai_models.type_rerank') }}</summary>
-                        <p class="mt-3 text-slate-600">{{ __('admin.ai_models.type_fallback') }}</p>
-                    </details>
-                </div>
-            </div>
-
-            <div class="admin-panel overflow-hidden">
-                <div class="border-b border-slate-200 px-5 py-4">
-                    <h3 class="text-base font-semibold text-slate-950">{{ __('admin.ai_models.chunking_title') }}</h3>
-                    <p class="mt-1 text-sm text-slate-500">{{ __('admin.ai_models.chunking_desc') }}</p>
-                </div>
-                <div class="px-5 py-5">
-                    <form method="POST" action="{{ route('admin.ai-models.chunking-config') }}" class="space-y-4">
-                        @csrf
-                        <div>
-                            <label for="knowledge_chunk_strategy" class="admin-label">{{ __('admin.ai_models.chunk_strategy') }}</label>
-                            <select name="knowledge_chunk_strategy" id="knowledge_chunk_strategy" class="admin-input mt-1">
-                                <option value="rule" @selected(($chunkingConfig['strategy'] ?? 'rule') === 'rule')>{{ __('admin.ai_models.chunk_strategy_rule') }}</option>
-                                <option value="auto" @selected(($chunkingConfig['strategy'] ?? 'rule') === 'auto')>{{ __('admin.ai_models.chunk_strategy_auto') }}</option>
-                                <option value="semantic_llm" @selected(($chunkingConfig['strategy'] ?? 'rule') === 'semantic_llm')>{{ __('admin.ai_models.chunk_strategy_semantic') }}</option>
-                            </select>
-                            <p class="mt-1 text-xs text-slate-500">{{ __('admin.ai_models.chunk_strategy_help') }}</p>
-                        </div>
-                        <div>
-                            <label for="knowledge_chunking_model_id" class="admin-label">{{ __('admin.ai_models.chunking_model') }}</label>
-                            <select name="knowledge_chunking_model_id" id="knowledge_chunking_model_id" class="admin-input mt-1">
-                                <option value="0">{{ __('admin.ai_models.chunking_model_none') }}</option>
-                                @foreach ($chatModels as $chatModel)
-                                    <option value="{{ (int) $chatModel['id'] }}" @selected((int) ($chunkingConfig['model_id'] ?? 0) === (int) $chatModel['id'])>
-                                        {{ $chatModel['name'].' ('.$chatModel['model_id'].')' }}
-                                    </option>
-                                @endforeach
-                            </select>
-                            <p class="mt-1 text-xs text-slate-500">{{ __('admin.ai_models.chunking_model_help') }}</p>
-                        </div>
-                        <div class="flex justify-end">
-                            <button type="submit" class="admin-btn-primary">
-                                {{ __('admin.ai_models.save_chunking') }}
-                            </button>
-                        </div>
-                    </form>
-                </div>
-            </div>
-        </div>
-
-        <div class="admin-panel overflow-hidden" data-ai-model-panel="models" aria-hidden="false">
-            <div class="admin-panel-header">
-                <div>
-                    <h3 class="text-base font-semibold text-slate-950">{{ __('admin.ai_models.list_title') }}</h3>
-                    <p class="mt-1 text-sm text-slate-500">{{ __('admin.ai_models.list_desc') }}</p>
-                </div>
-                <button type="button" onclick="showCreateModelModal()" class="admin-btn-secondary">
-                    <i data-lucide="plus" class="h-4 w-4"></i>
-                    {{ __('admin.ai_models.create') }}
-                </button>
-            </div>
-
-            <div class="overflow-x-auto">
-                <table class="admin-table">
-                    <thead>
-                    <tr>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ __('admin.ai_models.column.info') }}</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ __('admin.ai_models.column.version') }}</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ __('admin.ai_models.column.usage') }}</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ __('admin.ai_models.column.limit') }}</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ __('admin.ai_models.column.status') }}</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ __('admin.ai_models.column.actions') }}</th>
-                    </tr>
-                    </thead>
-                    <tbody>
-                    @if (empty($models))
-                        <tr>
-                            <td colspan="6" class="px-6 py-14 text-center text-slate-500">
-                                <i data-lucide="cpu" class="w-8 h-8 mx-auto mb-2 text-gray-400"></i>
-                                <p>{{ __('admin.ai_models.empty') }}</p>
-                                <button type="button" onclick="showCreateModelModal()" class="mt-2 text-blue-600 hover:text-blue-800">
-                                    {{ __('admin.ai_models.add_first') }}
-                                </button>
-                            </td>
-                        </tr>
-                    @else
-                        @foreach ($models as $model)
-                            <tr class="transition hover:bg-slate-50/70">
-                                <td class="px-6 py-4">
-                                    <div>
-                                        <div class="flex items-center gap-2">
-                                            <div class="text-sm font-medium text-gray-900">{{ $model['name'] }}</div>
-                                            <span class="inline-flex px-2 py-0.5 text-xs font-semibold rounded-full {{ $model['model_type'] === 'embedding' ? 'bg-amber-100 text-amber-800' : 'bg-sky-100 text-sky-800' }}">
-                                                {{ $model['model_type'] === 'embedding' ? __('admin.ai_models.type_embedding_option') : __('admin.ai_models.chat') }}
-                                            </span>
-                                            @if ($model['is_default_embedding'])
-                                                <span class="inline-flex px-2 py-0.5 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-800">{{ __('admin.ai_models.embedding_default') }}</span>
-                                            @endif
-                                        </div>
-                                        <div class="text-sm text-gray-500">{{ $model['model_id'] }}</div>
-                                        <div class="text-xs text-gray-400">{{ __('admin.ai_models.api_key_mask') }}: {{ $model['masked_api_key'] }}</div>
-                                        <div class="text-xs text-gray-400">{{ __('admin.ai_models.failover_priority_label', ['priority' => (int) $model['failover_priority']]) }}</div>
+            @else
+                <div class="grid gap-3 sm:grid-cols-2">
+                    @foreach ($models as $model)
+                        <article class="ai-model-card">
+                            <div class="flex items-start justify-between gap-3">
+                                <div class="min-w-0">
+                                    <div class="flex flex-wrap items-center gap-1.5">
+                                        <h3 class="truncate text-sm font-semibold text-slate-900">{{ $model['name'] }}</h3>
+                                        <span class="rounded-md px-1.5 py-0.5 text-[10px] font-medium {{ $model['model_type'] === 'embedding' ? 'bg-amber-50 text-amber-700' : 'bg-blue-50 text-blue-700' }}">
+                                            {{ $model['model_type'] === 'embedding' ? 'Embedding' : 'Chat' }}
+                                        </span>
+                                        @if ($model['is_default_embedding'])
+                                            <span class="rounded-md bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">默认向量</span>
+                                        @endif
+                                        <span class="rounded-md px-1.5 py-0.5 text-[10px] font-medium {{ $model['status'] === 'active' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500' }}">
+                                            {{ $model['status'] === 'active' ? '启用' : '停用' }}
+                                        </span>
                                     </div>
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                    {{ $model['version'] !== '' ? $model['version'] : '-' }}
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    <div class="text-sm text-gray-900">
-                                        <div>{{ __('admin.ai_models.usage_tasks', ['count' => (string) $model['task_count']]) }}</div>
-                                        <div>{{ __('admin.ai_models.usage_articles', ['count' => (string) $model['article_count']]) }}</div>
-                                        <div>{{ __('admin.ai_models.usage_total', ['count' => (string) number_format((int) $model['total_used'])]) }}</div>
-                                    </div>
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                    <p class="mt-1 truncate font-mono text-[11px] text-slate-500">{{ $model['model_id'] }}</p>
+                                </div>
+                                <div class="flex shrink-0 gap-1">
+                                    <button type="button" onclick="testModelConnection({{ (int) $model['id'] }}, this)" class="admin-icon-btn h-8 w-8 text-emerald-600" title="{{ __('admin.ai_models.test') }}">
+                                        <i data-lucide="plug-zap" class="h-3.5 w-3.5"></i>
+                                    </button>
+                                    <button type="button" onclick='editModel(@json($model, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP))' class="admin-icon-btn h-8 w-8" title="{{ __('admin.ai_models.edit') }}">
+                                        <i data-lucide="pencil" class="h-3.5 w-3.5"></i>
+                                    </button>
+                                    <button type="button" onclick="deleteModel({{ (int) $model['id'] }}, @js($model['name']))" class="admin-icon-btn h-8 w-8 text-rose-600" title="{{ __('admin.ai_models.delete') }}">
+                                        <i data-lucide="trash-2" class="h-3.5 w-3.5"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500">
+                                <span>任务 {{ $model['task_count'] }}</span>
+                                <span>调用 {{ number_format((int) $model['total_used']) }}</span>
+                                <span>
                                     @if ((int) $model['daily_limit'] > 0)
-                                        <div>{{ (int) $model['used_today'] }} / {{ (int) $model['daily_limit'] }}</div>
-                                        <div class="text-xs text-gray-500">{{ __('admin.ai_models.limit_today') }}</div>
+                                        今日 {{ (int) $model['used_today'] }}/{{ (int) $model['daily_limit'] }}
                                     @else
-                                        <span class="text-green-600">{{ __('admin.ai_models.limit_unlimited') }}</span>
+                                        不限额
                                     @endif
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    @if ($model['status'] === 'active')
-                                        <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
-                                            {{ __('admin.ai_models.status_active') }}
-                                        </span>
-                                    @elseif ($model['status'] === 'inactive')
-                                        <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800">
-                                            {{ __('admin.ai_models.status_inactive') }}
-                                        </span>
-                                    @else
-                                        <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-800">
-                                            {{ __('admin.ai_models.status_unknown') }}
-                                        </span>
-                                    @endif
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                    <div class="flex items-center gap-3">
-                                        <button type="button" onclick="testModelConnection({{ (int) $model['id'] }}, this)" class="inline-flex min-w-14 items-center justify-center gap-1.5 rounded-md px-2 py-1 text-emerald-600 hover:bg-emerald-50 hover:text-emerald-900">{{ __('admin.ai_models.test') }}</button>
-                                        <button type="button" onclick='editModel(@json($model, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP))' class="text-blue-600 hover:text-blue-900">{{ __('admin.ai_models.edit') }}</button>
-                                        <button type="button" onclick="deleteModel({{ (int) $model['id'] }}, @js($model['name']))" class="text-red-600 hover:text-red-900">{{ __('admin.ai_models.delete') }}</button>
-                                    </div>
-                                    <div id="model-test-result-{{ (int) $model['id'] }}" class="mt-2 text-xs whitespace-normal max-w-xs" role="status" aria-live="polite"></div>
-                                </td>
-                            </tr>
-                        @endforeach
-                    @endif
-                    </tbody>
-                </table>
+                                </span>
+                            </div>
+                            <div id="model-test-result-{{ (int) $model['id'] }}" class="mt-2 hidden text-[11px] leading-relaxed" role="status" aria-live="polite"></div>
+                        </article>
+                    @endforeach
+                </div>
+            @endif
+        </div>
+
+        <div class="hidden space-y-4" data-ai-model-panel="advanced" aria-hidden="true">
+            <div class="ai-config-card p-4">
+                <div class="mb-4 flex items-center justify-between">
+                    <h3 class="text-sm font-semibold text-slate-900">{{ __('admin.ai_models.vector_title') }}</h3>
+                    <span class="rounded-full px-2 py-0.5 text-[10px] font-medium {{ $pgvectorEnabled ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700' }}">
+                        {{ $pgvectorEnabled ? 'pgvector 已启用' : '降级模式' }}
+                    </span>
+                </div>
+                <form method="POST" action="{{ route('admin.ai-models.default-embedding') }}" class="flex flex-col gap-3 sm:flex-row sm:items-end">
+                    @csrf
+                    <div class="min-w-0 flex-1">
+                        <label for="default_embedding_model_id" class="admin-label">{{ __('admin.ai_models.default_embedding') }}</label>
+                        <select name="default_embedding_model_id" id="default_embedding_model_id" class="admin-input mt-1">
+                            <option value="0">{{ __('admin.ai_models.embedding_auto') }}</option>
+                            @foreach ($embeddingModels as $embeddingModel)
+                                <option value="{{ (int) $embeddingModel['id'] }}" @selected($defaultEmbeddingModelId === (int) $embeddingModel['id'])>
+                                    {{ $embeddingModel['name'] }}
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <button type="submit" class="admin-btn-primary shrink-0">{{ __('admin.ai_models.save_default') }}</button>
+                </form>
+            </div>
+
+            <div class="ai-config-card p-4">
+                <h3 class="mb-4 text-sm font-semibold text-slate-900">{{ __('admin.ai_models.chunking_title') }}</h3>
+                <form method="POST" action="{{ route('admin.ai-models.chunking-config') }}" class="grid gap-3 sm:grid-cols-2">
+                    @csrf
+                    <div>
+                        <label for="knowledge_chunk_strategy" class="admin-label">{{ __('admin.ai_models.chunk_strategy') }}</label>
+                        <select name="knowledge_chunk_strategy" id="knowledge_chunk_strategy" class="admin-input mt-1">
+                            <option value="rule" @selected(($chunkingConfig['strategy'] ?? 'rule') === 'rule')>{{ __('admin.ai_models.chunk_strategy_rule') }}</option>
+                            <option value="auto" @selected(($chunkingConfig['strategy'] ?? 'rule') === 'auto')>{{ __('admin.ai_models.chunk_strategy_auto') }}</option>
+                            <option value="semantic_llm" @selected(($chunkingConfig['strategy'] ?? 'rule') === 'semantic_llm')>{{ __('admin.ai_models.chunk_strategy_semantic') }}</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="knowledge_chunking_model_id" class="admin-label">{{ __('admin.ai_models.chunking_model') }}</label>
+                        <select name="knowledge_chunking_model_id" id="knowledge_chunking_model_id" class="admin-input mt-1">
+                            <option value="0">{{ __('admin.ai_models.chunking_model_none') }}</option>
+                            @foreach ($chatModels as $chatModel)
+                                <option value="{{ (int) $chatModel['id'] }}" @selected((int) ($chunkingConfig['model_id'] ?? 0) === (int) $chatModel['id'])>
+                                    {{ $chatModel['name'] }}
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div class="sm:col-span-2 flex justify-end">
+                        <button type="submit" class="admin-btn-primary">{{ __('admin.ai_models.save_chunking') }}</button>
+                    </div>
+                </form>
             </div>
         </div>
     </div>
+@endsection
 
-    <div id="modelModal" class="admin-modal-shell fixed inset-0 z-50 hidden overflow-y-auto">
-        <div class="admin-modal-backdrop fixed inset-0 bg-slate-900/45 backdrop-blur-sm" onclick="closeModelModal()"></div>
-        <div class="relative mx-auto my-[5vh] flex w-11/12 max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl shadow-slate-900/15">
-            <div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
-                <div class="flex items-center gap-3">
-                    <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
-                        <i data-lucide="cpu" class="h-4 w-4"></i>
-                    </span>
-                    <h3 class="text-base font-semibold text-slate-950" id="modalTitle">{{ __('admin.ai_models.modal_create') }}</h3>
-                </div>
+@section('modals')
+    <div id="modelModal" class="admin-modal-overlay hidden" role="dialog" aria-modal="true" onclick="if (event.target === this) closeModelModal()">
+        <div class="admin-modal-panel admin-modal-panel--lg" onclick="event.stopPropagation()">
+            <div class="admin-modal-panel-head">
+                <h3 class="text-base font-semibold text-slate-950" id="modalTitle">{{ __('admin.ai_models.modal_create') }}</h3>
                 <button type="button" onclick="closeModelModal()" class="admin-icon-btn" aria-label="{{ __('admin.common.close') }}">
                     <i data-lucide="x" class="h-4 w-4"></i>
                 </button>
             </div>
 
-            <div class="max-h-[82vh] overflow-y-auto px-6 py-5">
-                <form id="modelForm" method="POST" action="{{ route('admin.ai-models.store') }}" class="space-y-5">
-                    @csrf
-                    <input type="hidden" name="_method" id="formMethod" value="POST">
-                    <input type="hidden" name="id" id="modelId" value="">
+            <form id="modelForm" method="POST" action="{{ route('admin.ai-models.store') }}">
+                @csrf
+                <input type="hidden" name="_method" id="formMethod" value="POST">
+                <input type="hidden" name="id" id="modelId" value="">
 
-                    <details class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                        <summary class="flex cursor-pointer items-center justify-between text-sm font-semibold text-slate-900">
-                            <span class="flex items-center gap-2">
-                                <i data-lucide="wand-sparkles" class="h-4 w-4 text-blue-600"></i>
-                                {{ __('admin.ai_models.quick_chat') }}
-                            </span>
-                        </summary>
-                        <div class="mt-4 space-y-4">
-                            <div>
-                                <label class="admin-label">{{ __('admin.ai_models.quick_chat') }}</label>
-                                <div class="mt-2 flex flex-wrap gap-2">
-                                    <button type="button" onclick="fillPreset('minimax')" class="admin-btn-secondary h-8 px-3 text-xs">MiniMax</button>
-                                    <button type="button" onclick="fillPreset('minimax_highspeed')" class="admin-btn-secondary h-8 px-3 text-xs">MiniMax Highspeed</button>
-                                    <button type="button" onclick="fillPreset('openai')" class="admin-btn-secondary h-8 px-3 text-xs">OpenAI</button>
-                                    <button type="button" onclick="fillPreset('gemini')" class="admin-btn-secondary h-8 px-3 text-xs">Gemini</button>
-                                    <button type="button" onclick="fillPreset('deepseek')" class="admin-btn-secondary h-8 px-3 text-xs">DeepSeek</button>
-                                    <button type="button" onclick="fillPreset('zhipu')" class="admin-btn-secondary h-8 px-3 text-xs">Zhipu GLM</button>
-                                    <button type="button" onclick="fillPreset('volcengine_ark')" class="admin-btn-secondary h-8 px-3 text-xs">Volcengine Ark</button>
-                                </div>
-                            </div>
-                            <div>
-                                <label class="admin-label">{{ __('admin.ai_models.quick_embedding') }}</label>
-                                <div class="mt-2 flex flex-wrap gap-2">
-                                    <button type="button" onclick="fillPreset('openai_embedding')" class="admin-btn-secondary h-8 px-3 text-xs">OpenAI Embedding</button>
-                                    <button type="button" onclick="fillPreset('gemini_embedding')" class="admin-btn-secondary h-8 px-3 text-xs">Gemini Embedding</button>
-                                    <button type="button" onclick="fillPreset('zhipu_embedding')" class="admin-btn-secondary h-8 px-3 text-xs">Zhipu Embedding</button>
-                                </div>
-                            </div>
-                            <p class="text-xs leading-5 text-slate-500">{{ __('admin.ai_models.quick_help') }}</p>
-                            <p class="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-700">{{ __('admin.ai_models.gemini_embedding_notice') }}</p>
+                <div class="admin-modal-panel-body space-y-4">
+                    <details class="rounded-xl border border-slate-100 bg-slate-50/60 px-3 py-2">
+                        <summary class="cursor-pointer text-[13px] font-medium text-slate-700">快速填充厂商预设</summary>
+                        <div class="mt-3 flex flex-wrap gap-1.5">
+                            @foreach (['deepseek' => 'DeepSeek', 'openai' => 'OpenAI', 'gemini' => 'Gemini', 'zhipu' => '智谱', 'openai_embedding' => 'OpenAI Embed', 'gemini_embedding' => 'Gemini Embed'] as $key => $label)
+                                <button type="button" onclick="fillPreset('{{ $key }}')" class="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600 hover:border-blue-200 hover:text-blue-700">{{ $label }}</button>
+                            @endforeach
                         </div>
                     </details>
 
-                    <div class="rounded-xl border border-slate-200 bg-white p-4">
-                        <div class="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-900">
-                            <i data-lucide="settings-2" class="h-4 w-4 text-blue-600"></i>
-                            {{ __('admin.ai_models.column.info') }}
+                    <div class="grid gap-3 sm:grid-cols-2">
+                        <div class="sm:col-span-2">
+                            <label for="name" class="admin-label">{{ __('admin.ai_models.field_name') }}</label>
+                            <input type="text" name="name" id="name" required class="admin-input mt-1" placeholder="如 DeepSeek Chat">
                         </div>
-                        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-                            <div>
-                                <label for="name" class="admin-label">{{ __('admin.ai_models.field_name') }}</label>
-                                <input type="text" name="name" id="name" required class="admin-input mt-1" placeholder="{{ __('admin.ai_models.placeholder_name') }}">
-                            </div>
+                        <div>
+                            <label for="model_type" class="admin-label">{{ __('admin.ai_models.field_type') }}</label>
+                            <select name="model_type" id="model_type" class="admin-input mt-1">
+                                <option value="chat">Chat 生成</option>
+                                <option value="embedding">Embedding 向量</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="model_id" class="admin-label">{{ __('admin.ai_models.field_model_id') }}</label>
+                            <input type="text" name="model_id" id="model_id" required class="admin-input mt-1" placeholder="deepseek-chat">
+                        </div>
+                        <div class="sm:col-span-2">
+                            <label for="api_key" class="admin-label">{{ __('admin.ai_models.field_api_key') }}</label>
+                            <input type="password" name="api_key" id="api_key" required class="admin-input mt-1" placeholder="{{ __('admin.ai_models.placeholder_api_key') }}">
+                            <p id="apiKeyHelp" class="mt-1 text-[11px] text-slate-400"></p>
+                        </div>
+                        <div class="sm:col-span-2">
+                            <label for="api_url" class="admin-label">{{ __('admin.ai_models.field_api_url') }}</label>
+                            <input type="text" inputmode="url" autocomplete="off" name="api_url" id="api_url" class="admin-input mt-1" value="https://api.deepseek.com" placeholder="https://api.example.com">
+                        </div>
+                    </div>
+
+                    <details class="rounded-xl border border-slate-100 px-3 py-2">
+                        <summary class="cursor-pointer text-[13px] font-medium text-slate-700">高级选项</summary>
+                        <div class="mt-3 grid gap-3 sm:grid-cols-2">
                             <div>
                                 <label for="version" class="admin-label">{{ __('admin.ai_models.field_version') }}</label>
-                                <input type="text" name="version" id="version" class="admin-input mt-1" placeholder="{{ __('admin.ai_models.placeholder_version') }}">
+                                <input type="text" name="version" id="version" class="admin-input mt-1" placeholder="可选">
                             </div>
                             <div>
-                                <label for="model_type" class="admin-label">{{ __('admin.ai_models.field_type') }}</label>
-                                <select name="model_type" id="model_type" class="admin-input mt-1">
-                                    <option value="chat">{{ __('admin.ai_models.type_chat_option') }}</option>
-                                    <option value="embedding">{{ __('admin.ai_models.type_embedding_option') }}</option>
-                                </select>
-                                <p class="mt-1 text-xs text-slate-500">{{ __('admin.ai_models.type_help') }}</p>
-                            </div>
-                            <div>
-                                <label for="model_id" class="admin-label">{{ __('admin.ai_models.field_model_id') }}</label>
-                                <input type="text" name="model_id" id="model_id" required class="admin-input mt-1" placeholder="{{ __('admin.ai_models.placeholder_model_id') }}">
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="rounded-xl border border-slate-200 bg-white p-4">
-                        <div class="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-900">
-                            <i data-lucide="key-round" class="h-4 w-4 text-blue-600"></i>
-                            {{ __('admin.ai_models.field_api_url') }}
-                        </div>
-                        <div class="space-y-4">
-                            <div>
-                                <label for="api_key" class="admin-label">{{ __('admin.ai_models.field_api_key') }}</label>
-                                <input type="password" name="api_key" id="api_key" required class="admin-input mt-1" placeholder="{{ __('admin.ai_models.placeholder_api_key') }}">
-                                <p id="apiKeyHelp" class="mt-1 text-xs text-slate-500">{{ __('admin.ai_models.api_key_help_create') }}</p>
-                                <p class="mt-1 text-xs text-blue-600">{{ __('admin.ai_models.api_key_encryption_notice') }}</p>
-                            </div>
-
-                            <div>
-                                <label for="api_url" class="admin-label">{{ __('admin.ai_models.field_api_url') }}</label>
-                                <input type="text" inputmode="url" autocomplete="off" name="api_url" id="api_url" class="admin-input mt-1" value="https://api.deepseek.com" placeholder="{{ __('admin.ai_models.placeholder_api_url') }}">
-                                <p class="mt-1 text-xs leading-5 text-slate-500">{{ __('admin.ai_models.api_url_help') }}</p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <details class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                        <summary class="cursor-pointer text-sm font-semibold text-slate-900">{{ __('admin.ai_models.field_failover_priority') }} / {{ __('admin.ai_models.field_daily_limit') }}</summary>
-                        <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-                            <div>
-                                <label for="failover_priority" class="admin-label">{{ __('admin.ai_models.field_failover_priority') }}</label>
+                                <label for="failover_priority" class="admin-label">故障转移优先级</label>
                                 <input type="number" name="failover_priority" id="failover_priority" min="1" class="admin-input mt-1" value="100">
-                                <p class="mt-1 text-xs text-slate-500">{{ __('admin.ai_models.failover_priority_help') }}</p>
                             </div>
                             <div>
                                 <label for="daily_limit" class="admin-label">{{ __('admin.ai_models.field_daily_limit') }}</label>
-                                <input type="number" name="daily_limit" id="daily_limit" min="0" class="admin-input mt-1" placeholder="0">
-                                <p class="mt-1 text-xs text-slate-500">{{ __('admin.ai_models.limit_help') }}</p>
+                                <input type="number" name="daily_limit" id="daily_limit" min="0" class="admin-input mt-1" placeholder="0 = 不限">
                             </div>
                             <div id="statusField" class="hidden">
                                 <label for="status" class="admin-label">{{ __('admin.ai_models.field_status') }}</label>
@@ -355,18 +209,16 @@
                             </div>
                         </div>
                     </details>
+                </div>
 
-                    <div class="flex justify-end gap-3 border-t border-slate-100 pt-4">
-                        <button type="button" onclick="closeModelModal()" class="admin-btn-secondary">
-                            {{ __('admin.button.cancel') }}
-                        </button>
-                        <button type="submit" class="admin-btn-primary">
-                            <i data-lucide="check" class="h-4 w-4"></i>
-                            {{ __('admin.button.save') }}
-                        </button>
-                    </div>
-                </form>
-            </div>
+                <div class="admin-modal-panel-foot">
+                    <button type="button" onclick="closeModelModal()" class="admin-btn-secondary">{{ __('admin.button.cancel') }}</button>
+                    <button type="submit" class="admin-btn-primary">
+                        <i data-lucide="check" class="h-4 w-4"></i>
+                        {{ __('admin.button.save') }}
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 @endsection
@@ -396,16 +248,12 @@
         const aiModelPanels = [...document.querySelectorAll('[data-ai-model-panel]')];
 
         function activateAiModelTab(nextTab) {
-            const selected = aiModelTabs.some((tab) => tab.dataset.aiModelTab === nextTab)
-                ? nextTab
-                : 'models';
-
+            const selected = aiModelTabs.some((tab) => tab.dataset.aiModelTab === nextTab) ? nextTab : 'models';
             aiModelTabs.forEach((tab) => {
                 const active = tab.dataset.aiModelTab === selected;
                 tab.classList.toggle('is-active', active);
                 tab.setAttribute('aria-pressed', active ? 'true' : 'false');
             });
-
             aiModelPanels.forEach((panel) => {
                 const active = panel.dataset.aiModelPanel === selected;
                 panel.classList.toggle('hidden', !active);
@@ -413,9 +261,7 @@
             });
         }
 
-        aiModelTabs.forEach((tab) => {
-            tab.addEventListener('click', () => activateAiModelTab(tab.dataset.aiModelTab || 'models'));
-        });
+        aiModelTabs.forEach((tab) => tab.addEventListener('click', () => activateAiModelTab(tab.dataset.aiModelTab || 'models')));
 
         const PROVIDER_PRESETS = {
             minimax: {name: 'MiniMax M2.7', version: 'M2.7', model_id: 'MiniMax-M2.7', api_url: 'https://api.minimax.io', model_type: 'chat'},
@@ -477,72 +323,44 @@
         }
 
         function deleteModel(id, name) {
-            if (!confirm(AI_MODELS_I18N.confirmDelete.replace('__NAME__', name))) {
-                return;
-            }
-
+            if (!confirm(AI_MODELS_I18N.confirmDelete.replace('__NAME__', name))) return;
             const form = document.createElement('form');
             form.method = 'POST';
             form.action = DELETE_URL_TEMPLATE.replace('__MODEL_ID__', String(id));
-            form.innerHTML = `
-                <input type="hidden" name="_token" value="{{ csrf_token() }}">
-            `;
+            form.innerHTML = `<input type="hidden" name="_token" value="{{ csrf_token() }}">`;
             document.body.appendChild(form);
             form.submit();
         }
 
         async function testModelConnection(id, button) {
             const resultEl = document.getElementById(`model-test-result-${id}`);
-            const originalText = button.textContent;
             const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
             const controller = new AbortController();
-            const startedAt = Date.now();
             const timeout = window.setTimeout(() => controller.abort(), MODEL_TEST_TIMEOUT_MS);
-            const tick = window.setInterval(() => {
-                const seconds = Math.max(1, Math.floor((Date.now() - startedAt) / 1000));
-                button.innerHTML = `<i data-lucide="loader-2" class="h-3.5 w-3.5 animate-spin"></i><span>${AI_MODELS_I18N.testing} ${seconds}s</span>`;
-                window.lucide?.createIcons?.();
-            }, 1000);
             button.disabled = true;
-            button.innerHTML = `<i data-lucide="loader-2" class="h-3.5 w-3.5 animate-spin"></i><span>${AI_MODELS_I18N.testing}</span>`;
-            button.setAttribute('aria-busy', 'true');
-            button.classList.add('opacity-70', 'cursor-wait');
-            setModelTestResult(resultEl, 'neutral', AI_MODELS_I18N.testing);
-            window.lucide?.createIcons?.();
+            button.classList.add('opacity-50');
+            if (resultEl) {
+                resultEl.classList.remove('hidden');
+                setModelTestResult(resultEl, 'neutral', AI_MODELS_I18N.testing);
+            }
 
             try {
                 const response = await fetch(TEST_URL_TEMPLATE.replace('__MODEL_ID__', String(id)), {
                     method: 'POST',
-                    headers: {
-                        'Accept': 'application/json',
-                        'Content-Type': 'application/json',
-                        'X-CSRF-TOKEN': csrf,
-                        'X-Requested-With': 'XMLHttpRequest',
-                    },
+                    headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf, 'X-Requested-With': 'XMLHttpRequest' },
                     body: JSON.stringify({}),
                     signal: controller.signal,
                 });
                 const data = await parseModelTestResponse(response);
                 const succeeded = data.success === true;
-                const message = data.message || data.error || (succeeded ? AI_MODELS_I18N.testSuccessPrefix : AI_MODELS_I18N.testFailedPrefix);
-                const durationLabel = data.meta && data.meta.duration_ms ? ` · ${data.meta.duration_ms}ms` : '';
-                setModelTestResult(
-                    resultEl,
-                    succeeded ? 'success' : 'failed',
-                    `${succeeded ? AI_MODELS_I18N.testSuccessPrefix : AI_MODELS_I18N.testFailedPrefix}${message}${durationLabel}`
-                );
-            } catch (error) {
-                const message = error?.name === 'AbortError'
-                    ? `${AI_MODELS_I18N.testFailedPrefix}${AI_MODELS_I18N.testNetworkError}`
-                    : AI_MODELS_I18N.testNetworkError;
-                setModelTestResult(resultEl, 'failed', message);
+                const message = data.message || data.error || '';
+                setModelTestResult(resultEl, succeeded ? 'success' : 'failed', `${succeeded ? '连接成功' : '连接失败'}${message ? '：' + message : ''}`);
+            } catch {
+                setModelTestResult(resultEl, 'failed', AI_MODELS_I18N.testNetworkError);
             } finally {
                 window.clearTimeout(timeout);
-                window.clearInterval(tick);
                 button.disabled = false;
-                button.textContent = originalText;
-                button.removeAttribute('aria-busy');
-                button.classList.remove('opacity-70', 'cursor-wait');
+                button.classList.remove('opacity-50');
             }
         }
 
@@ -550,48 +368,23 @@
             const contentType = response.headers.get('content-type') || '';
             if (contentType.includes('application/json')) {
                 const data = await response.json().catch(() => ({}));
-                if (response.ok) {
-                    return data;
-                }
-
-                return {
-                    success: false,
-                    message: data.message || data.error || `HTTP ${response.status}`,
-                    meta: data.meta || {http_status: response.status},
-                };
+                return response.ok ? data : { success: false, message: data.message || data.error || `HTTP ${response.status}` };
             }
-
             const body = await response.text().catch(() => '');
-
-            return {
-                success: false,
-                message: (body || `HTTP ${response.status}`)
-                    .replace(/<[^>]*>/g, ' ')
-                    .replace(/\s+/g, ' ')
-                    .trim()
-                    .slice(0, 240),
-                meta: {http_status: response.status},
-            };
+            return { success: false, message: body.replace(/<[^>]*>/g, ' ').trim().slice(0, 120) };
         }
 
         function setModelTestResult(element, state, message) {
-            if (!element) {
-                return;
-            }
-            const classes = {
-                neutral: 'border-slate-200 bg-slate-50 text-slate-600',
-                success: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-                failed: 'border-red-200 bg-red-50 text-red-700',
-            };
-            element.className = `mt-2 max-w-xs rounded-md border px-2 py-1.5 text-xs leading-5 whitespace-normal ${classes[state] || classes.neutral}`;
+            if (!element) return;
+            const classes = { neutral: 'text-slate-500', success: 'text-emerald-600', failed: 'text-rose-600' };
+            element.className = `mt-2 text-[11px] leading-relaxed ${classes[state] || classes.neutral}`;
             element.textContent = message;
+            element.classList.remove('hidden');
         }
 
         function fillPreset(provider) {
             const preset = PROVIDER_PRESETS[provider];
-            if (!preset) {
-                return;
-            }
+            if (!preset) return;
             document.getElementById('name').value = preset.name;
             document.getElementById('version').value = preset.version;
             document.getElementById('model_id').value = preset.model_id;
@@ -606,17 +399,7 @@
         window.deleteModel = deleteModel;
         window.fillPreset = fillPreset;
 
-        window.addEventListener('click', function (event) {
-            const modal = document.getElementById('modelModal');
-            if (event.target === modal) {
-                closeModelModal();
-            }
-        });
-
-        document.addEventListener('keydown', (event) => {
-            if (event.key === 'Escape') {
-                closeModelModal();
-            }
-        });
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModelModal(); });
+        document.addEventListener('DOMContentLoaded', () => window.lucide?.createIcons?.());
     </script>
 @endpush

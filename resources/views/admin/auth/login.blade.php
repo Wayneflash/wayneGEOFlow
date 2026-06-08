@@ -1,5 +1,4 @@
 @php
-    $localeOptions = \App\Support\AdminWeb::supportedLocales();
     $loginProductName = __('admin.login.product_name');
     $isChineseLocale = str_starts_with(app()->getLocale(), 'zh');
     $copy = $isChineseLocale
@@ -266,18 +265,6 @@
     <section class="relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-100 px-6 py-10">
         <div class="pointer-events-none absolute left-1/2 top-16 h-72 w-72 -translate-x-1/2 rounded-full bg-blue-100/70 blur-3xl"></div>
         <div class="pointer-events-none absolute bottom-10 right-10 h-52 w-52 rounded-full bg-white/80 blur-3xl"></div>
-
-        <div class="absolute right-6 top-6">
-            <select onchange="if (this.value) window.location.href=this.value"
-                    class="h-10 rounded-lg border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-blue-500/20"
-                    aria-label="{{ __('admin.login.language_label') }}">
-                @foreach ($localeOptions as $localeCode => $localeLabel)
-                    <option value="{{ route('admin.locale.switch', ['locale' => $localeCode]) }}" @selected(app()->getLocale() === $localeCode)>
-                        {{ $localeLabel }}
-                    </option>
-                @endforeach
-            </select>
-        </div>
 
         <div class="login-stage relative w-full max-w-[430px]">
             <div class="mb-10 text-center lg:hidden">
