@@ -235,6 +235,87 @@ PROMPT;
     /**
      * @param  array<string, mixed>  $pageJson
      */
+    /**
+     * 由 parseHtml 直接抽出的「确定字段」打包成 prompt 段，让 LLM 优先采纳。
+     *
+     * @param  array<string, mixed>  $pageJson
+     */
+    public static function buildPriorKnowledgeBlock(array $pageJson): string
+    {
+        $lines = [];
+
+        $contact = $pageJson['contact_info'] ?? null;
+        if (is_array($contact) && $contact !== []) {
+            $hasAny = false;
+            $buf = "页面级联系方式（已由解析器直接抽取，请优先采纳，不要重复推断）：";
+            foreach (['emails', 'phones', 'mobiles', 'wechat_ids', 'qq', 'addresses', 'social_links'] as $k) {
+                $vals = $contact[$k] ?? [];
+                if (is_array($vals) && $vals !== []) {
+                    $hasAny = true;
+                    $buf .= "\n- {$k}: " . implode('、', array_slice(array_values(array_filter($vals, 'is_scalar')), 0, 10));
+                }
+            }
+            if ($hasAny) {
+                $lines[] = $buf;
+            }
+        }
+
+        $struct = $pageJson['json_ld_struct'] ?? null;
+        if (is_array($struct)) {
+            $types = $struct['types'] ?? [];
+            if (is_array($types) && $types !== []) {
+                $lines[] = "页面 JSON-LD 类型：" . implode('、', array_slice(array_values(array_filter($types, 'is_scalar')), 0, 8));
+            }
+            $org = $struct['organization'] ?? null;
+            if (is_array($org) && $org !== []) {
+                $name = trim((string) ($org['name'] ?? ''));
+                $url  = trim((string) ($org['url'] ?? ''));
+                $logo = trim((string) ($org['logo'] ?? ''));
+                $contactPoint = is_array($org['contact_point'] ?? null) ? $org['contact_point'] : [];
+                if ($name !== '' || $url !== '' || $logo !== '' || $contactPoint !== []) {
+                    $orgBuf = "页面 JSON-LD 机构（请采纳为 identified_company 候选）：";
+                    if ($name !== '') { $orgBuf .= "\n- name: {$name}"; }
+                    if ($url !== '')  { $orgBuf .= "\n- url: {$url}"; }
+                    if ($logo !== '') { $orgBuf .= "\n- logo: {$logo}"; }
+                    foreach (array_slice($contactPoint, 0, 5) as $cp) {
+                        if (! is_array($cp)) { continue; }
+                        $phone = trim((string) ($cp['telephone'] ?? ''));
+                        $type  = trim((string) ($cp['contact_type'] ?? ''));
+                        if ($phone !== '') {
+                            $orgBuf .= "\n- contact_point: {$phone}" . ($type !== '' ? " ({$type})" : '');
+                        }
+                    }
+                    $lines[] = $orgBuf;
+                }
+            }
+            $prods = $struct['products'] ?? [];
+            if (is_array($prods) && $prods !== []) {
+                $sample = array_slice($prods, 0, 8);
+                $lines[] = "页面 JSON-LD 产品/服务（前 " . count($sample) . " 条）：\n- " . implode("\n- ", array_map(
+                    static fn ($p) => is_array($p)
+                        ? trim(((string) ($p['name'] ?? '')) . (isset($p['sku']) ? ' [SKU ' . $p['sku'] . ']' : ''))
+                        : (string) $p,
+                    $sample
+                ));
+            }
+            $faqs = $struct['faqs'] ?? [];
+            if (is_array($faqs) && $faqs !== []) {
+                $sample = array_slice($faqs, 0, 5);
+                $lines[] = "页面 JSON-LD FAQ（前 " . count($sample) . " 条）：\n- " . implode("\n- ", array_map(
+                    static function ($f): string {
+                        if (! is_array($f)) { return (string) $f; }
+                        $q = trim((string) ($f['question'] ?? ''));
+                        $a = trim((string) ($f['answer'] ?? ''));
+                        return ($q !== '' ? $q : '?') . ' -> ' . Str::limit($a, 120, '…');
+                    },
+                    $sample
+                ));
+            }
+        }
+
+        return $lines === [] ? '' : "【页面已抽取的结构化字段】\n" . implode("\n\n", $lines);
+    }
+
     public static function cleanUser(array $pageJson): string
     {
         $mode = (string) ($pageJson['collection_mode'] ?? 'direct');
@@ -265,7 +346,10 @@ PROMPT;
             'chunk_index' => count((array) ($pageJson['chunks'] ?? [])),
         ];
 
-        return "【输入来源】节点 parse 输出的 page_json（已分块）\n"
+        $priorKnowledge = self::buildPriorKnowledgeBlock($pageJson);
+
+        return ($priorKnowledge !== '' ? $priorKnowledge."\n\n" : '')
+            ."【输入来源】节点 parse 输出的 page_json（已分块）\n"
             ."【采集模式】{$mode} — {$modeNote}\n"
             ."【主体线索】{$companyNote}\n"
             ."【任务】基于下述结构化 chunks 提取 facts，输出 system 规定的 JSON\n\n"
@@ -278,50 +362,99 @@ PROMPT;
     public static function knowledgeSystem(): string
     {
         return <<<'PROMPT'
-你是深联云 GEO 流水线第 2 步「知识库整理」助手。上一步 ai_clean 已输出清洗结果。
+你是深联云 GEO 流水线第 2 步「企业知识库整理」助手。上一步 ai_clean 已输出清洗结果。
 
 ## 任务
 
-把清洗结果整理成**可直接写入知识库**的 Markdown（knowledge_markdown），供后续 GEO 文章、问答、向量检索直接消费。
+把清洗结果整理成**可直接写入企业知识库**的 Markdown（knowledge_markdown）。
+这份文档后续会被 AI **直接当写作素材**消化成 GEO 文章、问答、客户沟通话术、销售话术、招标应答等。
+因此要写成「**AI 一眼能消化**」的**段落式业务资料**，结构化按以下 9 个核心维度展开。
+不是 RAG 内部检索用的元数据结构 — 不要写「原子化事实」「GEO 写作建议」「写作与检索建议」这类元信息节。
+
 不要重新抓取网页，不要在此步生成关键词或标题。
 
 ## 硬性规则
 
 - 只输出 JSON：`{"summary": "...", "library_name": "...", "knowledge_markdown": "..."}`
-- 禁止虚构：客户案例、营收数字、排名、奖项、未在输入中出现的引用、链接
-- 信息不足时直接写「素材中未明确说明」，不要硬补
+- 禁止虚构：客户名单、营收数字、员工规模、获奖、专利数量、未在输入中出现的引用、链接
+- 信息不足时直接写「素材中未明确说明」，不要硬补、估算或推断
+- 所有数字、年份、对比、关系必须能在输入 chunks 中找到出处
 - hybrid / ai_research 素材：文首必须注明采集模式、主体公司、证据边界
-- knowledge_markdown 末尾必须以「## 写作与检索建议」收尾，给后续 GEO 文章与 RAG 检索提供抓手
 
-## knowledge_markdown 结构（按顺序，禁止缺节）
+## knowledge_markdown 结构（10 节，按顺序，禁止缺节；素材中无对应内容也要保留节并写「素材中未明确说明」）
 
-1. **来源信息**（元信息，1 个表格即可）
-   - 字段：来源 URL、来源域名、采集模式、主体公司、识别置信度、证据边界
-2. **核心业务摘要**（2-4 句，每句 ≤80 字，覆盖「主体 + 业务 + 客户 + 价值」四要素）
-3. **实体与关系**
-   - 主体公司、品牌、产品线、目标客户、应用场景、上下游，每条 ≤30 字
-4. **原子化事实**（**入库关键**，必须覆盖）
-   - 每条 1 行，格式 `实体 - 属性/能力/事实 - 证据或边界`
-   - 至少 12 条，最多 30 条；事实之间不重复
-   - 涉及数字、年份、对比、关系时必须写清证据（如「官网关于页 / 调研产品页 / 未明确」）
-5. **产品 / 服务与能力**（按品类分组，每组 2-6 条要点）
-6. **目标用户与应用场景**（行业 + 角色 + 典型场景，各 1 行）
-7. **GEO 内容可用方向**（3-6 个后续文章选题，每个 ≤20 字）
-8. **使用边界**（哪些不能写、哪些需标注不确定；至少 2 条）
-9. **写作与检索建议**（3-5 条，提示 RAG 检索的关键词、否定词、敏感表述）
+### 1. 来源信息
+1 个表格即可；字段：来源 URL、来源域名、采集模式、主体公司、识别置信度、证据边界
+
+### 2. 核心业务摘要
+3-5 句，覆盖「主体 + 业务 + 客户 + 价值」四要素
+
+### 3. 企业官网（**独立节，靠前位置便于 AI 引用**）
+- 企业官网 URL（必填，**所有 GEO 文章都应自然带上官网链接**）
+- 商城 / 行业平台店铺链接（如有）
+- 自媒体矩阵：公众号 / 视频号 / 抖音号 / 小程序 / LinkedIn / 微博 / 知乎机构号 / Bilibili（如有）
+- 官网主要板块 / 多语言版本 / 国家站点（如有）
+
+### 4. 公司基础信息
+- 法定公司全称 / 简称 / 英文名
+- 公司性质（民营 / 国有 / 外资 / 合资 / 上市公司 / 高新企业 / 专精特新 等）
+- 成立时间 / 从业年限
+- 总部地址 / 主要分支机构
+
+### 5. 主营业务
+- 一句话定位（例：专注于智能公交整体解决方案）
+- 主营业务范围（多个并列）
+- 所属行业 / 赛道
+- 商业模式（产品销售 / 解决方案 / SaaS / 项目集成 / 订阅服务 等）
+
+### 6. 产品体系（**核心节**，按业务线分组）
+- 产品 / 解决方案名称 + 型号 / 版本
+- 核心功能 / 技术亮点 / 差异化卖点
+- 适用行业与场景
+- 技术参数（性能 / 规格 / 接口 / 协议 / 兼容性）
+- 配套服务（安装 / 培训 / 售后 / 定制开发 / API 开放）
+- 价格区间与供货周期（仅在素材中明确出现时填写）
+
+### 7. 解决方案（区别于单产品）
+- 面向行业（公交 / 校车 / 客运 / 整车厂 / 政府 等）
+- 方案组成（涉及的产品 + 服务）
+- 解决的痛点 / 价值主张
+- 典型配置
+
+### 8. 典型客户与案例（**重点节**，公开可查）
+- 客户类型（按角色：公交集团 / 校车运营 / 客运企业 / 整车厂 / 政府 等）
+- 公开可查的客户名单
+- 项目案例（项目名 / 客户 / 城市 / 时间 / 规模 / 成果）
+- 行业展会亮相（年份 / 展馆 / 展位号 / 发布产品）
+- 标杆 / 旗舰项目
+
+### 9. 企业规模、资质与研发
+**合并节，避免空节干扰**：
+- 企业规模：员工总数 / 研发人员数 / 销售团队 / 营收 / 工厂面积 / 生产基地 / 产能（未公开写「素材中未明确说明」）
+- 资质与荣誉：专利数量与类型（发明 / 实用新型 / 外观 / 软著）/ 重要认证（ISO / CE / 3C / 工信部目录 等）/ 行业奖项 / 高新企业 / 专精特新 / 瞪羚 / 独角兽
+- 研发能力：核心技术 / 自研芯片 / 操作系统 / 算法 / 与高校合作 / 研发中心
+- 海外业务（若有）：覆盖国家 / 服务网点 / 支持语种 / 海外合作伙伴
+
+### 10. 联系方式（**详尽节**，逐条列）
+- 总机 / 业务电话 / 销售热线
+- 客服 / 售后热线
+- 邮箱（按角色：通用 / 销售 / 客服 / 媒体 / 合作）
+- 地址（总部 / 分公司 / 工厂）
+- 公众号 / 视频号 / 抖音号 / 小程序
+- 招聘 / 投标联系
 
 ## 排版硬性要求
 
-- 使用 Markdown 标题（## / ###）分层，不要用加粗当标题
+- 使用 Markdown 标题（## / ###）分层
 - 列表用 `-`；每行 ≤80 字；段落之间空 1 行
-- 禁止：连续 3 个以上空行、首尾多余空白、连续重复的同一句话、URL 跟踪参数（utm_* / fbclid）
+- 禁止：连续 3 个以上空行、首尾多余空白、连续重复的同一句话、URL 跟踪参数
 - 数字与单位之间保留 1 个空格（1 万、2.5 倍）；中文/英文之间保留 1 个空格
-- 总长度 1500-4000 字；官网正文丰富时可到 5000 字；少于 1200 字说明事实沉淀不够，需从 facts / clean_text 补全
+- 总长度 3000-6000 字；官网正文丰富时可到 8000 字；少于 2000 字说明事实沉淀不够
 
 ## 字段要求
 
 - library_name：10-30 字，适合作项目素材名，**不要**带「知识库」三字
-- summary：120-240 字，与 knowledge_markdown 第 2 节内容一致但更紧凑
+- summary：120-240 字，覆盖业务定位 + 核心产品 + 目标客户
 PROMPT;
     }
 
@@ -489,7 +622,8 @@ PROMPT;
 知识库：
 - 先沉淀事实，再生成观点
 - 保留来源 URL、主体公司、采集模式、证据边界
-- 用「实体 - 属性 - 证据/边界」沉淀原子事实，方便 RAG 命中
+- 写成「AI 一眼能消化」的段落式业务资料：公司简介、概况与规模、资质、产品体系、典型客户与案例、海外业务、联系方式
+- 避免「原子化事实」「GEO 写作建议」这类元信息节（这些是 RAG 内部数据，不该出现在入库文本里）
 PROMPT;
     }
 
@@ -503,7 +637,11 @@ PROMPT;
         $kmMax = max(1200, (int) config('geoflow.url_import_fast.knowledge_max_chars', 2800));
 
         return <<<PROMPT
-你是深联云 GEO「素材一体化」助手。**一次输出**清洗结果 + 知识库 Markdown，供后续分块入库与 GEO 推广。
+你是深联云 GEO「素材一体化」助手。**一次输出**清洗结果 + 知识库 Markdown。
+
+**关键定位**：知识库 Markdown 后续会被 AI **直接当写作素材**消化成 GEO 文章、问答、话术，
+因此要写成「AI 一眼能消化」的**段落式业务资料**，不是 RAG 内部检索用的元数据结构。
+避免出现「原子化事实」「GEO 写作建议」这类元信息节。
 
 ## 质量红线（合并步骤不得缩水）
 
@@ -520,16 +658,18 @@ summary, library_name, knowledge_markdown
 
 core_business：industry, products_services[], target_audience[], commercial_scenarios[], value_proposition, entity_relations[], evidence_limits
 
-## knowledge_markdown 结构（按顺序）
+## knowledge_markdown 结构（10 节，按顺序，禁止缺节；素材中无对应内容也要保留节并写「素材中未明确说明」）
 
-1. 来源信息（表格：URL、域名、采集模式、主体公司、证据边界）
-2. 核心业务摘要（2-4 句）
-3. 实体与关系（主体/品牌/产品/客户/场景）
-4. 原子化事实（每条：实体 - 属性/能力 - 证据）
-5. 产品/服务与能力（分组要点）
-6. 目标用户与应用场景
-7. GEO 内容可用方向（3-5 个选题）
-8. 写作与检索建议（3-5 条）
+1. **来源信息**（表格：URL、域名、采集模式、主体公司、证据边界）
+2. **核心业务摘要**（3-5 句，覆盖「主体 + 业务 + 客户 + 价值」四要素）
+3. **企业官网**（URL + 商城 + 自媒体矩阵 + 主要板块；**所有 GEO 文章都应自然带上官网链接**）
+4. **公司基础信息**（全称 / 简称 / 英文名 / 性质 / 成立时间 / 总部地址 / 分支机构）
+5. **主营业务**（一句话定位 / 业务范围 / 行业 / 商业模式）
+6. **产品体系**（按业务线分组：产品名 + 型号 + 核心功能 + 适用场景 + 技术参数 + 配套服务 + 价格区间）
+7. **解决方案**（面向行业 / 方案组成 / 痛点 / 价值主张 / 典型配置）
+8. **典型客户与案例**（客户类型 + 公开客户名单 + 项目案例 + 展会亮相 + 标杆项目）
+9. **企业规模、资质与研发**（合并节：员工/营收/工厂 + 专利/认证/奖项 + 核心技术/自研芯片/合作 + 海外业务）
+10. **联系方式**（电话/客服/邮箱（按角色）/地址/公众号/视频号/抖音号/招聘/投标）
 
 ## clean 要求
 
@@ -621,4 +761,121 @@ PROMPT;
             'text' => Str::limit((string) ($pageJson['text'] ?? ''), 9000, ''),
         ]);
     }
+
+/**
+     * Fast pipeline 1 次 AI 输出：清洁正文 + 知识库 Markdown + 关键词 + 标题。
+     */
+    public static function combinedAllInOneSystem(): string
+    {
+        $maxFacts = max(8, (int) config("geoflow.url_import_fast.max_facts", 12));
+        $kmMin = max(800, (int) config("geoflow.url_import_fast.knowledge_min_chars", 1200));
+        $kmMax = max(1200, (int) config("geoflow.url_import_fast.knowledge_max_chars", 2800));
+        $maxTitles = max(12, (int) config("geoflow.url_import_fast.max_titles", 24));
+        $minDecision = max(4, (int) config("geoflow.url_import_fast.min_decision_titles", 10));
+
+        $tpl = <<<'PROMPT'
+你是 WayneGEO 的「网页采集一站式」专家。一次输出清洁正文 + 知识库 Markdown + 关键词 + 标题。
+
+**关键定位**：knowledge_markdown 后续会被 AI **直接当写作素材**消化成 GEO 文章、问答、话术，
+因此要写成「AI 一眼能消化」的**段落式业务资料**，不是 RAG 内部检索用的元数据结构。
+**避免**出现「原子化事实」「GEO 写作建议」「写作与检索建议」这类元信息节。
+
+## 硬规则（违反任意一条视为失败）
+- 仅输出一个 JSON 对象；禁止 markdown 代码块、解释、前后缀
+- 不要捏造输入中未出现的信息；不确定就写入 evidence_limits
+- facts 至少 __MAX_FACTS__ 条，每条必须包含 chunk_id / confidence / tags / source
+- entities 至少 10 个；identified_company 必须列入
+- keywords 5-10 个；titles 最多 __MAX_TITLES__ 条（决策类至少 __MIN_DECISION__ 条）
+- knowledge_markdown 长度 __KM_MIN__-__KM_MAX__ 字
+## 必填字段
+clean_title, clean_summary, clean_text, core_business, entities, facts, noise_removed, chunk_index,
+summary, library_name, knowledge_markdown, keywords, titles
+core_business: industry, products_services[], target_audience[], commercial_scenarios[], value_proposition, evidence_limits
+## knowledge_markdown 结构（10 节，顺序固定，禁止缺节；素材中无对应内容也要保留节并写「素材中未明确说明」）
+1. 来源信息表（URL / 域名 / 采集模式 / 主体公司 / 证据边界）
+2. 核心业务摘要（3-5 句，覆盖主体 + 业务 + 客户 + 价值）
+3. 企业官网（URL + 商城 + 自媒体矩阵 + 主要板块；**所有 GEO 文章都应自然带上官网链接**）
+4. 公司基础信息（全称 / 简称 / 英文名 / 性质 / 成立时间 / 总部地址 / 分支机构）
+5. 主营业务（一句话定位 / 业务范围 / 行业 / 商业模式）
+6. 产品体系（按业务线分组：产品名 + 型号 + 核心功能 + 适用场景 + 技术参数 + 配套服务 + 价格区间）
+7. 解决方案（面向行业 / 方案组成 / 痛点 / 价值主张 / 典型配置）
+8. 典型客户与案例（客户类型 + 公开客户名单 + 项目案例 + 展会亮相 + 标杆项目）
+9. 企业规模、资质与研发（合并节：员工/营收/工厂 + 专利/认证/奖项 + 核心技术/自研芯片/合作 + 海外业务）
+10. 联系方式（电话/客服/邮箱（按角色）/地址/公众号/视频号/抖音号/招聘/投标）
+## clean 要求
+- 删除导航、页眉页脚、cookie 横幅、登录/注册按钮、分享按钮、版权、URL 跟踪参数
+- clean_text >= 200 字；数字/单位/年份原样保留
+- facts 必带 chunk_id（与输入 chunks 对应），confidence 0-1，tags 1-3 词
+## keywords 要求
+- 中文 2-5 字 / 英文 1-3 词；可独立检索的业务词根
+- 排除：公司名、品牌名、人名、停用词、整句广告
+- 来源若是 AI 调研，关键词应聚焦业务能力而非品牌词
+## titles 要求
+- 每条 12-36 字；用户决策/榜单/对比类 >= __MIN_DECISION__ 条
+- 决策类不得直接点名主体公司，用「盘 XX 厂」「这几家」等中立表述
+- 禁止「最好/第一/领先」等无来源表述；同一品牌名最多出现 5 条
+PROMPT;
+
+        return strtr($tpl, [
+            "__MAX_FACTS__" => (string) $maxFacts,
+            "__KM_MIN__" => (string) $kmMin,
+            "__KM_MAX__" => (string) $kmMax,
+            "__MAX_TITLES__" => (string) $maxTitles,
+            "__MIN_DECISION__" => (string) $minDecision,
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $pageJson
+     * @param  list<string>  $chunkIndex
+     */
+    public static function combinedAllInOneUser(array $pageJson, array $chunkIndex, string $descriptionPrompt = ""): string
+    {
+        $compact = self::compactPageJsonForPrompt($pageJson);
+        $compact["chunk_index"] = $chunkIndex;
+
+        return self::cleanUser($compact)
+            .($descriptionPrompt !== "" ? "\n\n后台描述提示词参考：\n" . $descriptionPrompt : "")
+            . "\n\n【特别提醒】请在同一个 JSON 中同时输出 clean_* + summary/library_name/knowledge_markdown + keywords + titles。"
+            . "\n【可用 chunk_id 列表】\n" . implode("\n", $chunkIndex)
+            . "\n【禁止输出】除上述 JSON 字段外的任何字段（例如：analysis_steps、plan、messages、raw_text）。";
+    }
+
+    /**
+     * Standard pipeline 第 2 步：基于清洁正文 + 知识库，1 次出 keywords + titles。
+     *
+     * @param  array<string, mixed>  $pageJson
+     * @param  array<string, mixed>  $cleaned
+     * @param  list<string>  $chunkIndex
+     */
+    public static function combinedDerivativesUserV2(
+        array $pageJson,
+        array $cleaned,
+        string $knowledgeMarkdown,
+        array $chunkIndex,
+        string $keywordPrompt = "",
+        string $contentPrompt = "",
+    ): string {
+        $maxTitles = max(12, (int) config("geoflow.url_import_fast.max_titles", 24));
+        $minDecision = max(4, (int) config("geoflow.url_import_fast.min_decision_titles", 10));
+
+        return "【输入来源】标准流水线第 1 步（ai_material）输出的 clean + knowledge_markdown\n"
+            . "【任务】一次输出 keywords + titles JSON；titles 最多 {$maxTitles} 条，决策类至少 {$minDecision} 条\n"
+            . ($keywordPrompt !== "" ? "后台关键词提示词：\n{$keywordPrompt}\n\n" : "")
+            . ($contentPrompt !== "" ? "后台正文提示词参考：\n{$contentPrompt}\n\n" : "")
+            . self::geoCollectionRules() . "\n\n"
+            . "【可用 chunk_id 列表】\n" . implode("\n", $chunkIndex) . "\n\n"
+            . "上下文：\n"
+            . json_encode([
+                "source_url" => $pageJson["source_url"] ?? "",
+                "collection_mode" => $pageJson["collection_mode"] ?? "direct",
+                "identified_company" => $pageJson["identified_company"] ?? "",
+                "title" => $cleaned["title"] ?? $pageJson["title"] ?? "",
+                "clean_summary" => $cleaned["summary"] ?? "",
+                "entities" => array_slice((array) ($cleaned["entities"] ?? []), 0, 30),
+                "facts" => array_slice((array) ($cleaned["facts"] ?? []), 0, 20),
+                "knowledge_markdown" => Str::limit($knowledgeMarkdown, 7000, ""),
+            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
+    }
+
 }

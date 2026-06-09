@@ -77,8 +77,9 @@ return [
         ['sequential', 'parallel', 'fallback'],
         true
     ) ? strtolower(trim((string) env('GEOFLOW_URL_IMPORT_WEB_RESEARCH_MODE', 'sequential'))) : 'sequential',
-    // 官网已识别主体且正文足够丰富时，跳过 AI 全网调研（可节省 1–4 分钟；WAF/薄页仍会自动调研）
-    'url_import_skip_web_research_when_direct_rich' => filter_var(env('GEOFLOW_URL_IMPORT_SKIP_WEB_RESEARCH_WHEN_DIRECT_RICH', true), FILTER_VALIDATE_BOOLEAN),
+    // 官网已识别主体且正文足够丰富时，默认仍跑一次 AI 全网调研以补充案例/规模/认证等
+    // （节省 1-4 分钟代价是案例/客户/规模/资质等节可能为「素材中未明确说明」；如要恢复节省可设 true）
+    'url_import_skip_web_research_when_direct_rich' => filter_var(env('GEOFLOW_URL_IMPORT_SKIP_WEB_RESEARCH_WHEN_DIRECT_RICH', false), FILTER_VALIDATE_BOOLEAN),
     // 判定「官网正文已够」的最小字数
     'url_import_direct_rich_min_chars' => max(200, (int) env('GEOFLOW_URL_IMPORT_DIRECT_RICH_MIN_CHARS', 800)),
     // 国内联网搜索（博查 Bocha 等）；配置 API Key 后，AI 调研会基于实时搜索结果汇总，而非仅靠模型记忆。
