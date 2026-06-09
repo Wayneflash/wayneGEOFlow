@@ -76,6 +76,12 @@
                             class="admin-input"
                         >
                         <p class="mt-1.5 text-xs text-slate-500">用于生成知识库 / 关键词库 / 标题库名称，建议填写项目或主题名。</p>
+                        <p class="mt-2 text-xs leading-5 text-slate-500">
+                            当前为<strong class="font-medium text-slate-700">单页采集</strong>：只抓取你粘贴的这一条 URL。
+                            系统会<strong class="font-medium text-slate-700">从域名识别主体公司</strong>，并同步尝试官网直连 + AI 全网反推，合并后入库。
+                            建议填写<strong class="font-medium text-slate-700">项目名</strong>（如「深联云 GEO」）帮助 AI 识别公司；URL 优先用文章/方案详情页。
+                            WAF 站点可配置 <code class="rounded bg-slate-100 px-1">GEOFLOW_URL_IMPORT_FETCH_PROXY</code>。
+                        </p>
                     </div>
                     @error('url')
                         <p class="text-sm text-red-600">{{ $message }}</p>
@@ -87,7 +93,7 @@
                         <p class="text-sm text-red-600">{{ $message }}</p>
                     @enderror
                     <div class="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between">
-                        <p class="text-xs text-slate-400">后台异步处理 · 可离开页面</p>
+                        <p class="text-xs text-slate-400">正文按节点顺序处理；图片自动入库「网址采集」图片库，均可离开页面</p>
                         <button type="submit" class="url-import-launch" @disabled(! $aiModelReady)>
                             <i data-lucide="zap" class="h-4 w-4"></i>
                             开始采集
@@ -103,9 +109,10 @@
                         <div class="text-sm font-semibold text-slate-900">采集产出</div>
                     </div>
                     <div class="mt-4 space-y-2.5 text-sm text-slate-600">
-                        <div class="flex items-center gap-2"><i data-lucide="file-text" class="h-4 w-4 text-blue-500"></i>正文素材</div>
-                        <div class="flex items-center gap-2"><i data-lucide="key-round" class="h-4 w-4 text-blue-500"></i>主题词</div>
-                        <div class="flex items-center gap-2"><i data-lucide="text-cursor-input" class="h-4 w-4 text-blue-500"></i>标题建议</div>
+                        <div class="flex items-center gap-2"><i data-lucide="file-text" class="h-4 w-4 text-blue-500"></i>正文素材 → 知识库</div>
+                        <div class="flex items-center gap-2"><i data-lucide="key-round" class="h-4 w-4 text-blue-500"></i>主题词 → 关键词库</div>
+                        <div class="flex items-center gap-2"><i data-lucide="text-cursor-input" class="h-4 w-4 text-blue-500"></i>标题建议 → 标题库</div>
+                        <div class="flex items-center gap-2"><i data-lucide="image" class="h-4 w-4 text-violet-500"></i>页面图片 → 网址采集图片库</div>
                     </div>
                 </aside>
             </div>

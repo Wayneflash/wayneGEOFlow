@@ -107,6 +107,13 @@
         @apply inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white shadow-sm shadow-blue-600/20 transition duration-150 hover:bg-blue-700 active:translate-y-px;
     }
 
+    .admin-icon-btn.is-refreshing,
+    .admin-icon-btn:disabled,
+    .admin-btn-secondary.is-refreshing,
+    [data-url-import-refresh].is-refreshing {
+        @apply cursor-wait opacity-70;
+    }
+
     .admin-icon-btn {
         @apply inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition duration-150 hover:bg-slate-50 hover:text-slate-900 active:translate-y-px;
     }
@@ -203,7 +210,7 @@
     }
 
     .admin-page-loading #admin-main-content {
-        @apply opacity-80;
+        @apply opacity-95;
     }
 
     .admin-page-loading a,
@@ -718,6 +725,30 @@
         animation: url-import-shimmer 1.8s ease-in-out infinite;
     }
 
+    .url-import-preview-head {
+        @apply space-y-0;
+    }
+
+    .url-import-tab-btn {
+        @apply inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg px-3.5 text-[13px] font-medium text-slate-500 transition hover:text-slate-800;
+    }
+
+    .url-import-tab-btn.is-active {
+        @apply bg-white text-slate-900 shadow-sm;
+    }
+
+    .url-import-tab-badge {
+        @apply inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-blue-600 px-1.5 text-[10px] font-semibold text-white;
+    }
+
+    .url-import-tab-badge.is-muted {
+        @apply bg-slate-300 text-slate-700;
+    }
+
+    .url-import-preview-foot {
+        @apply rounded-b-2xl;
+    }
+
     .url-import-pipeline {
         @apply relative grid gap-0 md:grid-cols-4 xl:grid-cols-7;
     }
@@ -736,6 +767,22 @@
 
     .url-import-pipeline-step.is-failed {
         @apply bg-red-50/50;
+    }
+
+    .url-import-pipeline-step.is-parallel {
+        @apply border-l-2 border-dashed border-violet-200/80;
+    }
+
+    .url-import-flow-closure {
+        @apply rounded-xl border border-emerald-100 bg-emerald-50/40 px-4 py-3;
+    }
+
+    .url-import-flow-tag {
+        @apply inline-flex shrink-0 rounded-md bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-700;
+    }
+
+    .url-import-flow-tag--violet {
+        @apply bg-violet-50 text-violet-700;
     }
 
     .url-import-step-dot {

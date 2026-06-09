@@ -17,6 +17,10 @@
                 <i data-lucide="sliders-horizontal" class="h-3.5 w-3.5"></i>
                 向量与切片
             </button>
+            <button type="button" class="admin-tab-button" data-ai-model-tab="web-search" aria-pressed="false">
+                <i data-lucide="globe" class="h-3.5 w-3.5"></i>
+                {{ __('admin.ai_models.web_search_tab') }}
+            </button>
         </nav>
 
         <div data-ai-model-panel="models" aria-hidden="false">
@@ -126,6 +130,46 @@
                     </div>
                     <div class="sm:col-span-2 flex justify-end">
                         <button type="submit" class="admin-btn-primary">{{ __('admin.ai_models.save_chunking') }}</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="hidden space-y-4" data-ai-model-panel="web-search" aria-hidden="true">
+            <div class="ai-config-card p-4">
+                <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
+                    <div class="min-w-0">
+                        <h3 class="text-sm font-semibold text-slate-900">{{ __('admin.ai_models.web_search_title') }}</h3>
+                        <p class="mt-1 text-[12px] leading-5 text-slate-500">{{ __('admin.ai_models.web_search_desc') }}</p>
+                    </div>
+                    <span class="rounded-full px-2 py-0.5 text-[10px] font-medium {{ ($webSearchSettings['configured'] ?? false) ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700' }}">
+                        {{ ($webSearchSettings['configured'] ?? false) ? __('admin.ai_models.web_search_status_configured') : __('admin.ai_models.web_search_status_missing') }}
+                    </span>
+                </div>
+
+                <form method="POST" action="{{ route('admin.ai-models.web-search-config') }}" class="space-y-4 max-w-xl">
+                    @csrf
+                    <div>
+                        <label for="bocha_api_key" class="admin-label">{{ __('admin.ai_models.web_search_field_key') }}</label>
+                        <input type="password" name="bocha_api_key" id="bocha_api_key" autocomplete="off" class="admin-input mt-1" placeholder="{{ __('admin.ai_models.web_search_placeholder_key') }}">
+                        @if (($webSearchSettings['masked_key'] ?? '') !== '')
+                            <p class="mt-1 font-mono text-[11px] text-slate-500">{{ __('admin.ai_models.web_search_current_key', ['mask' => $webSearchSettings['masked_key']]) }}</p>
+                        @endif
+                        <p class="mt-1 text-[11px] text-slate-400">{{ __('admin.ai_models.web_search_key_help') }}</p>
+                    </div>
+
+                    @if ($webSearchSettings['uses_env_fallback'] ?? false)
+                        <div class="rounded-xl border border-blue-100 bg-blue-50/60 px-3 py-2 text-[11px] leading-5 text-blue-800">
+                            {{ __('admin.ai_models.web_search_env_fallback_notice') }}
+                        </div>
+                    @endif
+
+                    <div class="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3">
+                        <label class="inline-flex items-center gap-2 text-[12px] text-slate-600">
+                            <input type="checkbox" name="clear_bocha_api_key" value="1" class="rounded border-slate-300 text-blue-600">
+                            {{ __('admin.ai_models.web_search_clear_key') }}
+                        </label>
+                        <button type="submit" class="admin-btn-primary">{{ __('admin.ai_models.web_search_save') }}</button>
                     </div>
                 </form>
             </div>
@@ -262,6 +306,11 @@
         }
 
         aiModelTabs.forEach((tab) => tab.addEventListener('click', () => activateAiModelTab(tab.dataset.aiModelTab || 'models')));
+
+        const initialTab = new URLSearchParams(window.location.search).get('tab');
+        if (initialTab) {
+            activateAiModelTab(initialTab);
+        }
 
         const PROVIDER_PRESETS = {
             minimax: {name: 'MiniMax M2.7', version: 'M2.7', model_id: 'MiniMax-M2.7', api_url: 'https://api.minimax.io', model_type: 'chat'},

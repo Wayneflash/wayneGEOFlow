@@ -223,8 +223,14 @@ Route::prefix($adminPrefix)->name('admin.')->middleware(['surface.port:admin', '
         Route::get('url-import/{jobId}/status', [UrlImportController::class, 'status'])
             ->name('url-import.status')
             ->whereNumber('jobId');
+        Route::get('url-import/{jobId}/images', [UrlImportController::class, 'images'])
+            ->name('url-import.images')
+            ->whereNumber('jobId');
         Route::post('url-import/{jobId}/commit', [UrlImportController::class, 'commit'])
             ->name('url-import.commit')
+            ->whereNumber('jobId');
+        Route::post('url-import/{jobId}/commit-images', [UrlImportController::class, 'commitImages'])
+            ->name('url-import.commit-images')
             ->whereNumber('jobId');
         Route::get('url-import/{jobId}', [UrlImportController::class, 'show'])
             ->name('url-import.show')
@@ -241,6 +247,7 @@ Route::prefix($adminPrefix)->name('admin.')->middleware(['surface.port:admin', '
                 Route::post('{modelId}/delete', [AiModelController::class, 'destroy'])->name('delete');
                 Route::post('default-embedding', [AiModelController::class, 'updateDefaultEmbedding'])->name('default-embedding');
                 Route::post('chunking-config', [AiModelController::class, 'updateChunkingConfig'])->name('chunking-config');
+                Route::post('web-search-config', [AiModelController::class, 'updateWebSearchSettings'])->name('web-search-config');
             });
             Route::get('ai-prompts', [AiPromptController::class, 'index'])->name('ai-prompts');
             Route::post('ai-prompts/create', [AiPromptController::class, 'store'])->name('ai-prompts.store');

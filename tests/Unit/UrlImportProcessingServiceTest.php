@@ -2,8 +2,12 @@
 
 namespace Tests\Unit;
 
+use App\Services\GeoFlow\UrlImportCollectionMerger;
+use App\Services\GeoFlow\UrlImportDomesticWebSearchService;
 use App\Services\GeoFlow\UrlImportProcessingService;
 use App\Support\GeoFlow\ApiKeyCrypto;
+use App\Support\GeoFlow\UrlImportWebResearchNormalizer;
+use App\Support\GeoFlow\UrlImportWebSearchSettings;
 use InvalidArgumentException;
 use ReflectionMethod;
 use Tests\TestCase;
@@ -16,7 +20,12 @@ class UrlImportProcessingServiceTest extends TestCase
     {
         parent::setUp();
 
-        $this->service = new UrlImportProcessingService(new ApiKeyCrypto);
+        $this->service = new UrlImportProcessingService(
+            new ApiKeyCrypto,
+            new UrlImportCollectionMerger,
+            new UrlImportWebResearchNormalizer,
+            new UrlImportDomesticWebSearchService(app(UrlImportWebSearchSettings::class)),
+        );
     }
 
     public function test_it_accepts_valid_public_url(): void

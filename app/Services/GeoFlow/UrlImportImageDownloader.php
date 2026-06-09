@@ -4,8 +4,8 @@ namespace App\Services\GeoFlow;
 
 use App\Jobs\TagImageWithVisionJob;
 use App\Models\Image;
-use App\Models\ImageLibrary;
 use App\Models\SiteSetting;
+use App\Support\GeoFlow\UrlImportImageLibrary;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -18,7 +18,7 @@ use Throwable;
  * 设计原则：
  *  1. 先做"区域 + 路径 + 规则"三重过滤，仅下载有潜力的图
  *  2. SHA256 内容去重，避免同图重复入库
- *  3. 关联到当前租户的"采集暂存库"（按需自动创建）
+ *  3. 关联到当前租户的「网址采集」图片库（按需自动创建，普通图片库）
  *  4. 入库后即触发视觉打标（TagImageWithVisionJob），不阻塞采集
  */
 class UrlImportImageDownloader
@@ -28,9 +28,6 @@ class UrlImportImageDownloader
     public const VALUE_LOW = 'low';
 
     public const VALUE_PENDING = 'pending';
-
-    /** 采集暂存库名（每租户一份） */
-    private const STAGING_LIBRARY_NAME = '采集暂存库';
 
     /** 单次采集最多入库图片数（避免 1 个页面把库塞满） */
     private const MAX_IMAGES_PER_JOB = 10;
@@ -73,7 +70,7 @@ class UrlImportImageDownloader
             ];
         }
 
-        $libraryId = $this->resolveStagingLibraryId($tenantId);
+        $libraryId = UrlImportImageLibrary::resolveLibraryId($tenantId);
         $candidates = array_slice($images, 0, self::MAX_IMAGES_PER_JOB);
 
         $bodies = $this->fetchBodiesInParallel($candidates, $sourceUrl);
@@ -228,9 +225,10 @@ class UrlImportImageDownloader
 
         $extension = $this->extensionFromMime($mime, $imageUrl);
         $filename = $hash.'.'.$extension;
-        $relativePath = 'url-imports/tenant-'.$tenantId.'/'.$filename;
+        $diskPath = 'url-imports/tenant-'.$tenantId.'/'.$filename;
+        $dbPath = 'storage/'.$diskPath;
 
-        Storage::disk('public')->put($relativePath, $body);
+        Storage::disk('public')->put($diskPath, $body);
         $width = (int) ($candidate['width'] ?? 0);
         $height = (int) ($candidate['height'] ?? 0);
         $size = $this->resolveImageSize($body, $mime, $width, $height);
@@ -240,7 +238,7 @@ class UrlImportImageDownloader
             'filename' => $filename,
             'original_name' => basename((string) parse_url($imageUrl, PHP_URL_PATH) ?: $filename),
             'file_name' => $filename,
-            'file_path' => $relativePath,
+            'file_path' => $dbPath,
             'file_size' => $bytes,
             'mime_type' => $mime,
             'width' => $size[0],
@@ -374,26 +372,6 @@ class UrlImportImageDownloader
         return $score;
     }
 
-    private function resolveStagingLibraryId(int $tenantId): int
-    {
-        $existing = ImageLibrary::query()
-            ->where('tenant_id', $tenantId)
-            ->where('name', self::STAGING_LIBRARY_NAME)
-            ->value('id');
-        if ($existing) {
-            return (int) $existing;
-        }
-
-        $library = ImageLibrary::query()->create([
-            'tenant_id' => $tenantId,
-            'name' => self::STAGING_LIBRARY_NAME,
-            'description' => '由 URL 智能采集自动入库的暂存图片，AI 打标后高价值的会自动迁移到正式库。',
-            'is_default' => false,
-        ]);
-
-        return (int) $library->id;
-    }
-
     private function downloadAndStore(
         int $tenantId,
         int $libraryId,
@@ -440,9 +418,10 @@ class UrlImportImageDownloader
 
         $extension = $this->extensionFromMime($mime, $imageUrl);
         $filename = $hash.'.'.$extension;
-        $relativePath = 'url-imports/tenant-'.$tenantId.'/'.$filename;
+        $diskPath = 'url-imports/tenant-'.$tenantId.'/'.$filename;
+        $dbPath = 'storage/'.$diskPath;
 
-        Storage::disk('public')->put($relativePath, $body);
+        Storage::disk('public')->put($diskPath, $body);
         $width = (int) ($candidate['width'] ?? 0);
         $height = (int) ($candidate['height'] ?? 0);
         $size = $this->resolveImageSize($body, $mime, $width, $height);
@@ -452,7 +431,7 @@ class UrlImportImageDownloader
             'filename' => $filename,
             'original_name' => basename(parse_url($imageUrl, PHP_URL_PATH) ?: $filename),
             'file_name' => $filename,
-            'file_path' => $relativePath,
+            'file_path' => $dbPath,
             'file_size' => $bytes,
             'mime_type' => $mime,
             'width' => $size[0],

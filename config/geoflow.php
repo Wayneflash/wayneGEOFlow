@@ -50,6 +50,27 @@ return [
     'url_import_allow_mixed_dns' => filter_var(env('URL_IMPORT_ALLOW_MIXED_DNS', false), FILTER_VALIDATE_BOOLEAN),
     // URL 智能采集是否严格校验 SSL 证书。生产默认建议开启；本地采集部分证书链不完整的网站时可关闭。
     'url_import_verify_ssl' => filter_var(env('GEOFLOW_URL_IMPORT_VERIFY_SSL', env('APP_ENV', 'production') !== 'local'), FILTER_VALIDATE_BOOLEAN),
+    // 采集抓取正文的最小有效字数；低于该值且无图片时判定为提取失败。
+    'url_import_min_text_chars' => max(40, (int) env('GEOFLOW_URL_IMPORT_MIN_TEXT_CHARS', 80)),
+    // 可选：为网址采集单独配置 HTTP 代理（如 WAF 站点需走宿主机/住宅代理）。
+    'url_import_fetch_proxy' => trim((string) env('GEOFLOW_URL_IMPORT_FETCH_PROXY', '')),
+    // 官网直连失败或内容不足时，启用 AI 全网调研补充；可与直连并行执行。
+    'url_import_web_research_enabled' => filter_var(env('GEOFLOW_URL_IMPORT_WEB_RESEARCH_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
+    // parallel=与官网抓取同步进行；fallback=仅直连不足时再调研。
+    'url_import_web_research_mode' => in_array(
+        strtolower(trim((string) env('GEOFLOW_URL_IMPORT_WEB_RESEARCH_MODE', 'parallel'))),
+        ['parallel', 'fallback'],
+        true
+    ) ? strtolower(trim((string) env('GEOFLOW_URL_IMPORT_WEB_RESEARCH_MODE', 'parallel'))) : 'parallel',
+    // 国内联网搜索（博查 Bocha 等）；配置 API Key 后，AI 调研会基于实时搜索结果汇总，而非仅靠模型记忆。
+    'url_import_web_search' => [
+        'provider' => strtolower(trim((string) env('GEOFLOW_URL_IMPORT_WEB_SEARCH_PROVIDER', 'bocha'))),
+        'bocha_api_key' => trim((string) env('GEOFLOW_URL_IMPORT_BOCHA_API_KEY', '')),
+        'bocha_api_url' => trim((string) env('GEOFLOW_URL_IMPORT_BOCHA_API_URL', 'https://api.bochaai.com/v1/web-search')),
+        'max_queries' => max(1, min(8, (int) env('GEOFLOW_URL_IMPORT_WEB_SEARCH_MAX_QUERIES', 5))),
+        'max_results_per_query' => max(1, min(10, (int) env('GEOFLOW_URL_IMPORT_WEB_SEARCH_MAX_RESULTS', 5))),
+        'timeout_seconds' => max(5, min(30, (int) env('GEOFLOW_URL_IMPORT_WEB_SEARCH_TIMEOUT', 15))),
+    ],
     // 后端出站 HTTP 代理；Docker 内访问宿主机代理通常使用 http://host.docker.internal:端口。
     'outbound_http_proxy' => trim((string) env('GEOFLOW_HTTP_PROXY', '')),
     'outbound_https_proxy' => trim((string) env('GEOFLOW_HTTPS_PROXY', env('GEOFLOW_HTTP_PROXY', ''))),
@@ -104,5 +125,11 @@ return [
         'driver' => env('GEOFLOW_IMAGE_VISION_TAGGING_DRIVER', 'queue'),
         'pending_scan_limit' => max(1, min(100, (int) env('GEOFLOW_IMAGE_VISION_PENDING_SCAN_LIMIT', 30))),
     ],
+
+    // 网址采集：true=在 HTTP 请求内同步执行（无 queue worker 时可用）；false=投递 geoflow 队列
+    'url_import_sync' => filter_var(env('GEOFLOW_URL_IMPORT_SYNC', false), FILTER_VALIDATE_BOOLEAN),
+
+    // 网址采集：超过该分钟数无任何节点/日志活动才提示「可能卡住」（AI 单步可能耗时数分钟）
+    'url_import_stale_minutes' => max(5, (int) env('GEOFLOW_URL_IMPORT_STALE_MINUTES', 15)),
 
 ];

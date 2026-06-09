@@ -72,6 +72,12 @@
                                                 {{ $library['name'] }}
                                             </a>
                                         </h4>
+                                        @if (\App\Support\GeoFlow\UrlImportImageLibrary::isAutoImportLibrary($library['name'] ?? ''))
+                                            <span class="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">
+                                                <i data-lucide="link" class="h-3 w-3"></i>
+                                                {{ __('admin.image_libraries.auto_import_badge') }}
+                                            </span>
+                                        @endif
                                         <span class="inline-flex items-center gap-1 rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-xs font-semibold text-violet-700">
                                             <i data-lucide="image" class="h-3 w-3"></i>
                                             {{ __('admin.image_libraries.image_count', ['count' => (int) $library['actual_count']]) }}

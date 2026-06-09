@@ -56,6 +56,8 @@
         const toastRegion = () => document.getElementById('admin-toast-region');
         let progressTimer = null;
         const prefetchedUrls = new Set();
+        let prefetchTimer = null;
+        let prefetchTarget = '';
         const escapeHtml = (value) => String(value || '').replace(/[&<>"']/g, (match) => ({
             '&': '&amp;',
             '<': '&lt;',
@@ -225,11 +227,14 @@
             if (!link || link.target || link.hasAttribute('download')) return;
             const href = link.getAttribute('href') || '';
             if (href === '' || href.startsWith('#') || href.startsWith('javascript:')) return;
-            prefetchUrl(href);
+            prefetchTarget = href;
+            if (prefetchTimer) window.clearTimeout(prefetchTimer);
+            prefetchTimer = window.setTimeout(() => {
+                if (prefetchTarget === href) prefetchUrl(href);
+            }, 220);
         };
 
         document.addEventListener('mouseover', handlePrefetchIntent, { passive: true });
-        document.addEventListener('focusin', handlePrefetchIntent);
 
         window.addEventListener('pageshow', () => {
             resetSubmittingForms();

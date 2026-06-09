@@ -4,6 +4,8 @@ namespace App\Services\GeoFlow;
 
 use App\Ai\Agents\MarkdownContentWriterAgent;
 use App\Models\AiModel;
+use App\Models\Image;
+use App\Models\ImageLibrary;
 use App\Models\Keyword;
 use App\Models\KeywordLibrary;
 use App\Models\KnowledgeBase;
@@ -14,12 +16,19 @@ use App\Models\UrlImportJob;
 use App\Models\UrlImportJobLog;
 use App\Models\UrlImportJobNodeLog;
 use App\Support\GeoFlow\ApiKeyCrypto;
+use App\Support\GeoFlow\OutboundHttpProxy;
 use App\Support\GeoFlow\OpenAiRuntimeProvider;
+use App\Support\GeoFlow\UrlImportCompanyHint;
+use App\Support\GeoFlow\UrlImportHtmlInspector;
+use App\Support\GeoFlow\UrlImportPromptCatalog;
+use App\Support\GeoFlow\UrlImportTextSanitizer;
+use App\Support\GeoFlow\UrlImportWebResearchNormalizer;
 use App\Support\Tenancy\AdminTenant;
 use DOMDocument;
 use DOMXPath;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Concurrency;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -32,7 +41,12 @@ final class UrlImportProcessingService
 
     private ?string $lastRawAiContent = null;
 
-    public function __construct(private readonly ApiKeyCrypto $apiKeyCrypto) {}
+    public function __construct(
+        private readonly ApiKeyCrypto $apiKeyCrypto,
+        private readonly UrlImportCollectionMerger $collectionMerger,
+        private readonly UrlImportWebResearchNormalizer $webResearchNormalizer,
+        private readonly UrlImportDomesticWebSearchService $domesticWebSearch,
+    ) {}
 
     /**
      * @return array{url:string,host:string}
@@ -135,26 +149,29 @@ final class UrlImportProcessingService
         $this->log($job, 'info', __('admin.url_import.log.fetch_start', ['url' => $job->normalized_url]));
 
         try {
-            $fetchStart = microtime(true);
-            $fetched = $this->fetchPage((string) $job->normalized_url);
-            $fetchMs = (int) round((microtime(true) - $fetchStart) * 1000);
-            $this->log($job, 'info', __('admin.url_import.log.fetch_done', ['length' => strlen($fetched['html'])]));
+            $collection = $this->collectPageMaterials($job);
+            $fetched = $collection['fetched'];
+            $parsed = $collection['parsed'];
+            $collectionMode = (string) ($collection['collection_mode'] ?? 'direct');
+            $fetchOutput = $collection['fetch_output'];
+            $parseOutput = $collection['parse_output'];
+            $fetchMs = (int) ($collection['fetch_ms'] ?? 0);
+            $parseMs = (int) ($collection['parse_ms'] ?? 0);
+
+            $this->log($job, 'info', __('admin.url_import.log.fetch_done', ['length' => strlen((string) ($fetched['html'] ?? ''))]));
             $this->logNode(
                 $job,
                 'fetch',
                 '读取网页',
-                ['url' => (string) $job->normalized_url, 'headers' => $fetched['headers'] ?? []],
-                ['status' => $fetched['status'], 'html_length' => strlen($fetched['html']), 'content_type' => $fetched['headers']['content-type'] ?? ''],
+                ['url' => (string) $job->normalized_url],
+                $fetchOutput,
                 $fetchMs
             );
 
             $this->updateStep($job, 'page_json', 25);
             $this->log($job, 'info', __('admin.url_import.log.page_json_start'));
-            $parseStart = microtime(true);
-            $parsed = $this->parseHtml($fetched['html'], (string) $job->normalized_url);
-            $parseMs = (int) round((microtime(true) - $parseStart) * 1000);
             $this->log($job, 'info', __('admin.url_import.log.extract_done', [
-                'chars' => mb_strlen($parsed['text'], 'UTF-8'),
+                'chars' => mb_strlen((string) ($parsed['text'] ?? ''), 'UTF-8'),
             ]));
             $this->log($job, 'info', __('admin.url_import.log.page_json_done', [
                 'chars' => mb_strlen((string) data_get($parsed, 'raw_json.text', ''), 'UTF-8'),
@@ -163,21 +180,32 @@ final class UrlImportProcessingService
                 $job,
                 'parse',
                 '提取正文',
-                [
-                    'html_length' => strlen($fetched['html']),
-                    'base_url' => (string) $job->normalized_url,
-                ],
-                [
-                    'title' => $parsed['title'] ?? '',
-                    'description' => $parsed['description'] ?? '',
-                    'text_chars' => mb_strlen($parsed['text'] ?? '', 'UTF-8'),
-                    'image_count' => count($parsed['images'] ?? []),
-                    'images' => array_slice($parsed['images'] ?? [], 0, 10),
-                ],
+                $this->nodeChainInput('fetch', $fetchOutput),
+                $parseOutput,
                 $parseMs
             );
 
-            $analysis = $this->buildAnalysis($parsed, $job);
+            if (($collection['web_research_output'] ?? null) !== null) {
+                $this->logNode(
+                    $job,
+                    'web_research',
+                    'AI 全网调研',
+                    ['url' => (string) $job->normalized_url, 'mode' => $collectionMode],
+                    $collection['web_research_output'],
+                    (int) ($collection['web_research_ms'] ?? 0)
+                );
+            }
+
+            $pageJson = $this->buildPageJson($parsed, $job);
+            $analysis = $this->buildAnalysis($parsed, $job, $pageJson);
+            $pageForStore = $parsed;
+            $pageForStore['image_count'] = count($parsed['images'] ?? []);
+            $pageForStore['image_preview'] = array_slice(array_map(static fn (array $image): array => [
+                'url' => (string) ($image['url'] ?? ''),
+                'area' => (string) ($image['area'] ?? ''),
+                'alt' => (string) ($image['alt'] ?? ''),
+            ], $parsed['images'] ?? []), 0, 6);
+            unset($pageForStore['images']);
 
             $result = [
                 'source' => [
@@ -185,9 +213,10 @@ final class UrlImportProcessingService
                     'normalized_url' => (string) $job->normalized_url,
                     'domain' => (string) $job->source_domain,
                     'fetched_at' => now()->toIso8601String(),
-                    'status' => $fetched['status'],
+                    'status' => (int) ($fetched['status'] ?? 0),
+                    'collection_mode' => $collectionMode,
                 ],
-                'page' => $parsed,
+                'page' => $pageForStore,
                 'analysis' => $analysis,
                 'import' => [
                     'status' => 'preview',
@@ -317,17 +346,83 @@ final class UrlImportProcessingService
             ];
         });
 
-        $result['import'] = [
-            'status' => 'imported',
-            'imported_at' => now()->toIso8601String(),
-            'summary' => $summary,
-        ];
+        $result['import'] = is_array($result['import'] ?? null) ? $result['import'] : [];
+        $result['import']['status'] = 'imported';
+        $result['import']['imported_at'] = now()->toIso8601String();
+        $result['import']['summary'] = $summary;
         $job->update([
             'result_json' => json_encode($result, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE),
             'current_step' => 'imported',
             'progress_percent' => 100,
         ]);
         $this->log($job, 'info', __('admin.url_import.log.import_done'));
+
+        return $summary;
+    }
+
+    /**
+     * @return array{library_id:int,image_count:int}
+     */
+    public function commitImages(UrlImportJob $job, ?string $libraryName = null): array
+    {
+        $result = $this->decodeResult($job);
+        if ($result === []) {
+            throw new \RuntimeException(__('admin.url_import.error.commit_before_parse'));
+        }
+
+        $imagesMeta = is_array($result['import']['images'] ?? null) ? $result['import']['images'] : [];
+        if (($imagesMeta['committed'] ?? false) === true) {
+            return [
+                'library_id' => (int) ($imagesMeta['committed_library_id'] ?? 0),
+                'image_count' => count(array_values(array_filter(
+                    array_map('intval', (array) ($imagesMeta['image_ids'] ?? [])),
+                    static fn (int $id): bool => $id > 0
+                ))),
+            ];
+        }
+
+        $imageIds = array_values(array_filter(
+            array_map('intval', (array) ($imagesMeta['image_ids'] ?? [])),
+            static fn (int $id): bool => $id > 0
+        ));
+        if ($imageIds === []) {
+            throw new \RuntimeException(__('admin.url_import.error.commit_images_missing'));
+        }
+
+        /** @var array<string, mixed> $page */
+        $page = is_array($result['page'] ?? null) ? $result['page'] : [];
+        /** @var array<string, mixed> $analysis */
+        $analysis = is_array($result['analysis'] ?? null) ? $result['analysis'] : [];
+        $baseName = $this->resolveLibraryBaseName($job, $analysis, $page, $libraryName);
+        $tenantId = (int) ($job->tenant_id ?? 0) ?: null;
+
+        $summary = DB::transaction(function () use ($baseName, $imageIds, $job, $tenantId): array {
+            $library = ImageLibrary::query()->create([
+                'tenant_id' => $tenantId,
+                'name' => $baseName,
+                'description' => '网址采集入库：'.((string) ($job->normalized_url ?: $job->url)),
+            ]);
+
+            $moved = Image::query()
+                ->whereIn('id', $imageIds)
+                ->update(['library_id' => (int) $library->id]);
+
+            return [
+                'library_id' => (int) $library->id,
+                'image_count' => (int) $moved,
+            ];
+        });
+
+        $result['import'] = is_array($result['import'] ?? null) ? $result['import'] : [];
+        $result['import']['images'] = is_array($result['import']['images'] ?? null) ? $result['import']['images'] : [];
+        $result['import']['images']['committed'] = true;
+        $result['import']['images']['committed_at'] = now()->toIso8601String();
+        $result['import']['images']['committed_library_id'] = $summary['library_id'];
+        $result['import']['images']['committed_library_name'] = $baseName;
+
+        $job->update([
+            'result_json' => json_encode($result, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE),
+        ]);
 
         return $summary;
     }
@@ -404,9 +499,315 @@ final class UrlImportProcessingService
     }
 
     /**
-     * @return array{html:string,status:int}
+     * @return array{
+     *     fetched:array{html:string,status:int,is_bot_challenge?:bool},
+     *     parsed:array<string,mixed>,
+     *     collection_mode:string,
+     *     fetch_output:array<string,mixed>,
+     *     parse_output:array<string,mixed>,
+     *     fetch_ms:int,
+     *     parse_ms:int,
+     *     web_research_output:?array<string,mixed>,
+     *     web_research_ms:int
+     * }
      */
-    private function fetchPage(string $url): array
+    private function collectPageMaterials(UrlImportJob $job): array
+    {
+        $jobId = (int) $job->id;
+        $webResearchEnabled = (bool) config('geoflow.url_import_web_research_enabled', true);
+        $webResearchMode = (string) config('geoflow.url_import_web_research_mode', 'parallel');
+        $runWebResearchInParallel = $webResearchEnabled && $webResearchMode === 'parallel';
+
+        $directOutcome = null;
+        $aiOutcome = null;
+
+        if ($runWebResearchInParallel) {
+            try {
+                [$directOutcome, $aiOutcome] = Concurrency::run([
+                    fn (): array => $this->collectDirect((int) $jobId),
+                    fn (): array => $this->collectAiWebResearch((int) $jobId, null),
+                ]);
+            } catch (Throwable $exception) {
+                Log::warning('url_import.parallel_collection_failed', [
+                    'job_id' => $jobId,
+                    'message' => $exception->getMessage(),
+                ]);
+                $directOutcome = $this->collectDirect($jobId);
+                $aiOutcome = $this->collectAiWebResearch($jobId, $directOutcome['parsed'] ?? null);
+            }
+        } else {
+            $directOutcome = $this->collectDirect($jobId);
+            if ($webResearchEnabled && $this->directNeedsSupplement($directOutcome)) {
+                $aiOutcome = $this->collectAiWebResearch($jobId, $directOutcome['parsed'] ?? null);
+            }
+        }
+
+        $directOutcome ??= ['fetched' => ['html' => '', 'status' => 0, 'is_bot_challenge' => false], 'parsed' => null, 'fetch_ms' => 0, 'parse_ms' => 0];
+        $aiOutcome ??= ['ok' => false, 'research' => null, 'error' => '', 'skipped' => true, 'duration_ms' => 0];
+        $fetched = $directOutcome['fetched'];
+        $directParsed = is_array($directOutcome['parsed'] ?? null) ? $directOutcome['parsed'] : [];
+        if ((bool) ($fetched['is_bot_challenge'] ?? false)) {
+            $directParsed['is_bot_challenge'] = true;
+        }
+
+        if ($runWebResearchInParallel
+            && ! ($aiOutcome['ok'] ?? false)
+            && ! ($aiOutcome['skipped'] ?? false)
+            && $this->directHasIdentificationHints($directParsed)) {
+            $aiOutcome = $this->collectAiWebResearch($jobId, $directParsed);
+        }
+
+        $aiResearch = is_array($aiOutcome['research'] ?? null) ? $aiOutcome['research'] : null;
+        $jobOptions = json_decode((string) $job->options_json, true);
+        $jobOptions = is_array($jobOptions) ? $jobOptions : [];
+        $minTextChars = max(40, (int) config('geoflow.url_import_min_text_chars', 80));
+        $merged = $this->collectionMerger->merge(
+            $directParsed,
+            $aiResearch,
+            (string) $job->normalized_url,
+            (string) $job->source_domain,
+            $minTextChars,
+            $jobOptions,
+        );
+        $parsed = $merged['parsed'];
+        $collectionMode = (string) $merged['collection_mode'];
+
+        if (($aiOutcome['ok'] ?? false)) {
+            $this->log($job, 'info', __('admin.url_import.log.web_research_done', [
+                'mode' => $collectionMode,
+                'chars' => (int) ($merged['ai_meta']['text_chars'] ?? 0),
+                'company' => (string) ($merged['ai_meta']['company_name'] ?? ''),
+            ]));
+        } elseif ($webResearchEnabled && ! ($aiOutcome['skipped'] ?? false) && ($aiOutcome['error'] ?? '') !== '') {
+            $this->log($job, 'warning', __('admin.url_import.log.web_research_failed', [
+                'message' => (string) ($aiOutcome['error'] ?? ''),
+            ]));
+        }
+
+        $pageJson = $this->buildPageJson($parsed, $job);
+        $parseOutput = $this->summarizeParseForNode($parsed, $pageJson);
+        $parseOutput['collection_mode'] = $collectionMode;
+        $parseOutput['direct_text_chars'] = (int) ($merged['direct_meta']['text_chars'] ?? 0);
+        $parseOutput['ai_research_text_chars'] = (int) ($merged['ai_meta']['text_chars'] ?? 0);
+
+        return [
+            'fetched' => $fetched,
+            'parsed' => $parsed,
+            'collection_mode' => $collectionMode,
+            'fetch_output' => [
+                'status' => (int) ($fetched['status'] ?? 0),
+                'html_length' => strlen((string) ($fetched['html'] ?? '')),
+                'is_bot_challenge' => (bool) ($fetched['is_bot_challenge'] ?? false),
+                'html_preview' => Str::limit((string) ($fetched['html'] ?? ''), 800, '…'),
+            ],
+            'parse_output' => $parseOutput,
+            'fetch_ms' => (int) ($directOutcome['fetch_ms'] ?? 0),
+            'parse_ms' => (int) ($directOutcome['parse_ms'] ?? 0),
+            'web_research_output' => $aiOutcome === null ? null : [
+                'ok' => (bool) ($aiOutcome['ok'] ?? false),
+                'skipped' => (bool) ($aiOutcome['skipped'] ?? false),
+                'error' => (string) ($aiOutcome['error'] ?? ''),
+                'company_name' => (string) ($parsed['identified_company'] ?? ''),
+                'brand_names' => $parsed['brand_names'] ?? [],
+                'confidence' => (string) ($merged['ai_meta']['confidence'] ?? ''),
+                'text_chars' => (int) ($merged['ai_meta']['text_chars'] ?? 0),
+                'evidence_limits' => (string) ($merged['ai_meta']['evidence_limits'] ?? ''),
+                'search_provider' => (string) data_get($aiOutcome, 'search.provider', 'none'),
+                'search_result_count' => count((array) data_get($aiOutcome, 'search.results', [])),
+                'search_error' => (string) data_get($aiOutcome, 'search.error', ''),
+            ],
+            'web_research_ms' => (int) ($aiOutcome['duration_ms'] ?? 0),
+        ];
+    }
+
+    /**
+     * @return array{
+     *     fetched:array{html:string,status:int,is_bot_challenge:bool},
+     *     parsed:?array<string,mixed>,
+     *     fetch_ms:int,
+     *     parse_ms:int,
+     *     error:string
+     * }
+     */
+    private function collectDirect(int $jobId): array
+    {
+        $job = UrlImportJob::query()->findOrFail($jobId);
+        $fetchStart = microtime(true);
+
+        try {
+            $fetched = $this->fetchPage((string) $job->normalized_url, lenient: true);
+            $fetchMs = (int) round((microtime(true) - $fetchStart) * 1000);
+            $parseStart = microtime(true);
+            $parsed = $this->parseHtml((string) $fetched['html'], (string) $job->normalized_url);
+            $parsed['is_bot_challenge'] = (bool) ($fetched['is_bot_challenge'] ?? false);
+            $parseMs = (int) round((microtime(true) - $parseStart) * 1000);
+
+            return [
+                'fetched' => $fetched,
+                'parsed' => $parsed,
+                'fetch_ms' => $fetchMs,
+                'parse_ms' => $parseMs,
+                'error' => '',
+            ];
+        } catch (Throwable $exception) {
+            return [
+                'fetched' => ['html' => '', 'status' => 0, 'is_bot_challenge' => false],
+                'parsed' => null,
+                'fetch_ms' => (int) round((microtime(true) - $fetchStart) * 1000),
+                'parse_ms' => 0,
+                'error' => $exception->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $directParsed
+     * @return array{ok:bool,research:?array<string,mixed>,error:string,skipped:bool,duration_ms:int}
+     */
+    private function collectAiWebResearch(int $jobId, ?array $directParsed): array
+    {
+        if (! (bool) config('geoflow.url_import_web_research_enabled', true)) {
+            return ['ok' => false, 'research' => null, 'error' => '', 'skipped' => true, 'duration_ms' => 0];
+        }
+
+        $job = UrlImportJob::query()->findOrFail($jobId);
+        $started = microtime(true);
+
+        try {
+            $models = $this->resolveAnalysisModels((int) ($job->tenant_id ?? 0) ?: null);
+            if ($models->isEmpty()) {
+                return [
+                    'ok' => false,
+                    'research' => null,
+                    'error' => __('admin.url_import.error.ai_model_required'),
+                    'skipped' => true,
+                    'duration_ms' => (int) round((microtime(true) - $started) * 1000),
+                ];
+            }
+
+            $errors = [];
+            $searchPayload = $this->domesticWebSearch->searchForJob($job, $directParsed);
+            foreach ($models as $model) {
+                for ($attempt = 1; $attempt <= self::AI_ANALYSIS_MAX_ATTEMPTS; $attempt++) {
+                    try {
+                        $runtime = $this->prepareAiRuntime($model);
+                        $raw = $this->requestAiJson(
+                            $runtime,
+                            UrlImportPromptCatalog::webResearchSystem($searchPayload),
+                            $this->buildWebResearchUserPrompt($job, $directParsed, $searchPayload),
+                        );
+                        $research = $this->normalizeWebResearchPayload($raw);
+                        if (! $this->webResearchNormalizer->isUsable($research, max(40, (int) config('geoflow.url_import_min_text_chars', 80)))) {
+                            throw new \RuntimeException(__('admin.url_import.error.web_research_empty'));
+                        }
+
+                        return [
+                            'ok' => true,
+                            'research' => $research,
+                            'error' => '',
+                            'skipped' => false,
+                            'duration_ms' => (int) round((microtime(true) - $started) * 1000),
+                            'search' => $searchPayload,
+                        ];
+                    } catch (Throwable $exception) {
+                        $message = $this->normalizeAiErrorMessage($exception, $model);
+                        if ($attempt < self::AI_ANALYSIS_MAX_ATTEMPTS) {
+                            continue;
+                        }
+                        $errors[] = $this->formatModelFailure($model, $exception);
+                    }
+                }
+            }
+
+            return [
+                'ok' => false,
+                'research' => null,
+                'error' => implode('；', $errors),
+                'skipped' => false,
+                'duration_ms' => (int) round((microtime(true) - $started) * 1000),
+            ];
+        } catch (Throwable $exception) {
+            return [
+                'ok' => false,
+                'research' => null,
+                'error' => $exception->getMessage(),
+                'skipped' => false,
+                'duration_ms' => (int) round((microtime(true) - $started) * 1000),
+            ];
+        }
+    }
+
+    /**
+     * @param  array{fetched:array<string,mixed>,parsed:?array<string,mixed>}  $directOutcome
+     */
+    private function directNeedsSupplement(array $directOutcome): bool
+    {
+        $parsed = is_array($directOutcome['parsed'] ?? null) ? $directOutcome['parsed'] : [];
+        $fetched = $directOutcome['fetched'] ?? [];
+        $minTextChars = max(40, (int) config('geoflow.url_import_min_text_chars', 80));
+
+        if ((bool) ($fetched['is_bot_challenge'] ?? false)) {
+            return true;
+        }
+
+        return ! UrlImportHtmlInspector::hasMeaningfulContent($parsed, $minTextChars);
+    }
+
+    /**
+     * @param  array<string, mixed>  $directParsed
+     */
+    private function directHasIdentificationHints(array $directParsed): bool
+    {
+        return trim((string) ($directParsed['title'] ?? '')) !== ''
+            || trim((string) ($directParsed['description'] ?? '')) !== ''
+            || mb_strlen(trim((string) ($directParsed['text'] ?? '')), 'UTF-8') >= 30;
+    }
+
+    /**
+     * @param  array<string, mixed>  $raw
+     * @return array<string, mixed>
+     */
+    private function normalizeWebResearchPayload(array $raw): array
+    {
+        $fallback = isset($raw['_degraded']) ? trim((string) ($this->lastRawAiContent ?? '')) : '';
+
+        return $this->webResearchNormalizer->normalize($raw, $fallback);
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $directParsed
+     */
+    private function buildWebResearchUserPrompt(UrlImportJob $job, ?array $directParsed, ?array $searchPayload = null): string
+    {
+        $options = json_decode((string) $job->options_json, true);
+        $options = is_array($options) ? $options : [];
+        $directParsed ??= [];
+        $hint = UrlImportCompanyHint::build(
+            (string) $job->normalized_url,
+            (string) $job->source_domain,
+            $options,
+            $directParsed,
+        );
+        $hint['page_description'] = Str::limit((string) ($hint['page_description'] ?? ''), 300, '…');
+        $directSnippet = trim((string) ($directParsed['text'] ?? ''));
+        $hasDirectBody = mb_strlen($directSnippet, 'UTF-8') >= 30;
+        $searchPayload ??= $this->domesticWebSearch->searchForJob($job, $directParsed);
+
+        return UrlImportPromptCatalog::webResearchUser([
+            'normalized_url' => (string) $job->normalized_url,
+            'hint' => $hint,
+            'direct_snippet' => Str::limit($directSnippet, 2500, '…'),
+            'has_direct_body' => $hasDirectBody,
+            'operator_notes' => (string) ($options['notes'] ?? ''),
+            'search_block' => UrlImportDomesticWebSearchService::formatResultsForPrompt($searchPayload),
+            'search_enabled' => (bool) ($searchPayload['enabled'] ?? false),
+        ]);
+    }
+
+    /**
+     * @return array{html:string,status:int,is_bot_challenge:bool}
+     */
+    private function fetchPage(string $url, bool $lenient = false): array
     {
         $verifySsl = (bool) config('geoflow.url_import_verify_ssl', true);
         $attempts = [
@@ -427,34 +828,43 @@ final class UrlImportProcessingService
 
         foreach ($attempts as $attempt) {
             try {
-                $response = Http::timeout(20)
-                    ->connectTimeout(8)
-                    ->withOptions([
+                $proxyOptions = $this->fetchProxyOptions($url);
+                $response = Http::timeout(25)
+                    ->connectTimeout(10)
+                    ->withOptions(array_merge($proxyOptions, [
                         'verify' => $attempt['verify'],
                         'curl' => [
                             CURLOPT_SSLVERSION => CURL_SSLVERSION_TLSv1_2,
                             CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+                            CURLOPT_ENCODING => '',
+                            CURLOPT_FOLLOWLOCATION => true,
+                            CURLOPT_MAXREDIRS => 5,
                         ],
-                    ])
-                    ->withHeaders([
-                        'User-Agent' => 'Mozilla/5.0 (compatible; GEOFlow URL Importer/1.0)',
-                        'Accept' => 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                        'Accept-Language' => 'zh-CN,zh;q=0.9,en;q=0.8',
-                    ])
+                    ]))
+                    ->withHeaders(UrlImportHtmlInspector::browserHeaders())
                     ->get($url);
 
                 if (! $response->successful()) {
                     throw new \RuntimeException(__('admin.url_import.error.fetch_failed', ['status' => $response->status()]));
                 }
 
-                $html = (string) $response->body();
+                $html = UrlImportHtmlInspector::normalizeFetchedBody(
+                    (string) $response->body(),
+                    $response->header('Content-Encoding')
+                );
                 if (trim($html) === '') {
                     throw new \RuntimeException(__('admin.url_import.error.empty_page'));
+                }
+
+                $isBotChallenge = UrlImportHtmlInspector::isBotChallengeHtml($html);
+                if ($isBotChallenge && ! $lenient) {
+                    throw new \RuntimeException(__('admin.url_import.error.bot_challenge'));
                 }
 
                 return [
                     'html' => $html,
                     'status' => $response->status(),
+                    'is_bot_challenge' => $isBotChallenge,
                 ];
             } catch (ConnectionException $exception) {
                 $lastException = $exception;
@@ -486,20 +896,25 @@ final class UrlImportProcessingService
     }
 
     /**
-     * @return array{title:string,description:string,text:string,summary:string,raw_json:array<string,mixed>}
+     * @return array<string, mixed>
      */
+    private function fetchProxyOptions(string $url): array
+    {
+        $dedicatedProxy = trim((string) config('geoflow.url_import_fetch_proxy', ''));
+        if ($dedicatedProxy !== '') {
+            return ['proxy' => $dedicatedProxy];
+        }
+
+        return OutboundHttpProxy::httpClientOptionsForUrl($url);
+    }
+
     private function parseHtml(string $html, string $baseUrl): array
     {
-        $previous = libxml_use_internal_errors(true);
-        $dom = new DOMDocument;
-        $dom->loadHTML('<?xml encoding="utf-8" ?>'.$html);
-        libxml_clear_errors();
-        libxml_use_internal_errors($previous);
-
-        $xpath = new DOMXPath($dom);
-        foreach ($xpath->query('//script|//style|//noscript|//form') ?: [] as $node) {
-            $node->parentNode?->removeChild($node);
-        }
+        $loaded = UrlImportHtmlInspector::loadDom($html);
+        $dom = $loaded['dom'];
+        $xpath = $loaded['xpath'];
+        $jsonLdText = UrlImportHtmlInspector::extractJsonLdText($xpath);
+        UrlImportHtmlInspector::pruneNoiseNodes($xpath, $dom);
 
         $title = $this->firstMetaContent($xpath, ['og:title', 'twitter:title']);
         if ($title === '') {
@@ -512,8 +927,8 @@ final class UrlImportProcessingService
         }
 
         $description = $this->firstMetaContent($xpath, ['description', 'og:description', 'twitter:description']);
-        $body = $xpath->query('//article')->item(0) ?: $xpath->query('//main')->item(0) ?: $xpath->query('//body')->item(0);
-        $text = $body ? $this->normalizeText((string) $body->textContent) : '';
+        $text = UrlImportHtmlInspector::extractMainText($xpath);
+        $text = UrlImportHtmlInspector::mergeSupplementalText($text, $jsonLdText);
         $summary = $description !== '' ? $description : Str::limit($text, 220, '...');
 
         $images = $this->extractImagesFromDom($dom, $xpath, $baseUrl);
@@ -772,13 +1187,17 @@ final class UrlImportProcessingService
      * @param  array<string, mixed>  $parsed
      * @return array{summary:string,library_name:string,keywords:list<string>,titles:list<string>,knowledge_markdown:string,analysis_source:string,model:mixed}
      */
-    private function buildAnalysis(array $parsed, UrlImportJob $job): array
+    /**
+     * @param  array<string, mixed>|null  $pageJson
+     */
+    private function buildAnalysis(array $parsed, UrlImportJob $job, ?array $pageJson = null): array
     {
         $title = (string) ($parsed['title'] ?? '');
         $text = (string) ($parsed['text'] ?? '');
         $summary = (string) ($parsed['summary'] ?? '');
         $libraryName = $this->resolveLibraryBaseName($job, [], $parsed);
-        $pageJson = $this->buildPageJson($parsed, $job);
+        $pageJson ??= $this->buildPageJson($parsed, $job);
+        $parseOutput = $this->summarizeParseForNode($parsed, $pageJson);
 
         $models = $this->assertAnalysisModelsReady((int) ($job->tenant_id ?? 0) ?: null);
         $errors = [];
@@ -797,46 +1216,59 @@ final class UrlImportProcessingService
                     $this->log($job, 'info', __('admin.url_import.log.knowledge_start'));
                     $this->log($job, 'info', __('admin.url_import.log.clean_start'));
                     $cleanStart = microtime(true);
+                    $cleanSystemPrompt = UrlImportPromptCatalog::cleanSystem();
+                    $cleanUserPrompt = UrlImportPromptCatalog::cleanUser($pageJson);
                     $rawClean = $this->requestAiJson(
                         $runtime,
-                        $this->buildCleanSystemPrompt(),
-                        $this->buildCleanUserPrompt($pageJson)
+                        $cleanSystemPrompt,
+                        $cleanUserPrompt
                     );
                     $this->logNode(
                         $job,
                         'ai_clean',
                         'AI 清洗正文',
-                        [
-                            'model' => $this->modelDisplayName($model),
-                            'system_prompt' => $this->buildCleanSystemPrompt(),
-                            'user_prompt_chars' => mb_strlen($this->buildCleanUserPrompt($pageJson), 'UTF-8'),
-                            'page_chars' => mb_strlen((string) data_get($pageJson, 'text', ''), 'UTF-8'),
-                        ],
+                        array_merge(
+                            $this->nodeChainInput('parse', $parseOutput),
+                            [
+                                'model' => $this->modelDisplayName($model),
+                                'system_prompt' => $cleanSystemPrompt,
+                                'user_prompt' => Str::limit($cleanUserPrompt, 6000, '…'),
+                            ]
+                        ),
                         $rawClean,
                         (int) round((microtime(true) - $cleanStart) * 1000),
                         $attempt
                     );
                     $cleaned = $this->normalizeCleanedPage($rawClean, $parsed);
+                    $cleanedOutput = $this->summarizeCleanedForNode($cleaned);
                     $this->log($job, 'info', __('admin.url_import.log.clean_done', [
                         'chars' => mb_strlen((string) $cleaned['text'], 'UTF-8'),
                     ]));
 
                     $knowledgeStart = microtime(true);
+                    $knowledgeSystemPrompt = UrlImportPromptCatalog::knowledgeSystem();
+                    $knowledgeUserPrompt = UrlImportPromptCatalog::knowledgeUser(
+                        $pageJson,
+                        $cleaned,
+                        trim($this->latestPromptContent('description')),
+                    );
                     $rawKnowledge = $this->requestAiJson(
                         $runtime,
-                        $this->buildKnowledgeSystemPrompt(),
-                        $this->buildKnowledgeUserPrompt($pageJson, $cleaned, [])
+                        $knowledgeSystemPrompt,
+                        $knowledgeUserPrompt
                     );
                     $this->logNode(
                         $job,
                         'ai_knowledge',
                         'AI 整理素材',
-                        [
-                            'model' => $this->modelDisplayName($model),
-                            'system_prompt' => $this->buildKnowledgeSystemPrompt(),
-                            'user_prompt_chars' => mb_strlen($this->buildKnowledgeUserPrompt($pageJson, $cleaned, []), 'UTF-8'),
-                            'cleaned_text_chars' => mb_strlen((string) $cleaned['text'], 'UTF-8'),
-                        ],
+                        array_merge(
+                            $this->nodeChainInput('ai_clean', $cleanedOutput),
+                            [
+                                'model' => $this->modelDisplayName($model),
+                                'system_prompt' => $knowledgeSystemPrompt,
+                                'user_prompt' => Str::limit($knowledgeUserPrompt, 6000, '…'),
+                            ]
+                        ),
                         $rawKnowledge,
                         (int) round((microtime(true) - $knowledgeStart) * 1000),
                         $attempt
@@ -858,28 +1290,42 @@ final class UrlImportProcessingService
                             $this->log($job, 'warning', 'AI 完全无响应，已用清洗后的页面正文降级为知识库（' . mb_strlen($aiKnowledge, 'UTF-8') . ' 字）');
                         }
                     }
+                    $aiKnowledge = UrlImportTextSanitizer::cleanMarkdown($aiKnowledge);
+                    $cleaned['text'] = UrlImportTextSanitizer::cleanMarkdown((string) ($cleaned['text'] ?? ''));
                     $this->log($job, 'info', __('admin.url_import.log.knowledge_done', [
                         'chars' => mb_strlen($aiKnowledge, 'UTF-8'),
                     ]));
+                    $knowledgeOutput = $this->summarizeKnowledgeForNode($rawKnowledge, $aiKnowledge, $aiSummary, $aiLibraryName);
 
                     $this->updateStep($job, 'keywords', 62);
                     $this->log($job, 'info', __('admin.url_import.log.keywords_start'));
                     $keywordStart = microtime(true);
+                    $keywordsSystemPrompt = UrlImportPromptCatalog::keywordsSystem();
+                    $keywordsUserPrompt = UrlImportPromptCatalog::keywordsUser(
+                        $pageJson,
+                        $cleaned,
+                        $aiKnowledge,
+                        trim($this->latestPromptContent('keyword')),
+                        UrlImportPromptCatalog::geoCollectionRules(),
+                    );
                     $rawKeywords = $this->requestAiJson(
                         $runtime,
-                        $this->buildKeywordsSystemPrompt(),
-                        $this->buildKeywordsUserPrompt($pageJson, $cleaned, $aiKnowledge),
+                        $keywordsSystemPrompt,
+                        $keywordsUserPrompt,
                         'keywords'
                     );
                     $this->logNode(
                         $job,
                         'ai_keywords',
                         'AI 提炼主题词',
-                        [
-                            'model' => $this->modelDisplayName($model),
-                            'system_prompt' => $this->buildKeywordsSystemPrompt(),
-                            'user_prompt_chars' => mb_strlen($this->buildKeywordsUserPrompt($pageJson, $cleaned, $aiKnowledge), 'UTF-8'),
-                        ],
+                        array_merge(
+                            $this->nodeChainInput('ai_knowledge', $knowledgeOutput),
+                            [
+                                'model' => $this->modelDisplayName($model),
+                                'system_prompt' => $keywordsSystemPrompt,
+                                'user_prompt' => Str::limit($keywordsUserPrompt, 6000, '…'),
+                            ]
+                        ),
                         $rawKeywords,
                         (int) round((microtime(true) - $keywordStart) * 1000),
                         $attempt
@@ -891,26 +1337,38 @@ final class UrlImportProcessingService
                         throw new \RuntimeException(__('admin.url_import.error.ai_keywords_missing'));
                     }
                     $this->log($job, 'info', __('admin.url_import.log.keywords_done', ['count' => count($aiKeywords)]));
+                    $keywordsOutput = $this->summarizeKeywordsForNode($aiKeywords);
 
                     $this->updateStep($job, 'titles', 80);
                     $this->log($job, 'info', __('admin.url_import.log.titles_start'));
                     $titleStart = microtime(true);
+                    $titlesSystemPrompt = UrlImportPromptCatalog::titlesSystem();
+                    $titlesUserPrompt = UrlImportPromptCatalog::titlesUser(
+                        $pageJson,
+                        $cleaned,
+                        $aiKnowledge,
+                        $aiKeywords,
+                        trim($this->latestPromptContent('content')),
+                    );
                     $rawTitles = $this->requestAiJson(
                         $runtime,
-                        $this->buildTitlesSystemPrompt(),
-                        $this->buildTitlesUserPrompt($pageJson, $cleaned, $aiKnowledge, $aiKeywords),
+                        $titlesSystemPrompt,
+                        $titlesUserPrompt,
                         'titles'
                     );
                     $this->logNode(
                         $job,
                         'ai_titles',
                         'AI 生成标题',
-                        [
-                            'model' => $this->modelDisplayName($model),
-                            'system_prompt' => $this->buildTitlesSystemPrompt(),
-                            'user_prompt_chars' => mb_strlen($this->buildTitlesUserPrompt($pageJson, $cleaned, $aiKnowledge, $aiKeywords), 'UTF-8'),
-                            'keyword_count' => count($aiKeywords),
-                        ],
+                        array_merge(
+                            $this->nodeChainInput('ai_keywords', $keywordsOutput),
+                            [
+                                'model' => $this->modelDisplayName($model),
+                                'system_prompt' => $titlesSystemPrompt,
+                                'user_prompt' => Str::limit($titlesUserPrompt, 6000, '…'),
+                                'knowledge_chars' => mb_strlen($aiKnowledge, 'UTF-8'),
+                            ]
+                        ),
                         $rawTitles,
                         (int) round((microtime(true) - $titleStart) * 1000),
                         $attempt
@@ -1063,8 +1521,8 @@ final class UrlImportProcessingService
         }
 
         $decoded = $this->decodeAiJson($content);
-        if ($decoded === []) {
-            $fallbackList = $listFallbackKey ? $this->parseAiList($content) : [];
+        if ($decoded === [] && $listFallbackKey) {
+            $fallbackList = $this->parseAiListResponse($content);
             if ($fallbackList !== []) {
                 $decoded = [$listFallbackKey => $fallbackList];
             }
@@ -1163,18 +1621,6 @@ final class UrlImportProcessingService
         return OpenAiRuntimeProvider::normalizeApiException($exception, $providerUrl);
     }
 
-    private function buildCleanSystemPrompt(): string
-    {
-        return <<<'PROMPT'
-你是深联云GEO的网页正文清洗器。只输出 JSON，不要输出 Markdown 代码块。
-字段固定为：clean_title, clean_summary, clean_text, core_business, entities, facts, noise_removed。
-目标：从页面 JSON 中去掉导航、菜单、广告、版权、按钮、登录、推荐流、重复模板文案，只保留页面主体内容和可被知识库引用的事实，并识别页面背后的真实核心业务。
-core_business 必须描述页面主体对应的行业、产品/服务、目标客户、商业场景、价值主张、实体关系和可验证边界。
-facts 必须尽量写成“实体 - 属性/能力/场景 - 证据/来源边界”的短句，便于后续 GEO 文章生成和向量检索。
-不能虚构页面没有的信息。
-PROMPT;
-    }
-
     /**
      * @param  array<string, mixed>  $parsed
      */
@@ -1190,6 +1636,9 @@ PROMPT;
             'source_label' => (string) ($options['source_label'] ?? ''),
             'content_language' => (string) ($options['content_language'] ?? ''),
             'operator_notes' => (string) ($options['notes'] ?? ''),
+            'collection_mode' => (string) ($parsed['collection_mode'] ?? 'direct'),
+            'identified_company' => (string) ($parsed['identified_company'] ?? ''),
+            'brand_names' => array_values(array_filter($this->stringList($parsed['brand_names'] ?? []))),
             'title' => (string) ($parsed['title'] ?? ''),
             'description' => (string) ($parsed['description'] ?? ''),
             'summary' => (string) ($parsed['summary'] ?? ''),
@@ -1197,142 +1646,9 @@ PROMPT;
         ];
     }
 
-    /**
-     * @param  array<string, mixed>  $pageJson
-     */
-    private function buildCleanUserPrompt(array $pageJson): string
-    {
-        return "请清洗以下页面 JSON，输出 clean_title、clean_summary、clean_text、entities、facts、noise_removed。\n\n页面 JSON：\n"
-            .json_encode($pageJson, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT)
-            ."\n\n输出要求：\n"
-            ."1. clean_text 只保留主体正文，不要保留“查看详情、返回首页、登录、注册、更多、相关阅读”等模板噪声。\n"
-            ."2. clean_summary 120-240 字，概括真实主体内容。\n"
-            ."3. core_business 输出对象，包含 industry、products_services、target_audience、commercial_scenarios、value_proposition、entity_relations、evidence_limits。\n"
-            ."4. facts 输出页面明确出现或可直接归纳的事实短句，优先服务/产品/能力/客户/场景/数据；每条尽量包含实体、属性/能力、适用场景或来源边界。\n"
-            .'5. entities 输出品牌、产品、服务、行业、目标用户、地名、人名等实体。';
-    }
-
-    private function buildKeywordsSystemPrompt(): string
-    {
-        return <<<'PROMPT'
-你是深联云GEO的核心业务关键词提炼器。只输出 JSON，不要输出 Markdown 代码块。
-字段固定为：keywords。
-keywords 最多 10 个，必须是短关键词或短语。中文关键词优先 2-5 个字，英文关键词优先 1-3 个单词。
-只允许输出基于知识库反推出来的核心业务词根、产品/服务词、行业词、需求场景词、问题词、解决方案词。
-关键词必须具备商业价值或内容选题价值，能支撑后续生成 GEO 文章，并能与用户问题、实体、场景或解决方案建立稳定语义关联。
-禁止输出：AI、GEO、URL、来源、页面描述、引擎、官网、首页、公司名、人名、导航词、按钮词、广告口号、整段摘要、长句和重复词。
-不能虚构页面没有的信息。
-PROMPT;
-    }
-
-    /**
-     * @param  array<string, mixed>  $pageJson
-     * @param  array<string, mixed>  $cleaned
-     */
-    private function buildKeywordsUserPrompt(array $pageJson, array $cleaned, string $knowledgeMarkdown): string
-    {
-        return "请只基于已清洗知识库，提取 5-10 个最核心的业务词根或业务关键词。不要从原网页机械摘词，要先判断业务本质，再输出能带来商业检索价值的短关键词。\n\n"
-            ."深联云GEO内置规则：\n".$this->builtInGeoCollectionPrompt()."\n\n"
-            ."后台关键词提示词：\n".$this->latestPromptContent('keyword')."\n\n"
-            ."页面来源与清洗结果：\n".json_encode([
-                'source_url' => $pageJson['source_url'] ?? '',
-                'source_domain' => $pageJson['source_domain'] ?? '',
-                'title' => $cleaned['title'] ?? $pageJson['title'] ?? '',
-                'summary' => $cleaned['summary'] ?? '',
-                'entities' => $cleaned['entities'] ?? [],
-                'facts' => $cleaned['facts'] ?? [],
-                'knowledge_markdown' => Str::limit($knowledgeMarkdown, 9000, ''),
-            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
-    }
-
-    private function buildTitlesSystemPrompt(): string
-    {
-        return <<<'PROMPT'
-你是深联云GEO的 GEO 标题库构建器。只输出 JSON，不要输出 Markdown 代码块。
-字段固定为：titles。
-titles 最多 50 个，必须基于页面真实信息、知识库和 10 个核心业务词生成，适合后续生成真实可信的 GEO 内容。
-标题角度要多样：是什么、为什么、怎么做、选型、对比、指南、清单、常见问题、场景拆解、趋势判断（仅在资料支持时带年份）或商业价值。
-每个标题都必须围绕某个核心业务词或业务场景展开，面向 AI 搜索/GEO 的问答、推荐、比较、选型、采购、实施和风险判断。
-优先覆盖 AI 答案引擎常引用的题型：定义型、判断型、步骤型、对比型、适用场景型、风险边界型、FAQ 型。
-不要机械复读网页标题，不要虚构“第一、最好、领先”等无来源支撑的绝对化表述。
-PROMPT;
-    }
-
-    /**
-     * @param  array<string, mixed>  $pageJson
-     * @param  array<string, mixed>  $cleaned
-     * @param  list<string>  $keywords
-     */
-    private function buildTitlesUserPrompt(array $pageJson, array $cleaned, string $knowledgeMarkdown, array $keywords): string
-    {
-        return "请为深联云GEO标题库生成 50 个可用于内容任务的标题。标题要围绕核心业务词展开，必须服务于用户在 AI 搜索中的真实问题、比较、选型、采购、实施或运营决策。\n\n"
-            ."后台正文提示词参考：\n".$this->latestPromptContent('content')."\n\n"
-            ."输入：\n".json_encode([
-                'source_url' => $pageJson['source_url'] ?? '',
-                'title' => $cleaned['title'] ?? $pageJson['title'] ?? '',
-                'summary' => $cleaned['summary'] ?? '',
-                'keywords' => array_slice($keywords, 0, 10),
-                'facts' => $cleaned['facts'] ?? [],
-                'knowledge_markdown' => Str::limit($knowledgeMarkdown, 7000, ''),
-            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
-    }
-
-    private function buildKnowledgeSystemPrompt(): string
-    {
-        return <<<'PROMPT'
-你是深联云GEO的知识库构建器。只输出 JSON，不要输出 Markdown 代码块。
-字段固定为：summary, library_name, knowledge_markdown。
-knowledge_markdown 必须围绕“核心业务”构建，是真实可追溯、结构化、原子化的知识库内容，保留来源 URL，只沉淀页面明确出现或可由页面内容直接归纳的信息。
-必须优先抽取：核心业务、产品/服务、目标用户、业务场景、能力/优势、实体关系、可验证事实、使用边界、适合支撑的 GEO 内容方向。
-知识库要服务后续 RAG 与 GEO 写作：用短标题、短段落、列表和“实体 - 属性 - 证据/边界”的表达方式，让每个知识块都能被单独检索和引用。
-不能虚构事实、案例、客户、排名、数据、背书。信息不足时明确标注“页面未明确说明”。
-PROMPT;
-    }
-
-    /**
-     * @param  array<string, mixed>  $pageJson
-     * @param  array<string, mixed>  $cleaned
-     * @param  list<string>  $keywords
-     */
-    private function buildKnowledgeUserPrompt(array $pageJson, array $cleaned, array $keywords): string
-    {
-        return "请基于页面 JSON 和清洗正文生成可直接入库的深联云GEO知识库 Markdown。先识别核心业务，再把页面信息拆成结构化、原子化事实，最后归纳 GEO 内容可用方向和使用边界。\n\n"
-            ."后台描述提示词参考：\n".$this->latestPromptContent('description')."\n\n"
-            ."输入：\n".json_encode([
-                'source_url' => $pageJson['source_url'] ?? '',
-                'source_domain' => $pageJson['source_domain'] ?? '',
-                'title' => $cleaned['title'] ?? $pageJson['title'] ?? '',
-                'summary' => $cleaned['summary'] ?? '',
-                'core_business' => $cleaned['core_business'] ?? [],
-                'keywords' => array_slice($keywords, 0, 40),
-                'entities' => $cleaned['entities'] ?? [],
-                'facts' => $cleaned['facts'] ?? [],
-                'clean_text' => Str::limit((string) ($cleaned['text'] ?? ''), 10000, ''),
-            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT)
-            ."\n\n建议结构：来源、核心业务摘要、实体关系、原子化事实、产品/服务与能力、目标用户与场景、可引用事实、GEO 内容建议、使用边界。";
-    }
-
     private function builtInGeoCollectionPrompt(): string
     {
-        return <<<'PROMPT'
-你正在为深联云GEO构建可复用素材库。请把网页内容拆成三类资产：
-
-关键词库：
-- 输出短词或短语，不要输出完整句子。
-- 优先：产品/服务词、行业词、目标客户词、需求场景词、痛点词、解决方案词、AI 搜索/GEO/SEO/内容运营相关词。
-- 避免：纯品牌词、公司名、人名、泛词、空话、标点堆叠、整句广告语、无法独立检索的长句。
-- 中文关键词尽量控制在 2-5 个字，英文关键词尽量控制在 1-3 个单词。
-
-标题库：
-- 标题要能驱动后续生成文章，围绕“是什么、为什么、怎么做、对比、选型、指南、清单、案例拆解、常见问题、趋势判断”等角度展开。
-- 不要全部套用同一个模板；不要虚构“最好、第一、领先”等没有来源支撑的绝对化表述。
-
-知识库：
-- 先沉淀事实，再生成观点。
-- 保留来源 URL、页面标题、页面摘要、明确出现的品牌/产品/服务/能力/场景。
-- 尽量用“实体 - 属性 - 证据/边界”沉淀原子事实，方便后续 RAG 命中和 AI 答案引用。
-- 对不确定信息要标注边界，不能伪造客户案例、数据、第三方评价或排名。
-PROMPT;
+        return UrlImportPromptCatalog::geoCollectionRules();
     }
 
     private function latestPromptContent(string $type): string
@@ -1420,7 +1736,7 @@ PROMPT;
             if ($line === '') {
                 continue;
             }
-            $line = preg_replace('/^[\-\*\u2022\u00b7]\s*/u', '', $line) ?? $line;
+            $line = preg_replace('/^[-*•·]\s*/u', '', $line) ?? $line;
             $line = preg_replace('/^\d+[\.\)、]\s*/u', '', $line) ?? $line;
             $line = trim($line);
             if ($line === '') {
@@ -1437,6 +1753,25 @@ PROMPT;
         }
 
         return array_values(array_unique($items));
+    }
+
+    /**
+     * AI 未返回 JSON 时，把纯文本列表降级成数组。
+     * 兼容：换行编号列表、单行逗号分隔关键词。
+     *
+     * @return list<string>
+     */
+    private function parseAiListResponse(string $content): array
+    {
+        $byLine = $this->parseAiList($content);
+        if (count($byLine) === 1 && preg_match('/[,，;；、]/u', $byLine[0]) === 1) {
+            return $this->stringList($byLine[0]);
+        }
+        if ($byLine !== []) {
+            return $byLine;
+        }
+
+        return $this->stringList($content);
     }
 
     /**
@@ -1638,11 +1973,7 @@ PROMPT;
 
     private function normalizeText(string $text): string
     {
-        $text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
-        $text = preg_replace('/[ \t]+/u', ' ', $text) ?? $text;
-        $text = preg_replace('/\R{3,}/u', "\n\n", $text) ?? $text;
-
-        return trim($text);
+        return UrlImportHtmlInspector::normalizeText($text);
     }
 
     private function safeName(string $name): string
@@ -1682,28 +2013,125 @@ PROMPT;
      */
     private function dispatchImageDownload(UrlImportJob $job, array $parsed): void
     {
-        $images = $parsed['images'] ?? [];
-        if (! is_array($images) || $images === []) {
-            return;
-        }
+        $images = is_array($parsed['images'] ?? null) ? $parsed['images'] : [];
+        $detectedCount = count($images);
         $tenantId = (int) ($job->tenant_id ?? 0);
-        if ($tenantId <= 0) {
+
+        if ($detectedCount === 0) {
+            UrlImportNodeRecorder::record(
+                (int) $job->id,
+                'images_import',
+                '图片入库',
+                'skipped',
+                ['detected_count' => 0],
+                ['message' => '页面未检测到可入库图片'],
+            );
+
             return;
         }
 
-        try {
-            \App\Jobs\DownloadUrlImportImagesJob::dispatch(
+        if ($tenantId <= 0) {
+            UrlImportNodeRecorder::record(
                 (int) $job->id,
-                (string) $job->normalized_url,
-                (string) $parsed['title'],
-                $parsed
+                'images_import',
+                '图片入库',
+                'skipped',
+                ['detected_count' => $detectedCount],
+                ['message' => '缺少租户上下文，已跳过图片入库'],
             );
+
+            return;
+        }
+
+        UrlImportNodeRecorder::record(
+            (int) $job->id,
+            'images_import',
+            '图片入库',
+            'queued',
+            [
+                'from_node' => 'parse',
+                'upstream' => [
+                    'image_count' => $detectedCount,
+                    'images' => array_slice($images, 0, 6),
+                ],
+                'source_url' => (string) $job->normalized_url,
+            ],
+            ['message' => '正文完成后并行执行，下载至网址采集图片库'],
+        );
+
+        try {
+            $imagePayload = [
+                'title' => (string) ($parsed['title'] ?? ''),
+                'images' => array_values($images),
+            ];
+
+            // 测试 / sync 队列：同步入库，保证断言与预览立即可用
+            if (app()->runningUnitTests() || config('queue.default') === 'sync') {
+                \App\Jobs\DownloadUrlImportImagesJob::dispatchSync(
+                    (int) $job->id,
+                    (string) $job->normalized_url,
+                    (string) $parsed['title'],
+                    $imagePayload
+                );
+            } else {
+                // 生产：立即投递 geoflow 队列（不用 afterResponse，避免 CLI/Worker 场景不触发）
+                \App\Jobs\DownloadUrlImportImagesJob::dispatch(
+                    (int) $job->id,
+                    (string) $job->normalized_url,
+                    (string) $parsed['title'],
+                    $imagePayload
+                )->onQueue('geoflow');
+            }
         } catch (Throwable $exception) {
+            UrlImportNodeRecorder::record(
+                (int) $job->id,
+                'images_import',
+                '图片入库',
+                'failed',
+                ['detected_count' => $detectedCount],
+                null,
+                0,
+                1,
+                $exception->getMessage(),
+            );
             Log::warning('geoflow.url_import_image_dispatch_failed', [
                 'job_id' => (int) $job->id,
                 'reason' => $exception->getMessage(),
             ]);
         }
+    }
+
+    /**
+     * 图片异步入库完成后，回写任务结果中的图片摘要。
+     *
+     * @param  array<string, mixed>  $stats
+     */
+    public function mergeImageImportResult(int $jobId, array $stats): void
+    {
+        $job = UrlImportJob::query()->whereKey($jobId)->first();
+        if (! $job || (string) $job->result_json === '') {
+            return;
+        }
+
+        $result = json_decode((string) $job->result_json, true);
+        if (! is_array($result)) {
+            return;
+        }
+
+        $result['import'] = is_array($result['import'] ?? null) ? $result['import'] : [];
+        $result['import']['images'] = [
+            'status' => ((int) ($stats['downloaded'] ?? 0)) > 0 ? 'imported' : 'empty',
+            'downloaded' => (int) ($stats['downloaded'] ?? 0),
+            'skipped' => (int) ($stats['skipped'] ?? 0),
+            'failed' => (int) ($stats['failed'] ?? 0),
+            'library_id' => $stats['library_id'] ?? null,
+            'image_ids' => $stats['image_ids'] ?? [],
+            'finished_at' => now()->toIso8601String(),
+        ];
+
+        $job->update([
+            'result_json' => json_encode($result, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE),
+        ]);
     }
 
     /**
@@ -1715,10 +2143,10 @@ PROMPT;
     {
         $title = $this->normalizeText($this->aiResponseTextToString($decoded['clean_title'] ?? $decoded['title'] ?? $parsed['title'] ?? ''));
         $summary = $this->normalizeText($this->aiResponseTextToString($decoded['clean_summary'] ?? $decoded['summary'] ?? $parsed['summary'] ?? ''));
-        $text = $this->normalizeText($this->aiResponseTextToString($decoded['clean_text'] ?? $decoded['text'] ?? $parsed['text'] ?? ''));
+        $text = UrlImportTextSanitizer::cleanMarkdown($this->normalizeText($this->aiResponseTextToString($decoded['clean_text'] ?? $decoded['text'] ?? $parsed['text'] ?? '')));
 
         if ($text === '') {
-            $text = $this->normalizeText((string) ($parsed['text'] ?? ''));
+            $text = UrlImportTextSanitizer::cleanMarkdown($this->normalizeText((string) ($parsed['text'] ?? '')));
         }
         if ($summary === '') {
             $summary = Str::limit($text, 240, '...');
@@ -1735,6 +2163,81 @@ PROMPT;
             'entities' => array_slice($this->cleanKeywordList($this->stringList($decoded['entities'] ?? [])), 0, 40),
             'facts' => array_slice($this->stringList($decoded['facts'] ?? []), 0, 40),
             'noise_removed' => array_slice($this->stringList($decoded['noise_removed'] ?? []), 0, 40),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $upstream
+     * @return array{from_node:string,upstream:array<string,mixed>}
+     */
+    private function nodeChainInput(string $fromNode, array $upstream): array
+    {
+        return [
+            'from_node' => $fromNode,
+            'upstream' => $this->truncateNodePayload($upstream, 30_000),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $parsed
+     * @param  array<string, mixed>  $pageJson
+     * @return array<string, mixed>
+     */
+    private function summarizeParseForNode(array $parsed, array $pageJson): array
+    {
+        return [
+            'title' => (string) ($parsed['title'] ?? ''),
+            'description' => (string) ($parsed['description'] ?? ''),
+            'text_chars' => mb_strlen((string) ($parsed['text'] ?? ''), 'UTF-8'),
+            'text_preview' => Str::limit((string) ($parsed['text'] ?? ''), 1500, '…'),
+            'image_count' => count($parsed['images'] ?? []),
+            'images' => array_slice($parsed['images'] ?? [], 0, 6),
+            'page_json' => $pageJson,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $cleaned
+     * @return array<string, mixed>
+     */
+    private function summarizeCleanedForNode(array $cleaned): array
+    {
+        return [
+            'title' => (string) ($cleaned['title'] ?? ''),
+            'summary' => (string) ($cleaned['summary'] ?? ''),
+            'text_chars' => mb_strlen((string) ($cleaned['text'] ?? ''), 'UTF-8'),
+            'text_preview' => Str::limit((string) ($cleaned['text'] ?? ''), 1500, '…'),
+            'core_business' => $cleaned['core_business'] ?? [],
+            'entities' => array_slice((array) ($cleaned['entities'] ?? []), 0, 30),
+            'facts' => array_slice((array) ($cleaned['facts'] ?? []), 0, 20),
+            'noise_removed' => array_slice((array) ($cleaned['noise_removed'] ?? []), 0, 15),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $rawKnowledge
+     * @return array<string, mixed>
+     */
+    private function summarizeKnowledgeForNode(?array $rawKnowledge, string $aiKnowledge, string $aiSummary, string $aiLibraryName): array
+    {
+        return [
+            'summary' => $aiSummary,
+            'library_name' => $aiLibraryName,
+            'knowledge_markdown_chars' => mb_strlen($aiKnowledge, 'UTF-8'),
+            'knowledge_markdown_preview' => Str::limit($aiKnowledge, 2500, '…'),
+            'raw_field_keys' => is_array($rawKnowledge) ? array_values(array_keys($rawKnowledge)) : [],
+        ];
+    }
+
+    /**
+     * @param  list<string>  $keywords
+     * @return array<string, mixed>
+     */
+    private function summarizeKeywordsForNode(array $keywords): array
+    {
+        return [
+            'keywords' => array_slice($keywords, 0, 10),
+            'count' => count($keywords),
         ];
     }
 

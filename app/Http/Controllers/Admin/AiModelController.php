@@ -9,6 +9,7 @@ use App\Models\SiteSetting;
 use App\Support\AdminWeb;
 use App\Support\GeoFlow\ApiKeyCrypto;
 use App\Support\GeoFlow\OpenAiRuntimeProvider;
+use App\Support\GeoFlow\UrlImportWebSearchSettings;
 use App\Support\Site\SiteSettingsBag;
 use App\Support\Tenancy\AdminTenant;
 use Illuminate\Http\JsonResponse;
@@ -34,7 +35,10 @@ class AiModelController extends Controller
     /**
      * 注入统一 API Key 加解密工具，避免控制器内重复维护密钥兼容逻辑。
      */
-    public function __construct(private readonly ApiKeyCrypto $apiKeyCrypto) {}
+    public function __construct(
+        private readonly ApiKeyCrypto $apiKeyCrypto,
+        private readonly UrlImportWebSearchSettings $webSearchSettings,
+    ) {}
 
     /**
      * AI 模型列表页。
@@ -54,6 +58,7 @@ class AiModelController extends Controller
             'defaultEmbeddingModelId' => $this->getDefaultEmbeddingModelId(),
             'chunkingConfig' => $this->getChunkingConfig(),
             'pgvectorEnabled' => $this->isPgvectorEnabled(),
+            'webSearchSettings' => $this->getWebSearchSettingsForView(),
         ]);
     }
 
@@ -326,6 +331,51 @@ class AiModelController extends Controller
         );
 
         return redirect()->route('admin.ai-models.index')->with('message', __('admin.ai_models.message.chunking_config_updated'));
+    }
+
+    /**
+     * 保存网址采集联网搜索（博查）密钥。
+     */
+    public function updateWebSearchSettings(Request $request): RedirectResponse
+    {
+        $payload = $request->validate([
+            'bocha_api_key' => ['nullable', 'string', 'max:4096'],
+            'clear_bocha_api_key' => ['nullable', 'boolean'],
+        ]);
+
+        if ($request->boolean('clear_bocha_api_key')) {
+            $this->webSearchSettings->clear();
+        } else {
+            $apiKey = trim((string) ($payload['bocha_api_key'] ?? ''));
+            if ($apiKey !== '') {
+                try {
+                    $this->webSearchSettings->store($apiKey);
+                } catch (\RuntimeException) {
+                    return redirect()
+                        ->route('admin.ai-models.index', ['tab' => 'web-search'])
+                        ->withErrors(__('admin.ai_models.error.crypto_key_missing'));
+                }
+            }
+        }
+
+        return redirect()
+            ->route('admin.ai-models.index', ['tab' => 'web-search'])
+            ->with('message', __('admin.ai_models.message.web_search_updated'));
+    }
+
+    /**
+     * @return array{provider:string,masked_key:string,configured:bool,uses_env_fallback:bool}
+     */
+    private function getWebSearchSettingsForView(): array
+    {
+        $provider = strtolower(trim((string) config('geoflow.url_import_web_search.provider', 'bocha')));
+
+        return [
+            'provider' => $provider !== '' ? $provider : 'bocha',
+            'masked_key' => $this->webSearchSettings->maskedKey(),
+            'configured' => $this->webSearchSettings->hasKey(),
+            'uses_env_fallback' => $this->webSearchSettings->usesEnvFallback(),
+        ];
     }
 
     /**

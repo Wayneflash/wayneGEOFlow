@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Jobs\ProcessUrlImportJob;
 use App\Models\Image;
+use App\Models\ImageLibrary;
 use App\Models\KeywordLibrary;
 use App\Models\KnowledgeBase;
 use App\Models\TitleLibrary;
@@ -12,11 +13,15 @@ use App\Models\UrlImportJob;
 use App\Models\UrlImportJobLog;
 use App\Models\UrlImportJobNodeLog;
 use App\Services\GeoFlow\UrlImportProcessingService;
+use App\Support\GeoFlow\ImageUrlNormalizer;
+use App\Support\GeoFlow\UrlImportImageLibrary;
 use App\Support\Tenancy\AdminTenant;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 use Illuminate\View\View;
 
 class UrlImportController extends Controller
@@ -95,7 +100,21 @@ class UrlImportController extends Controller
     {
         $job = UrlImportJob::query()->visibleToAdmin()->whereKey($jobId)->firstOrFail();
 
-        if (in_array($job->status, ['queued', 'failed'], true)) {
+        $canRun = in_array((string) $job->status, ['queued', 'failed'], true)
+            || ($this->isStaleRunningJob($job));
+
+        if ($canRun) {
+            if ($this->isStaleRunningJob($job)) {
+                $job->update([
+                    'status' => 'queued',
+                    'current_step' => 'queued',
+                    'progress_percent' => 0,
+                    'error_message' => '',
+                    'finished_at' => null,
+                ]);
+                $job->refresh();
+            }
+
             try {
                 $this->urlImportProcessingService->assertAnalysisModelReady();
             } catch (\Throwable $exception) {
@@ -116,7 +135,7 @@ class UrlImportController extends Controller
                 return response()->json($this->statusPayload($job->refresh()), 422);
             }
 
-            if (app()->runningUnitTests()) {
+            if ($this->shouldProcessUrlImportInline()) {
                 $job = $this->urlImportProcessingService->process($job);
             } else {
                 $job->update([
@@ -150,6 +169,24 @@ class UrlImportController extends Controller
         return response()->json($this->statusPayload($job));
     }
 
+    public function images(int $jobId): JsonResponse
+    {
+        $job = UrlImportJob::query()->visibleToAdmin()->whereKey($jobId)->firstOrFail();
+        $result = $this->decodeJson((string) $job->result_json);
+        $imported = $this->loadImportedImages($job);
+
+        $imageImport = is_array($result['import']['images'] ?? null) ? $result['import']['images'] : [];
+
+        return response()->json([
+            'imported_count' => count($imported),
+            'detected_count' => (int) data_get($result, 'page.image_count', 0),
+            'image_import_status' => (string) ($imageImport['status'] ?? ''),
+            'images_import_finished' => $this->imagesImportFinished($job, $result, $this->buildNodeSteps($job), count($imported)),
+            'images' => $imported,
+            'staging_library_url' => $this->stagingLibraryUrl(),
+        ]);
+    }
+
     public function commit(Request $request, int $jobId): RedirectResponse
     {
         $job = UrlImportJob::query()->visibleToAdmin()->whereKey($jobId)->firstOrFail();
@@ -172,37 +209,51 @@ class UrlImportController extends Controller
             ]));
     }
 
+    public function commitImages(Request $request, int $jobId): RedirectResponse
+    {
+        $job = UrlImportJob::query()->visibleToAdmin()->whereKey($jobId)->firstOrFail();
+        $validated = $request->validate([
+            'image_library_name' => ['required', 'string', 'max:120'],
+        ]);
+
+        try {
+            $summary = $this->urlImportProcessingService->commitImages($job, $validated['image_library_name']);
+        } catch (\Throwable $exception) {
+            return back()->withErrors(__('admin.url_import.error.commit_images_failed').': '.$exception->getMessage());
+        }
+
+        return redirect()
+            ->route('admin.url-import.show', ['jobId' => $jobId])
+            ->with('message', __('admin.url_import.commit.images_success', [
+                'name' => $validated['image_library_name'],
+                'count' => $summary['image_count'],
+            ]));
+    }
+
     public function show(int $jobId): View
     {
         $job = UrlImportJob::query()->visibleToAdmin()->whereKey($jobId)->firstOrFail();
-        $importedImages = Image::query()
-            ->where('source_url', (string) $job->normalized_url)
-            ->where('source_area', '<>', 'unknown')
-            ->orderByDesc('id')
-            ->get(['id', 'file_path', 'width', 'height', 'file_size', 'source_area', 'source_alt', 'source_paragraph', 'value_status', 'ai_tag_status'])
-            ->map(fn (Image $img): array => [
-                'id' => (int) $img->id,
-                'file_path' => (string) $img->file_path,
-                'width' => (int) $img->width,
-                'height' => (int) $img->height,
-                'file_size' => (int) $img->file_size,
-                'source_area' => (string) $img->source_area,
-                'source_alt' => (string) ($img->source_alt ?? ''),
-                'source_paragraph' => (string) ($img->source_paragraph ?? ''),
-                'value_status' => (string) $img->value_status,
-                'ai_tag_status' => (string) $img->ai_tag_status,
-            ])
-            ->all();
+        $result = $this->decodeJson((string) $job->result_json);
+        $importedImages = $this->loadImportedImages($job);
 
         $nodeSteps = $this->buildNodeSteps($job);
+
+        $isStale = $this->isStaleRunningJob($job);
 
         return view('admin.url-import.show', [
             'pageTitle' => __('admin.url_import.page_title'),
             'activeMenu' => 'materials',
             'job' => $job,
-            'result' => $this->decodeJson((string) $job->result_json),
+            'result' => $result,
             'importedImages' => $importedImages,
+            'imagePreview' => array_values((array) data_get($result, 'page.image_preview', [])),
+            'detectedImageCount' => (int) data_get($result, 'page.image_count', 0),
+            'imageImport' => is_array($result['import']['images'] ?? null) ? $result['import']['images'] : [],
+            'stagingLibraryUrl' => $this->stagingLibraryUrl(),
             'nodeSteps' => $nodeSteps,
+            'currentNodeKey' => $this->resolveCurrentNodeKey($job, $nodeSteps),
+            'failureMessage' => $this->publicErrorMessage($job),
+            'isStaleRunning' => $isStale,
         ]);
     }
 
@@ -225,7 +276,17 @@ class UrlImportController extends Controller
         $log = $query->first();
 
         if (! $log) {
-            return response()->json(['error' => 'not_found'], 404);
+            return response()->json([
+                'node_key' => $nodeKey,
+                'node_label' => '',
+                'attempt' => 0,
+                'status' => 'pending',
+                'duration_ms' => 0,
+                'input' => null,
+                'output' => null,
+                'error' => '',
+                'message' => '该节点尚未执行，暂无调试数据',
+            ]);
         }
 
         return response()->json([
@@ -260,12 +321,14 @@ class UrlImportController extends Controller
         }
 
         $pipeline = [
-            ['key' => 'fetch', 'label' => '读取网页'],
-            ['key' => 'parse', 'label' => '提取正文'],
-            ['key' => 'ai_clean', 'label' => 'AI 清洗正文'],
-            ['key' => 'ai_knowledge', 'label' => 'AI 整理素材'],
-            ['key' => 'ai_keywords', 'label' => 'AI 提炼主题词'],
-            ['key' => 'ai_titles', 'label' => 'AI 生成标题'],
+            ['key' => 'fetch', 'label' => '读取网页', 'sequential' => true],
+            ['key' => 'parse', 'label' => '提取正文', 'sequential' => true],
+            ['key' => 'web_research', 'label' => 'AI 全网调研', 'sequential' => true],
+            ['key' => 'ai_clean', 'label' => 'AI 清洗正文', 'sequential' => true],
+            ['key' => 'ai_knowledge', 'label' => 'AI 整理素材', 'sequential' => true],
+            ['key' => 'ai_keywords', 'label' => 'AI 提炼主题词', 'sequential' => true],
+            ['key' => 'ai_titles', 'label' => 'AI 生成标题', 'sequential' => true],
+            ['key' => 'images_import', 'label' => '图片入库', 'sequential' => false],
         ];
 
         $steps = [];
@@ -274,6 +337,7 @@ class UrlImportController extends Controller
             $steps[] = [
                 'key' => $entry['key'],
                 'label' => $entry['label'],
+                'sequential' => (bool) ($entry['sequential'] ?? true),
                 'status' => $log ? (string) $log->status : 'pending',
                 'duration_ms' => $log ? (int) ($log->duration_ms ?? 0) : 0,
                 'attempt' => $log ? (int) $log->attempt : 0,
@@ -283,6 +347,48 @@ class UrlImportController extends Controller
         }
 
         return $steps;
+    }
+
+    /**
+     * @param  list<array{key:string,label:string,status:string,sequential?:bool}>  $nodeSteps
+     */
+    private function resolveCurrentNodeKey(UrlImportJob $job, array $nodeSteps): ?string
+    {
+        if (! in_array((string) $job->status, ['queued', 'running'], true)) {
+            foreach ($nodeSteps as $step) {
+                if (in_array((string) ($step['status'] ?? ''), ['queued', 'running'], true)) {
+                    return (string) $step['key'];
+                }
+            }
+
+            return null;
+        }
+
+        foreach ($nodeSteps as $step) {
+            if (! ($step['sequential'] ?? true)) {
+                continue;
+            }
+            if ((string) ($step['status'] ?? 'pending') === 'pending') {
+                return (string) $step['key'];
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $nodeSteps
+     */
+    private function nodeStatusLabel(string $status): string
+    {
+        return match ($status) {
+            'success' => '已完成',
+            'failed' => '失败',
+            'skipped' => '已跳过',
+            'queued' => '队列中',
+            'running' => '执行中',
+            default => '待执行',
+        };
     }
 
     public function history(): View
@@ -307,6 +413,64 @@ class UrlImportController extends Controller
             'keyword_libraries' => KeywordLibrary::query()->visibleToAdmin()->count(),
             'title_libraries' => TitleLibrary::query()->visibleToAdmin()->count(),
         ];
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function loadImportedImages(UrlImportJob $job): array
+    {
+        if (! Schema::hasTable('images') || ! Schema::hasColumn('images', 'source_url')) {
+            return [];
+        }
+
+        $result = $this->decodeJson((string) $job->result_json);
+        $imageIds = array_values(array_filter(
+            array_map('intval', (array) data_get($result, 'import.images.image_ids', [])),
+            static fn (int $id): bool => $id > 0
+        ));
+
+        $query = Image::query();
+        if ($imageIds !== []) {
+            $query->whereIn('id', $imageIds);
+        } else {
+            $query->where('source_url', (string) $job->normalized_url);
+            $since = $job->started_at ?? $job->created_at;
+            if ($since !== null) {
+                $query->where('created_at', '>=', $since);
+            }
+        }
+
+        $columns = array_values(array_filter([
+            'id',
+            'file_path',
+            'width',
+            'height',
+            'file_size',
+            Schema::hasColumn('images', 'source_area') ? 'source_area' : null,
+            Schema::hasColumn('images', 'source_alt') ? 'source_alt' : null,
+            Schema::hasColumn('images', 'source_paragraph') ? 'source_paragraph' : null,
+            Schema::hasColumn('images', 'value_status') ? 'value_status' : null,
+            Schema::hasColumn('images', 'ai_tag_status') ? 'ai_tag_status' : null,
+        ]));
+
+        return $query
+            ->orderByDesc('id')
+            ->get($columns)
+            ->map(fn (Image $img): array => [
+                'id' => (int) $img->id,
+                'file_path' => (string) $img->file_path,
+                'preview_url' => ImageUrlNormalizer::toPublicUrl((string) $img->file_path),
+                'width' => (int) $img->width,
+                'height' => (int) $img->height,
+                'file_size' => (int) $img->file_size,
+                'source_area' => (string) ($img->source_area ?? 'main'),
+                'source_alt' => (string) ($img->source_alt ?? ''),
+                'source_paragraph' => (string) ($img->source_paragraph ?? ''),
+                'value_status' => (string) ($img->value_status ?? ''),
+                'ai_tag_status' => (string) ($img->ai_tag_status ?? ''),
+            ])
+            ->all();
     }
 
     /**
@@ -337,18 +501,144 @@ class UrlImportController extends Controller
             ? $latestLogStep
             : $storedStep;
 
+        $isStale = $this->isStaleRunningJob($job);
+        $nodeSteps = $this->buildNodeSteps($job);
+        $result = $this->decodeJson((string) $job->result_json);
+        $imageImport = is_array($result['import']['images'] ?? null) ? $result['import']['images'] : [];
+        $importedImages = $this->loadImportedImages($job);
+
         return [
             'id' => (int) $job->id,
             'status' => (string) $job->status,
             'status_label' => $this->publicStatusLabel((string) $job->status),
             'current_step' => $currentStep,
             'stored_step' => $storedStep,
+            'current_node_key' => $this->resolveCurrentNodeKey($job, $nodeSteps),
             'progress_percent' => (int) $job->progress_percent,
             'error_message' => $this->publicErrorMessage($job),
+            'is_stale' => $isStale,
+            'can_retry' => in_array((string) $job->status, ['queued', 'failed'], true) || $isStale,
             'result_ready' => (string) $job->result_json !== '',
             'finished_at' => optional($job->finished_at)->format('Y-m-d H:i:s'),
+            'imported_image_count' => count($importedImages),
+            'detected_image_count' => (int) data_get($result, 'page.image_count', 0),
+            'image_import_status' => (string) ($imageImport['status'] ?? ''),
+            'images_import_finished' => $this->imagesImportFinished($job, $result, $nodeSteps, count($importedImages)),
+            'node_steps' => array_map(fn (array $step): array => [
+                'key' => (string) $step['key'],
+                'label' => (string) $step['label'],
+                'sequential' => (bool) ($step['sequential'] ?? true),
+                'status' => (string) $step['status'],
+                'status_label' => $this->nodeStatusLabel((string) $step['status']),
+                'duration_ms' => (int) ($step['duration_ms'] ?? 0),
+                'error' => (string) ($step['error'] ?? ''),
+            ], $nodeSteps),
             'logs' => [],
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $result
+     * @param  list<array{key:string,status:string}>  $nodeSteps
+     */
+    private function imagesImportFinished(UrlImportJob $job, array $result, array $nodeSteps, int $importedCount): bool
+    {
+        $imageImportStatus = (string) data_get($result, 'import.images.status', '');
+        if (in_array($imageImportStatus, ['imported', 'empty'], true)) {
+            return true;
+        }
+
+        foreach ($nodeSteps as $step) {
+            if (($step['key'] ?? '') === 'images_import') {
+                return in_array((string) ($step['status'] ?? ''), ['success', 'skipped', 'failed'], true);
+            }
+        }
+
+        $detected = (int) data_get($result, 'page.image_count', 0);
+        if ($detected === 0) {
+            return true;
+        }
+
+        return (string) $job->status === 'completed' && $importedCount > 0;
+    }
+
+    private function stagingLibraryUrl(): ?string
+    {
+        if (! Schema::hasTable('image_libraries')) {
+            return route('admin.image-libraries.index');
+        }
+
+        $tenantId = AdminTenant::currentTenantId();
+        $query = ImageLibrary::query()->whereIn('name', UrlImportImageLibrary::names());
+        if ($tenantId !== null && ! AdminTenant::canSeeAll()) {
+            $query->where('tenant_id', $tenantId);
+        }
+
+        $libraryId = $query->value('id');
+
+        return $libraryId
+            ? route('admin.image-libraries.detail', ['libraryId' => (int) $libraryId])
+            : route('admin.image-libraries.index');
+    }
+
+    private function shouldProcessUrlImportInline(): bool
+    {
+        if (app()->runningUnitTests()) {
+            return true;
+        }
+
+        if ((bool) config('geoflow.url_import_sync', false)) {
+            return true;
+        }
+
+        return config('queue.default') === 'sync';
+    }
+
+    private function isStaleRunningJob(UrlImportJob $job): bool
+    {
+        if ((string) $job->status !== 'running') {
+            return false;
+        }
+
+        $lastActivity = $this->lastUrlImportActivityAt($job);
+        if ($lastActivity === null) {
+            return false;
+        }
+
+        $staleMinutes = (int) config('geoflow.url_import_stale_minutes', 15);
+
+        return $lastActivity->diffInMinutes(now()) >= $staleMinutes;
+    }
+
+    private function lastUrlImportActivityAt(UrlImportJob $job): ?\Illuminate\Support\Carbon
+    {
+        $candidates = array_filter([
+            $job->updated_at,
+            $job->started_at,
+        ]);
+
+        $latestNodeAt = UrlImportJobNodeLog::query()
+            ->where('job_id', (int) $job->id)
+            ->max('created_at');
+        if (is_string($latestNodeAt) && $latestNodeAt !== '') {
+            $candidates[] = \Illuminate\Support\Carbon::parse($latestNodeAt);
+        }
+
+        $latestLogAt = UrlImportJobLog::query()
+            ->where('job_id', (int) $job->id)
+            ->max('created_at');
+        if (is_string($latestLogAt) && $latestLogAt !== '') {
+            $candidates[] = \Illuminate\Support\Carbon::parse($latestLogAt);
+        }
+
+        if ($candidates === []) {
+            return null;
+        }
+
+        return collect($candidates)
+            ->filter(static fn ($value) => $value instanceof \Illuminate\Support\Carbon)
+            ->sortByDesc(static fn (\Illuminate\Support\Carbon $value) => $value->getTimestamp())
+            ->first();
     }
 
     private function publicStatusLabel(string $status): string
@@ -363,14 +653,60 @@ class UrlImportController extends Controller
 
     private function publicErrorMessage(UrlImportJob $job): string
     {
-        if ((string) $job->error_message === '') {
+        if ($this->isStaleRunningJob($job)) {
+            $minutes = (int) config('geoflow.url_import_stale_minutes', 15);
+
+            return "已超过 {$minutes} 分钟无新进展。若进度条与节点长时间不动，请确认 queue:work 正在处理 geoflow 队列，或在 .env 设置 GEOFLOW_URL_IMPORT_SYNC=true 后重试。";
+        }
+
+        $raw = trim((string) $job->error_message);
+        if ($raw === '') {
             return '';
         }
 
-        if ((string) $job->error_message === '采集能力还没有准备好，请先完成基础配置。') {
-            return (string) $job->error_message;
+        if ($raw === '采集能力还没有准备好，请先完成基础配置。') {
+            return $raw;
         }
 
-        return '采集失败，请确认网址可以正常打开，页面不是登录后才能访问，再重新采集。';
+        return $this->mapUrlImportError($raw);
+    }
+
+    private function mapUrlImportError(string $raw): string
+    {
+        $lower = mb_strtolower($raw, 'UTF-8');
+
+        if (str_contains($raw, 'AI 智能解析失败') || str_contains($lower, 'ai_parse_failed')) {
+            if (preg_match('/失败详情[：:](.+)$/u', $raw, $matches) === 1) {
+                return 'AI 解析失败：'.Str::limit(trim((string) $matches[1]), 240);
+            }
+
+            return Str::limit($raw, 280);
+        }
+
+        if (str_contains($raw, '关键词') && (str_contains($raw, '缺失') || str_contains($raw, 'missing'))) {
+            return 'AI 未返回有效主题词，请检查 AI 模型配置或稍后重试。';
+        }
+
+        if (str_contains($raw, '标题') && (str_contains($raw, '缺失') || str_contains($raw, 'missing'))) {
+            return 'AI 未返回有效标题，请检查 AI 模型配置或稍后重试。';
+        }
+
+        if (str_contains($lower, 'connection') || str_contains($raw, '连接') || str_contains($raw, '超时') || str_contains($lower, 'timeout')) {
+            return '无法访问该网址（连接超时或被拒绝），请确认链接可在浏览器中公开打开。';
+        }
+
+        if (str_contains($lower, 'ssl') || str_contains($lower, 'tls') || str_contains($raw, '证书')) {
+            return '目标网站证书异常，暂无法抓取。';
+        }
+
+        if (str_contains($raw, '内网') || str_contains($lower, 'localhost') || str_contains($raw, '私有')) {
+            return $raw;
+        }
+
+        if (str_contains($lower, 'worker') || str_contains($raw, '队列')) {
+            return Str::limit($raw, 280);
+        }
+
+        return Str::limit($raw, 280);
     }
 }
