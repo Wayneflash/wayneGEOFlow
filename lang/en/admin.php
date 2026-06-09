@@ -3062,6 +3062,13 @@ return [
             'imported_at_prefix' => 'Imported at: ',
             'success' => 'Import completed successfully',
             'images_success' => 'Images committed to “:name” library (:count images)',
+            'images_success_batch' => 'Image batch “:name” created (:count images)',
+            'images_undone' => 'Reverted :count images back to the staging library',
+            'images_none_selected' => 'Pick at least 1 image first',
+            'images_duplicate_name' => 'Library “:name” already exists — auto-renamed to “:suggested”',
+            'images_name_conflict' => 'Library “:name” already exists',
+            'images_suggested_hint' => 'Try “:suggested” or another name',
+            'images_no_eligible' => 'Selected images do not belong to this job, please refresh and retry',
         ],
         'error' => [
             'url_required' => 'Please enter a URL to import',

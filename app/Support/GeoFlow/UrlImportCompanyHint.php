@@ -2,6 +2,8 @@
 
 namespace App\Support\GeoFlow;
 
+use Illuminate\Support\Str;
+
 /**
  * 从 URL / 域名 / 用户项目名 / 官网片段提取「主体公司」线索，供 AI 全网反推。
  */
@@ -110,9 +112,15 @@ final class UrlImportCompanyHint
         if ($primary !== '') {
             $queries[] = $primary.' 产品 服务 解决方案';
             $queries[] = $primary.' 公司简介';
+            $queries[] = $primary.' 品牌';
             $queries[] = $primary.' 公众号';
             $queries[] = $primary.' 知乎';
             $queries[] = $primary.' 新闻 报道 产品';
+        }
+
+        $brandHints = self::extractBrandHints($pageTitle, '', '');
+        if ($brandHints !== [] && $primary !== '' && $brandHints[0] !== $primary) {
+            $queries[] = $primary.' '.$brandHints[0].' 产品';
         }
 
         $queries[] = $registrableDomain.' 官网';
@@ -150,10 +158,15 @@ final class UrlImportCompanyHint
             $labels[] = self::normalizeSearchLabel($projectName);
         }
 
+        $companyFromTitle = self::extractCompanyNameFromTitle($pageTitle);
+        if ($companyFromTitle !== '') {
+            $labels[] = $companyFromTitle;
+        }
+
         if ($pageTitle !== '') {
-            if (preg_match('/^([^|｜\-—–]+)/u', $pageTitle, $matches) === 1) {
+            if (preg_match('/^([^|｜\-—–_]+)/u', $pageTitle, $matches) === 1) {
                 $fromTitle = self::normalizeSearchLabel((string) ($matches[1] ?? ''));
-                if ($fromTitle !== '') {
+                if ($fromTitle !== '' && ! in_array($fromTitle, $labels, true)) {
                     $labels[] = $fromTitle;
                 }
             }
@@ -164,6 +177,68 @@ final class UrlImportCompanyHint
         }
 
         return array_values(array_unique(array_filter($labels, static fn (string $label): bool => $label !== '')));
+    }
+
+    /**
+     * 从官网 title 提取「XX有限公司 / XX股份有限公司」等法定主体名。
+     */
+    public static function extractCompanyNameFromTitle(string $pageTitle): string
+    {
+        $pageTitle = trim($pageTitle);
+        if ($pageTitle === '') {
+            return '';
+        }
+
+        if (preg_match('/^([\x{4e00}-\x{9fa5}A-Za-z0-9（）()·\-]+(?:有限公司|股份有限公司|有限责任公司|集团有限公司))/u', $pageTitle, $matches) === 1) {
+            return trim((string) ($matches[1] ?? ''));
+        }
+
+        return '';
+    }
+
+    /**
+     * 从官网 title / 描述 / 正文片段提取品牌或产品线线索（供调研 prompt 与检索词使用）。
+     *
+     * @return list<string>
+     */
+    public static function extractBrandHints(string $pageTitle, string $pageDescription = '', string $textSnippet = ''): array
+    {
+        $brands = [];
+        $title = trim($pageTitle);
+        $company = self::extractCompanyNameFromTitle($title);
+
+        if ($company !== '' && str_starts_with($title, $company)) {
+            $remainder = trim(mb_substr($title, mb_strlen($company, 'UTF-8'), null, 'UTF-8'));
+            $remainder = ltrim($remainder, "_-—–|｜ \t");
+            if ($remainder !== '') {
+                foreach (preg_split('/[,，、|｜]/u', $remainder) ?: [] as $segment) {
+                    $segment = self::normalizeSearchLabel(trim($segment));
+                    if ($segment !== '' && mb_strlen($segment, 'UTF-8') <= 40) {
+                        $brands[] = $segment;
+                    }
+                }
+            }
+        }
+
+        $haystack = trim($pageTitle.' '.$pageDescription.' '.Str::limit(trim($textSnippet), 500, ''));
+        if ($haystack !== '' && preg_match_all('/\b[A-Z][A-Z0-9&\-\s]{2,}\b/u', $haystack, $matches) === 1) {
+            foreach ($matches[0] as $match) {
+                $candidate = trim(preg_replace('/\s+/u', ' ', $match) ?? $match);
+                if ($candidate !== '' && mb_strlen($candidate, 'UTF-8') <= 40) {
+                    $brands[] = $candidate;
+                }
+            }
+        }
+
+        return array_slice(array_values(array_unique(array_filter(
+            $brands,
+            static fn (string $brand): bool => $brand !== '' && ! self::looksLikeLegalCompanyName($brand),
+        ))), 0, 8);
+    }
+
+    private static function looksLikeLegalCompanyName(string $label): bool
+    {
+        return preg_match('/(?:有限公司|股份有限公司|有限责任公司|集团有限公司)$/u', $label) === 1;
     }
 
     private static function normalizeSearchLabel(string $label): string
@@ -195,7 +270,12 @@ final class UrlImportCompanyHint
 
         $pageTitle = trim((string) ($hint['page_title'] ?? ''));
         if ($pageTitle !== '') {
-            if (preg_match('/^([^|｜\-—–]+)/u', $pageTitle, $matches) === 1) {
+            $legalName = self::extractCompanyNameFromTitle($pageTitle);
+            if ($legalName !== '') {
+                return $legalName;
+            }
+
+            if (preg_match('/^([^|｜\-—–_]+)/u', $pageTitle, $matches) === 1) {
                 $candidate = trim((string) ($matches[1] ?? ''));
                 if ($candidate !== '' && mb_strlen($candidate, 'UTF-8') <= 40) {
                     return $candidate;

@@ -56,12 +56,31 @@ return [
     'url_import_fetch_proxy' => trim((string) env('GEOFLOW_URL_IMPORT_FETCH_PROXY', '')),
     // 官网直连失败或内容不足时，启用 AI 全网调研补充；可与直连并行执行。
     'url_import_web_research_enabled' => filter_var(env('GEOFLOW_URL_IMPORT_WEB_RESEARCH_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
-    // parallel=与官网抓取同步进行；fallback=仅直连不足时再调研。
-    'url_import_web_research_mode' => in_array(
-        strtolower(trim((string) env('GEOFLOW_URL_IMPORT_WEB_RESEARCH_MODE', 'parallel'))),
-        ['parallel', 'fallback'],
+    // fast=2 次 AI（清洗+素材合并、关键词+标题合并，目标 5 分钟内）；standard=4 次 AI（质量优先）
+    'url_import_pipeline_mode' => in_array(
+        strtolower(trim((string) env('GEOFLOW_URL_IMPORT_PIPELINE_MODE', 'fast'))),
+        ['fast', 'standard'],
         true
-    ) ? strtolower(trim((string) env('GEOFLOW_URL_IMPORT_WEB_RESEARCH_MODE', 'parallel'))) : 'parallel',
+    ) ? strtolower(trim((string) env('GEOFLOW_URL_IMPORT_PIPELINE_MODE', 'fast'))) : 'fast',
+    'url_import_fast' => [
+        'max_titles' => max(12, min(40, (int) env('GEOFLOW_URL_IMPORT_FAST_MAX_TITLES', 24))),
+        'min_decision_titles' => max(4, min(20, (int) env('GEOFLOW_URL_IMPORT_FAST_MIN_DECISION_TITLES', 10))),
+        'max_facts' => max(8, min(24, (int) env('GEOFLOW_URL_IMPORT_FAST_MAX_FACTS', 12))),
+        'knowledge_min_chars' => max(800, (int) env('GEOFLOW_URL_IMPORT_FAST_KM_MIN_CHARS', 1200)),
+        'knowledge_max_chars' => max(1200, (int) env('GEOFLOW_URL_IMPORT_FAST_KM_MAX_CHARS', 2800)),
+        'max_chunks_in_prompt' => max(8, min(24, (int) env('GEOFLOW_URL_IMPORT_FAST_MAX_CHUNKS', 16))),
+        'max_analysis_attempts' => max(1, min(3, (int) env('GEOFLOW_URL_IMPORT_FAST_MAX_ATTEMPTS', 2))),
+    ],
+    // sequential=先抓官网再用主体名调研（推荐）；parallel=并行（快但可能丢主体）；fallback=仅直连不足时再调研。
+    'url_import_web_research_mode' => in_array(
+        strtolower(trim((string) env('GEOFLOW_URL_IMPORT_WEB_RESEARCH_MODE', 'sequential'))),
+        ['sequential', 'parallel', 'fallback'],
+        true
+    ) ? strtolower(trim((string) env('GEOFLOW_URL_IMPORT_WEB_RESEARCH_MODE', 'sequential'))) : 'sequential',
+    // 官网已识别主体且正文足够丰富时，跳过 AI 全网调研（可节省 1–4 分钟；WAF/薄页仍会自动调研）
+    'url_import_skip_web_research_when_direct_rich' => filter_var(env('GEOFLOW_URL_IMPORT_SKIP_WEB_RESEARCH_WHEN_DIRECT_RICH', true), FILTER_VALIDATE_BOOLEAN),
+    // 判定「官网正文已够」的最小字数
+    'url_import_direct_rich_min_chars' => max(200, (int) env('GEOFLOW_URL_IMPORT_DIRECT_RICH_MIN_CHARS', 800)),
     // 国内联网搜索（博查 Bocha 等）；配置 API Key 后，AI 调研会基于实时搜索结果汇总，而非仅靠模型记忆。
     'url_import_web_search' => [
         'provider' => strtolower(trim((string) env('GEOFLOW_URL_IMPORT_WEB_SEARCH_PROVIDER', 'bocha'))),
@@ -131,5 +150,8 @@ return [
 
     // 网址采集：超过该分钟数无任何节点/日志活动才提示「可能卡住」（AI 单步可能耗时数分钟）
     'url_import_stale_minutes' => max(5, (int) env('GEOFLOW_URL_IMPORT_STALE_MINUTES', 15)),
+
+    // 单次采集最多下载并展示的图片数（UI 默认 4 列 × 4 行）
+    'url_import_max_images' => max(4, min(32, (int) env('GEOFLOW_URL_IMPORT_MAX_IMAGES', 16))),
 
 ];

@@ -9,6 +9,7 @@ use App\Models\ImageLibrary;
 use App\Models\Keyword;
 use App\Models\KeywordLibrary;
 use App\Models\KnowledgeBase;
+use App\Models\KnowledgeChunk;
 use App\Models\Prompt;
 use App\Models\Title;
 use App\Models\TitleLibrary;
@@ -141,6 +142,11 @@ final class UrlImportProcessingService
 
     public function process(UrlImportJob $job): UrlImportJob
     {
+        $job->refresh();
+        if ((string) $job->status === 'cancelled') {
+            return $job;
+        }
+
         $this->updateStep($job, 'fetch', 10, [
             'status' => 'running',
             'started_at' => now(),
@@ -150,6 +156,7 @@ final class UrlImportProcessingService
 
         try {
             $collection = $this->collectPageMaterials($job);
+            $this->abortIfCancelled($job);
             $fetched = $collection['fetched'];
             $parsed = $collection['parsed'];
             $collectionMode = (string) ($collection['collection_mode'] ?? 'direct');
@@ -186,18 +193,30 @@ final class UrlImportProcessingService
             );
 
             if (($collection['web_research_output'] ?? null) !== null) {
+                $webOut = (array) $collection['web_research_output'];
+                $webStatus = 'success';
+                if (($webOut['skipped'] ?? false)) {
+                    $webStatus = 'skipped';
+                } elseif (! ($webOut['ok'] ?? false) && ($webOut['error'] ?? '') !== '') {
+                    $webStatus = 'failed';
+                }
                 $this->logNode(
                     $job,
                     'web_research',
                     'AI 全网调研',
                     ['url' => (string) $job->normalized_url, 'mode' => $collectionMode],
-                    $collection['web_research_output'],
-                    (int) ($collection['web_research_ms'] ?? 0)
+                    $webOut,
+                    (int) ($collection['web_research_ms'] ?? 0),
+                    1,
+                    $webStatus,
+                    $webStatus === 'failed' ? (string) ($webOut['error'] ?? '') : null
                 );
             }
 
             $pageJson = $this->buildPageJson($parsed, $job);
+            $this->abortIfCancelled($job);
             $analysis = $this->buildAnalysis($parsed, $job, $pageJson);
+            $this->abortIfCancelled($job);
             $pageForStore = $parsed;
             $pageForStore['image_count'] = count($parsed['images'] ?? []);
             $pageForStore['image_preview'] = array_slice(array_map(static fn (array $image): array => [
@@ -216,7 +235,12 @@ final class UrlImportProcessingService
                     'status' => (int) ($fetched['status'] ?? 0),
                     'collection_mode' => $collectionMode,
                 ],
-                'page' => $pageForStore,
+                'page' => array_merge($pageForStore, [
+                    'chunks' => $pageJson['chunks'] ?? [],
+                    'chunk_strategy' => $pageJson['chunk_strategy'] ?? 'paragraph',
+                    'chunk_count' => (int) ($pageJson['chunk_count'] ?? 0),
+                ]),
+                'page_json' => $pageJson,
                 'analysis' => $analysis,
                 'import' => [
                     'status' => 'preview',
@@ -229,6 +253,7 @@ final class UrlImportProcessingService
 
             $this->dispatchImageDownload($job, $parsed);
 
+            $this->abortIfCancelled($job);
             $this->updateStep($job, 'preview', 100, [
                 'page_title' => $parsed['title'],
                 'status' => 'completed',
@@ -239,6 +264,11 @@ final class UrlImportProcessingService
 
             return $job->refresh();
         } catch (Throwable $exception) {
+            $job->refresh();
+            if ((string) $job->status === 'cancelled') {
+                return $job;
+            }
+
             $job->update([
                 'status' => 'failed',
                 'progress_percent' => 100,
@@ -287,7 +317,8 @@ final class UrlImportProcessingService
 
         $tenantId = (int) ($job->tenant_id ?? 0) ?: null;
 
-        $summary = DB::transaction(function () use ($baseName, $knowledgeContent, $analysis, $keywords, $titles, $tenantId): array {
+        $chunksStored = 0;
+        $summary = DB::transaction(function () use ($baseName, $knowledgeContent, $analysis, $keywords, $titles, $tenantId, $page, $result, $job, &$chunksStored): array {
             $knowledgeBase = KnowledgeBase::query()->create([
                 'tenant_id' => $tenantId,
                 'name' => $baseName.' 知识库',
@@ -300,6 +331,57 @@ final class UrlImportProcessingService
                 'word_count' => mb_strlen($knowledgeContent, 'UTF-8'),
                 'usage_count' => 0,
             ]);
+
+            // 块级分块落库：每条 page_json.chunks → 一行 knowledge_chunks
+            // 携带 chunk_id / section_path / confidence / source / tags，方便后续 RAG 反查
+            $chunks = is_array($page['chunks'] ?? null) ? $page['chunks'] : [];
+            $facts = is_array($analysis['facts'] ?? null) ? $analysis['facts'] : [];
+            $factByChunk = $this->groupFactsByChunk($facts);
+            $sourceType = (string) ($page['collection_mode'] ?? 'direct');
+            $sourceUrl = (string) ($page['source_url'] ?? $job->normalized_url);
+            $storedChunks = 0;
+            foreach ($chunks as $i => $chunk) {
+                if (! is_array($chunk)) {
+                    continue;
+                }
+                $text = trim((string) ($chunk['text'] ?? ''));
+                if ($text === '') {
+                    continue;
+                }
+                $chunkId = (string) ($chunk['chunk_id'] ?? 'chunk_'.str_pad((string) ($i + 1), 3, '0', STR_PAD_LEFT));
+                $factsForChunk = $factByChunk[$chunkId] ?? [];
+                $confidence = $this->averageConfidence($factsForChunk);
+                $tags = $this->mergeTags($factsForChunk);
+                $headingText = trim((string) ($chunk['heading'] ?? ''));
+                $headingLevel = (int) ($chunk['heading_level'] ?? 2);
+                $headingMarker = $headingText !== '' ? str_repeat('#', max(1, min(6, $headingLevel))).' '.$headingText."\n\n" : '';
+                $content = $headingMarker.$text;
+                $metadata = [
+                    'source' => $sourceType === 'ai_research' ? '调研' : '官网',
+                    'section_path' => (string) ($chunk['section_path'] ?? ''),
+                    'heading_level' => $headingLevel,
+                    'token_estimate' => (int) ($chunk['token_estimate'] ?? 0),
+                    'facts' => $factsForChunk,
+                ];
+                KnowledgeChunk::query()->create([
+                    'knowledge_base_id' => (int) $knowledgeBase->id,
+                    'chunk_index' => $i + 1,
+                    'content' => $content,
+                    'content_hash' => hash('sha256', $content),
+                    'chunk_title' => $headingText,
+                    'section_path' => (string) ($chunk['section_path'] ?? ''),
+                    'chunk_strategy' => (string) ($page['chunk_strategy'] ?? 'paragraph'),
+                    'metadata_json' => json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                    'source_hash' => hash('sha256', $content),
+                    'source_url' => $sourceUrl,
+                    'source_type' => $sourceType,
+                    'confidence' => $confidence,
+                    'tags' => $tags,
+                ]);
+                $storedChunks++;
+            }
+            $knowledgeBase->update(['character_count' => mb_strlen($knowledgeContent, 'UTF-8')]);
+            $chunksStored = $storedChunks;
 
             $keywordLibrary = KeywordLibrary::query()->create([
                 'tenant_id' => $tenantId,
@@ -350,6 +432,7 @@ final class UrlImportProcessingService
         $result['import']['status'] = 'imported';
         $result['import']['imported_at'] = now()->toIso8601String();
         $result['import']['summary'] = $summary;
+        $result['import']['chunks_stored'] = $chunksStored;
         $job->update([
             'result_json' => json_encode($result, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE),
             'current_step' => 'imported',
@@ -361,9 +444,9 @@ final class UrlImportProcessingService
     }
 
     /**
-     * @return array{library_id:int,image_count:int}
+     * @return array{library_id:int,image_count:int,library_name:string,batch_id?:string,auto_renamed?:bool,original_name?:string}
      */
-    public function commitImages(UrlImportJob $job, ?string $libraryName = null): array
+    public function commitImages(UrlImportJob $job, ?string $libraryName = null, ?array $selectedImageIds = null, bool $autoRename = true): array
     {
         $result = $this->decodeResult($job);
         if ($result === []) {
@@ -371,40 +454,62 @@ final class UrlImportProcessingService
         }
 
         $imagesMeta = is_array($result['import']['images'] ?? null) ? $result['import']['images'] : [];
-        if (($imagesMeta['committed'] ?? false) === true) {
-            return [
-                'library_id' => (int) ($imagesMeta['committed_library_id'] ?? 0),
-                'image_count' => count(array_values(array_filter(
-                    array_map('intval', (array) ($imagesMeta['image_ids'] ?? [])),
-                    static fn (int $id): bool => $id > 0
-                ))),
-            ];
-        }
 
-        $imageIds = array_values(array_filter(
+        // 候选 image_id 池：限定到本任务下载下来的图（用 source_url 关联 + image_ids 列表）
+        $candidateIds = array_values(array_unique(array_filter(
             array_map('intval', (array) ($imagesMeta['image_ids'] ?? [])),
             static fn (int $id): bool => $id > 0
-        ));
-        if ($imageIds === []) {
+        )));
+
+        // 如果 result_json 没记录（早期任务），回退到数据库按 source_url + 时间窗查找
+        if ($candidateIds === []) {
+            $candidateIds = array_values(array_filter(
+                array_map('intval', (array) Image::query()
+                    ->where('source_url', (string) $job->normalized_url)
+                    ->when($job->started_at ?? $job->created_at, fn ($q, $since) => $q->where('created_at', '>=', $since))
+                    ->pluck('id')
+                    ->all()),
+                static fn (int $id): bool => $id > 0
+            ));
+        }
+
+        if ($candidateIds === []) {
             throw new \RuntimeException(__('admin.url_import.error.commit_images_missing'));
         }
 
-        /** @var array<string, mixed> $page */
-        $page = is_array($result['page'] ?? null) ? $result['page'] : [];
-        /** @var array<string, mixed> $analysis */
-        $analysis = is_array($result['analysis'] ?? null) ? $result['analysis'] : [];
-        $baseName = $this->resolveLibraryBaseName($job, $analysis, $page, $libraryName);
-        $tenantId = (int) ($job->tenant_id ?? 0) ?: null;
+        // 用户传了勾选 → 严格按勾选；没传 → 全量（兼容旧调用）
+        $requested = $selectedImageIds === null
+            ? $candidateIds
+            : array_values(array_unique(array_filter(
+                array_map('intval', $selectedImageIds),
+                static fn (int $id): bool => $id > 0
+            )));
 
-        $summary = DB::transaction(function () use ($baseName, $imageIds, $job, $tenantId): array {
+        if ($requested === []) {
+            throw new \RuntimeException(__('admin.url_import.commit.images_none_selected'));
+        }
+
+        // 验证勾选 ID 全部属于本任务（防止越权把别人的图挪走）
+        $validIds = array_values(array_intersect($requested, $candidateIds));
+        if ($validIds === []) {
+            throw new \RuntimeException(__('admin.url_import.commit.images_no_eligible'));
+        }
+
+        $renamed = false;
+        $originalName = null;
+        $tenantId = (int) ($job->tenant_id ?? 0) ?: null;
+        $baseName = $this->resolveImageLibraryBaseName($job, $libraryName);
+        $baseName = $this->ensureUniqueLibraryName($baseName, (int) $job->id, $autoRename, $renamed, $originalName, $tenantId);
+
+        $summary = DB::transaction(function () use ($baseName, $validIds, $job, $tenantId): array {
             $library = ImageLibrary::query()->create([
                 'tenant_id' => $tenantId,
                 'name' => $baseName,
-                'description' => '网址采集入库：'.((string) ($job->normalized_url ?: $job->url)),
+                'description' => '网址采集图片分批：'.((string) ($job->normalized_url ?: $job->url)),
             ]);
 
             $moved = Image::query()
-                ->whereIn('id', $imageIds)
+                ->whereIn('id', $validIds)
                 ->update(['library_id' => (int) $library->id]);
 
             return [
@@ -413,18 +518,169 @@ final class UrlImportProcessingService
             ];
         });
 
+        $batch = [
+            'batch_id' => 'batch_'.bin2hex(random_bytes(6)),
+            'library_id' => $summary['library_id'],
+            'library_name' => $baseName,
+            'image_ids' => $validIds,
+            'image_count' => $summary['image_count'],
+            'committed_at' => now()->toIso8601String(),
+            'renamed_from' => $originalName,
+        ];
+
         $result['import'] = is_array($result['import'] ?? null) ? $result['import'] : [];
         $result['import']['images'] = is_array($result['import']['images'] ?? null) ? $result['import']['images'] : [];
-        $result['import']['images']['committed'] = true;
-        $result['import']['images']['committed_at'] = now()->toIso8601String();
-        $result['import']['images']['committed_library_id'] = $summary['library_id'];
-        $result['import']['images']['committed_library_name'] = $baseName;
+        $result['import']['images']['batches'] = array_values((array) ($result['import']['images']['batches'] ?? []));
+        $result['import']['images']['batches'][] = $batch;
+        $result['import']['images']['last_batch'] = $batch;
+        $result['import']['images']['committed_count'] = (int) ($result['import']['images']['committed_count'] ?? 0) + $summary['image_count'];
 
         $job->update([
             'result_json' => json_encode($result, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE),
         ]);
 
-        return $summary;
+        return [
+            'library_id' => $summary['library_id'],
+            'image_count' => $summary['image_count'],
+            'library_name' => $baseName,
+            'batch_id' => $batch['batch_id'],
+            'auto_renamed' => $renamed,
+            'original_name' => $originalName,
+        ];
+    }
+
+    /**
+     * 软撤销：把某个批次里的图挪回任务采集列表（内部暂存库），不删图。
+     *
+     * @return array{batch_id:string,restored_count:int,staging_library_id:int}
+     */
+    public function undoImageBatch(UrlImportJob $job, string $batchId): array
+    {
+        $result = $this->decodeResult($job);
+        if ($result === []) {
+            throw new \RuntimeException(__('admin.url_import.error.commit_before_parse'));
+        }
+
+        $batches = (array) ($result['import']['images']['batches'] ?? []);
+        $matched = null;
+        $remaining = [];
+        foreach ($batches as $batch) {
+            if (! is_array($batch)) {
+                continue;
+            }
+            if ((string) ($batch['batch_id'] ?? '') === $batchId) {
+                $matched = $batch;
+                continue;
+            }
+            $remaining[] = $batch;
+        }
+
+        if ($matched === null) {
+            throw new \RuntimeException(__('admin.url_import.error.commit_images_failed'));
+        }
+
+        $imageIds = array_values(array_filter(
+            array_map('intval', (array) ($matched['image_ids'] ?? [])),
+            static fn (int $id): bool => $id > 0
+        ));
+
+        $tenantId = (int) ($job->tenant_id ?? 0);
+        $stagingLibraryId = $tenantId > 0 ? UrlImportImageLibrary::resolveLibraryId($tenantId) : 0;
+
+        $restored = 0;
+        if ($imageIds !== [] && $stagingLibraryId > 0) {
+            $restored = Image::query()
+                ->whereIn('id', $imageIds)
+                ->where('library_id', (int) ($matched['library_id'] ?? 0))
+                ->update(['library_id' => $stagingLibraryId]);
+        }
+
+        $result['import']['images']['batches'] = $remaining;
+        $result['import']['images']['committed_count'] = max(0, (int) ($result['import']['images']['committed_count'] ?? 0) - (int) $matched['image_count']);
+        if ((string) ($result['import']['images']['last_batch']['batch_id'] ?? '') === $batchId) {
+            $result['import']['images']['last_batch'] = end($remaining) ?: null;
+        }
+
+        $job->update([
+            'result_json' => json_encode($result, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE),
+        ]);
+
+        return [
+            'batch_id' => $batchId,
+            'restored_count' => (int) $restored,
+            'staging_library_id' => $stagingLibraryId,
+        ];
+    }
+
+    /**
+     * @param-out bool $renamed
+     * @param-out string|null $originalName
+     */
+    private function ensureUniqueLibraryName(string $baseName, int $jobId, bool $autoRename, bool &$renamed, ?string &$originalName, ?int $tenantId): string
+    {
+        $originalName = $baseName;
+        $existing = $this->existingLibraryNamesForJob($baseName, $jobId, $tenantId);
+        if (! in_array($baseName, $existing, true)) {
+            return $baseName;
+        }
+
+        if (! $autoRename) {
+            throw new \RuntimeException(__('admin.url_import.commit.images_name_conflict', ['name' => $baseName]));
+        }
+
+        $renamed = true;
+        $i = 2;
+        do {
+            $candidate = preg_replace('/-\d+$/u', '', $baseName).'-'.$i;
+            $i++;
+        } while (in_array($candidate, $existing, true) && $i < 200);
+
+        return $candidate;
+    }
+
+    /**
+     * 同任务已用过的图库名：优先按 image_libraries 实际创建的名字（按 description 关联 job 入口）
+     * 简化策略：先在 image_libraries 表里全 tenant 范围查重（含同 job 也含历史名），
+     * 同时比对 result_json['import']['images']['batches'][].library_name 防止重名写入。
+     *
+     * @return list<string>
+     */
+    private function existingLibraryNamesForJob(string $baseName, int $jobId, ?int $tenantId): array
+    {
+        $names = [];
+
+        $query = ImageLibrary::query()->where('name', $baseName);
+        if ($tenantId !== null) {
+            $query->where('tenant_id', $tenantId);
+        }
+        foreach ($query->pluck('name') as $name) {
+            $names[] = (string) $name;
+        }
+
+        return $names;
+    }
+
+    private function resolveImageLibraryBaseName(UrlImportJob $job, ?string $override): string
+    {
+        $override = trim((string) $override);
+        if ($override !== '') {
+            return $this->safeName($override);
+        }
+
+        $options = json_decode((string) $job->options_json, true);
+        $options = is_array($options) ? $options : [];
+        $projectName = trim((string) ($options['project_name'] ?? ''));
+        if ($projectName !== '') {
+            return $this->safeName($projectName).' 图片';
+        }
+
+        $result = $this->decodeResult($job);
+        $libraryName = (string) data_get($result, 'analysis.library_name', '');
+        if ($libraryName !== '') {
+            return $this->safeName($libraryName).' 图片';
+        }
+
+        return $this->safeName('URL 采集图片');
     }
 
     /**
@@ -515,7 +771,7 @@ final class UrlImportProcessingService
     {
         $jobId = (int) $job->id;
         $webResearchEnabled = (bool) config('geoflow.url_import_web_research_enabled', true);
-        $webResearchMode = (string) config('geoflow.url_import_web_research_mode', 'parallel');
+        $webResearchMode = (string) config('geoflow.url_import_web_research_mode', 'sequential');
         $runWebResearchInParallel = $webResearchEnabled && $webResearchMode === 'parallel';
 
         $directOutcome = null;
@@ -535,25 +791,32 @@ final class UrlImportProcessingService
                 $directOutcome = $this->collectDirect($jobId);
                 $aiOutcome = $this->collectAiWebResearch($jobId, $directOutcome['parsed'] ?? null);
             }
-        } else {
+        } elseif ($webResearchMode === 'fallback') {
             $directOutcome = $this->collectDirect($jobId);
             if ($webResearchEnabled && $this->directNeedsSupplement($directOutcome)) {
+                $aiOutcome = $this->collectAiWebResearch($jobId, $directOutcome['parsed'] ?? null);
+            }
+        } else {
+            // sequential（默认）：先官网直连，再用 page_title / 主体名做全网调研
+            $directOutcome = $this->collectDirect($jobId);
+            $this->updateStep($job, 'page_json', 18);
+            if ($webResearchEnabled && $this->shouldRunWebResearch($job, $directOutcome)) {
+                $this->updateStep($job, 'page_json', 22);
                 $aiOutcome = $this->collectAiWebResearch($jobId, $directOutcome['parsed'] ?? null);
             }
         }
 
         $directOutcome ??= ['fetched' => ['html' => '', 'status' => 0, 'is_bot_challenge' => false], 'parsed' => null, 'fetch_ms' => 0, 'parse_ms' => 0];
         $aiOutcome ??= ['ok' => false, 'research' => null, 'error' => '', 'skipped' => true, 'duration_ms' => 0];
+        $this->updateStep($job, 'page_json', 25);
         $fetched = $directOutcome['fetched'];
         $directParsed = is_array($directOutcome['parsed'] ?? null) ? $directOutcome['parsed'] : [];
         if ((bool) ($fetched['is_bot_challenge'] ?? false)) {
             $directParsed['is_bot_challenge'] = true;
         }
 
-        if ($runWebResearchInParallel
-            && ! ($aiOutcome['ok'] ?? false)
-            && ! ($aiOutcome['skipped'] ?? false)
-            && $this->directHasIdentificationHints($directParsed)) {
+        if ($this->directHasIdentificationHints($directParsed)
+            && $this->webResearchNeedsDirectRetry($aiOutcome, $directParsed, $job)) {
             $aiOutcome = $this->collectAiWebResearch($jobId, $directParsed);
         }
 
@@ -613,11 +876,42 @@ final class UrlImportProcessingService
                 'text_chars' => (int) ($merged['ai_meta']['text_chars'] ?? 0),
                 'evidence_limits' => (string) ($merged['ai_meta']['evidence_limits'] ?? ''),
                 'search_provider' => (string) data_get($aiOutcome, 'search.provider', 'none'),
+                'search_queries' => array_values((array) data_get($aiOutcome, 'search.queries', [])),
+                'search_results' => $this->summarizeSearchResults((array) data_get($aiOutcome, 'search.results', [])),
                 'search_result_count' => count((array) data_get($aiOutcome, 'search.results', [])),
                 'search_error' => (string) data_get($aiOutcome, 'search.error', ''),
             ],
             'web_research_ms' => (int) ($aiOutcome['duration_ms'] ?? 0),
         ];
+    }
+
+    /**
+     * 脱敏汇总博查条目（仅保留标题/URL/来源类型/摘要前 200 字）供详情面板展示。
+     *
+     * @param  list<array<string, mixed>>  $results
+     * @return list<array{query:string,title:string,url:string,source_type:string,snippet:string}>
+     */
+    private function summarizeSearchResults(array $results): array
+    {
+        $summary = [];
+        foreach ($results as $result) {
+            if (! is_array($result)) {
+                continue;
+            }
+            $url = (string) ($result['url'] ?? '');
+            $summary[] = [
+                'query' => (string) ($result['query'] ?? ''),
+                'title' => (string) ($result['title'] ?? ''),
+                'url' => $url,
+                'source_type' => UrlImportDomesticWebSearchService::classifyResultSourcePublic($url),
+                'snippet' => Str::limit((string) ($result['snippet'] ?? ''), 200, '…'),
+            ];
+            if (count($summary) >= 20) {
+                break;
+            }
+        }
+
+        return $summary;
     }
 
     /**
@@ -754,6 +1048,55 @@ final class UrlImportProcessingService
     }
 
     /**
+     * 官网直连已识别主体且正文足够时，可跳过全网调研以节省时间。
+     *
+     * @param  array{fetched:array<string,mixed>,parsed:?array<string,mixed>}  $directOutcome
+     */
+    private function directHasRichContent(UrlImportJob $job, array $directOutcome): bool
+    {
+        if ((bool) data_get($directOutcome, 'fetched.is_bot_challenge', false)) {
+            return false;
+        }
+
+        $parsed = is_array($directOutcome['parsed'] ?? null) ? $directOutcome['parsed'] : [];
+        $textLen = mb_strlen(trim((string) ($parsed['text'] ?? '')), 'UTF-8');
+        $minChars = max(200, (int) config('geoflow.url_import_direct_rich_min_chars', 800));
+        if ($textLen < $minChars) {
+            return false;
+        }
+
+        $options = json_decode((string) $job->options_json, true);
+        $options = is_array($options) ? $options : [];
+        $hint = UrlImportCompanyHint::build(
+            (string) $job->normalized_url,
+            (string) $job->source_domain,
+            $options,
+            $parsed,
+        );
+
+        return UrlImportCompanyHint::inferCompanyName($hint, '') !== '';
+    }
+
+    /**
+     * @param  array{fetched:array<string,mixed>,parsed:?array<string,mixed>}  $directOutcome
+     */
+    private function shouldRunWebResearch(UrlImportJob $job, array $directOutcome): bool
+    {
+        if ($this->directNeedsSupplement($directOutcome)) {
+            return true;
+        }
+
+        if ((bool) config('geoflow.url_import_skip_web_research_when_direct_rich', true)
+            && $this->directHasRichContent($job, $directOutcome)) {
+            $this->log($job, 'info', __('admin.url_import.log.web_research_skipped_rich_direct'));
+
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
      * @param  array<string, mixed>  $directParsed
      */
     private function directHasIdentificationHints(array $directParsed): bool
@@ -761,6 +1104,56 @@ final class UrlImportProcessingService
         return trim((string) ($directParsed['title'] ?? '')) !== ''
             || trim((string) ($directParsed['description'] ?? '')) !== ''
             || mb_strlen(trim((string) ($directParsed['text'] ?? '')), 'UTF-8') >= 30;
+    }
+
+    /**
+     * parallel 或无主体线索的首次调研结果不可靠时，用官网 title/正文重跑博查 + AI。
+     *
+     * @param  array{ok?:bool,research?:?array<string,mixed>,error?:string,skipped?:bool,duration_ms?:int,search?:array<string,mixed>}  $aiOutcome
+     * @param  array<string, mixed>  $directParsed
+     */
+    private function webResearchNeedsDirectRetry(array $aiOutcome, array $directParsed, UrlImportJob $job): bool
+    {
+        if (($aiOutcome['skipped'] ?? false)) {
+            return false;
+        }
+
+        $jobOptions = json_decode((string) $job->options_json, true);
+        $jobOptions = is_array($jobOptions) ? $jobOptions : [];
+        $hint = UrlImportCompanyHint::build(
+            (string) $job->normalized_url,
+            (string) $job->source_domain,
+            $jobOptions,
+            $directParsed,
+        );
+        $companyLabel = UrlImportCompanyHint::inferCompanyName($hint, '');
+        if ($companyLabel === '') {
+            return false;
+        }
+
+        $queries = array_values((array) data_get($aiOutcome, 'search.queries', []));
+        $queriesUseCompany = false;
+        foreach ($queries as $query) {
+            $query = (string) $query;
+            if ($query === '') {
+                continue;
+            }
+            if (str_contains($query, $companyLabel)) {
+                $queriesUseCompany = true;
+                break;
+            }
+        }
+
+        if (! $queriesUseCompany) {
+            return true;
+        }
+
+        $researchCompany = trim((string) data_get($aiOutcome, 'research.company_name', ''));
+        if ($researchCompany === '' || preg_match('/未知|未能/u', $researchCompany) === 1) {
+            return true;
+        }
+
+        return false;
     }
 
     /**
@@ -789,6 +1182,12 @@ final class UrlImportProcessingService
             $directParsed,
         );
         $hint['page_description'] = Str::limit((string) ($hint['page_description'] ?? ''), 300, '…');
+        $hint['identified_company'] = UrlImportCompanyHint::inferCompanyName($hint, '');
+        $hint['identified_brands'] = UrlImportCompanyHint::extractBrandHints(
+            (string) ($hint['page_title'] ?? ''),
+            (string) ($hint['page_description'] ?? ''),
+            (string) ($directParsed['text'] ?? ''),
+        );
         $directSnippet = trim((string) ($directParsed['text'] ?? ''));
         $hasDirectBody = mb_strlen($directSnippet, 'UTF-8') >= 30;
         $searchPayload ??= $this->domesticWebSearch->searchForJob($job, $directParsed);
@@ -939,6 +1338,7 @@ final class UrlImportProcessingService
             'text' => Str::limit($text, 20000, ''),
             'summary' => $this->normalizeText($summary),
             'images' => $images,
+            'raw_html' => $html,
             'raw_json' => [
                 'title' => $this->normalizeText($title),
                 'description' => $this->normalizeText($description),
@@ -957,7 +1357,8 @@ final class UrlImportProcessingService
      *     height:int,
      *     alt:string,
      *     section_path:string,
-     *     paragraph:string
+     *     paragraph:string,
+     *     link_href:string
      * }>
      */
     private function extractImagesFromDom(DOMDocument $dom, DOMXPath $xpath, string $baseUrl): array
@@ -978,6 +1379,7 @@ final class UrlImportProcessingService
                     'alt' => '',
                     'section_path' => '',
                     'paragraph' => '',
+                    'link_href' => '',
                 ];
             }
         }
@@ -1011,6 +1413,7 @@ final class UrlImportProcessingService
                 'alt' => trim((string) $imgNode->getAttribute('alt')),
                 'section_path' => $context['section_path'],
                 'paragraph' => $context['paragraph'],
+                'link_href' => $this->findParentLinkHref($imgNode),
             ];
             $count++;
         }
@@ -1084,6 +1487,10 @@ final class UrlImportProcessingService
                 $area = 'main';
             } elseif ($tag === 'article') {
                 $area = 'main';
+            } elseif (preg_match('/\b(slider|swiper|product|gallery|content|modular|case|news|solution)\b/u', $cls) === 1) {
+                if (in_array($area, ['unknown', 'nav'], true)) {
+                    $area = 'main';
+                }
             } elseif ($tag === 'aside' || $parent->getAttribute('role') === 'complementary' || preg_match('/\b(side|aside|sidebar|sider)\b/u', $cls) === 1) {
                 $area = $area === 'unknown' ? 'unknown_low' : $area;
             } elseif ($tag === 'footer' || $parent->getAttribute('role') === 'contentinfo') {
@@ -1124,6 +1531,21 @@ final class UrlImportProcessingService
             'section_path' => $sectionPath,
             'paragraph' => $paragraph,
         ];
+    }
+
+    private function findParentLinkHref(\DOMElement $img): string
+    {
+        $current = $img->parentNode;
+        $depth = 0;
+        while ($current instanceof \DOMElement && $depth < 5) {
+            if (strtolower($current->nodeName) === 'a') {
+                return trim((string) $current->getAttribute('href'));
+            }
+            $current = $current->parentNode;
+            $depth++;
+        }
+
+        return '';
     }
 
     private function findAncestorHeading(\DOMElement $node, DOMXPath $xpath): string
@@ -1185,12 +1607,29 @@ final class UrlImportProcessingService
 
     /**
      * @param  array<string, mixed>  $parsed
+     * @param  array<string, mixed>|null  $pageJson
      * @return array{summary:string,library_name:string,keywords:list<string>,titles:list<string>,knowledge_markdown:string,analysis_source:string,model:mixed}
      */
-    /**
-     * @param  array<string, mixed>|null  $pageJson
-     */
     private function buildAnalysis(array $parsed, UrlImportJob $job, ?array $pageJson = null): array
+    {
+        if ($this->isFastPipelineMode()) {
+            return $this->buildAnalysisFast($parsed, $job, $pageJson);
+        }
+
+        return $this->buildAnalysisStandard($parsed, $job, $pageJson);
+    }
+
+    private function isFastPipelineMode(): bool
+    {
+        return strtolower((string) config('geoflow.url_import_pipeline_mode', 'fast')) === 'fast';
+    }
+
+    /**
+     * @param  array<string, mixed>  $parsed
+     * @param  array<string, mixed>|null  $pageJson
+     * @return array{summary:string,library_name:string,keywords:list<string>,titles:list<string>,knowledge_markdown:string,analysis_source:string,model:mixed}
+     */
+    private function buildAnalysisStandard(array $parsed, UrlImportJob $job, ?array $pageJson = null): array
     {
         $title = (string) ($parsed['title'] ?? '');
         $text = (string) ($parsed['text'] ?? '');
@@ -1438,6 +1877,237 @@ final class UrlImportProcessingService
     }
 
     /**
+     * 快速流水线：2 次 AI（清洗+知识库、关键词+标题），目标约 5 分钟内完成且保持入库质量。
+     *
+     * @param  array<string, mixed>  $parsed
+     * @param  array<string, mixed>|null  $pageJson
+     * @return array{summary:string,library_name:string,keywords:list<string>,titles:list<string>,knowledge_markdown:string,analysis_source:string,model:mixed}
+     */
+    private function buildAnalysisFast(array $parsed, UrlImportJob $job, ?array $pageJson = null): array
+    {
+        $title = (string) ($parsed['title'] ?? '');
+        $text = (string) ($parsed['text'] ?? '');
+        $summary = (string) ($parsed['summary'] ?? '');
+        $libraryName = $this->resolveLibraryBaseName($job, [], $parsed);
+        $pageJson ??= $this->buildPageJson($parsed, $job);
+        $pageJson = UrlImportPromptCatalog::compactPageJsonForPrompt($pageJson);
+        $parseOutput = $this->summarizeParseForNode($parsed, $pageJson);
+
+        $models = $this->assertAnalysisModelsReady((int) ($job->tenant_id ?? 0) ?: null);
+        $maxAttempts = max(1, (int) config('geoflow.url_import_fast.max_analysis_attempts', 2));
+        $maxTitles = max(12, (int) config('geoflow.url_import_fast.max_titles', 24));
+        $errors = [];
+
+        foreach ($models as $model) {
+            for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
+                try {
+                    $this->log($job, 'info', __('admin.url_import.log.ai_model_attempt', [
+                        'model' => $this->modelDisplayName($model),
+                        'current' => $attempt,
+                        'max' => $maxAttempts,
+                    ]), 'knowledge');
+                    $runtime = $this->prepareAiRuntime($model);
+
+                    $this->updateStep($job, 'knowledge', 45);
+                    $this->log($job, 'info', __('admin.url_import.log.knowledge_start'));
+                    $this->log($job, 'info', __('admin.url_import.log.clean_start'));
+                    $materialStart = microtime(true);
+                    $materialSystemPrompt = UrlImportPromptCatalog::combinedMaterialSystem();
+                    $materialUserPrompt = UrlImportPromptCatalog::combinedMaterialUser(
+                        $pageJson,
+                        trim($this->latestPromptContent('description')),
+                    );
+                    $rawMaterial = $this->requestAiJson(
+                        $runtime,
+                        $materialSystemPrompt,
+                        $materialUserPrompt
+                    );
+                    $materialMs = (int) round((microtime(true) - $materialStart) * 1000);
+                    $cleaned = $this->normalizeCleanedPage($rawMaterial, $parsed);
+                    $cleanedOutput = $this->summarizeCleanedForNode($cleaned);
+                    $this->logNode(
+                        $job,
+                        'ai_clean',
+                        'AI 清洗正文',
+                        array_merge(
+                            $this->nodeChainInput('parse', $parseOutput),
+                            [
+                                'model' => $this->modelDisplayName($model),
+                                'pipeline_mode' => 'fast',
+                                'system_prompt' => $materialSystemPrompt,
+                                'user_prompt' => Str::limit($materialUserPrompt, 6000, '…'),
+                            ]
+                        ),
+                        $rawMaterial,
+                        $materialMs,
+                        $attempt
+                    );
+                    $this->log($job, 'info', __('admin.url_import.log.clean_done', [
+                        'chars' => mb_strlen((string) $cleaned['text'], 'UTF-8'),
+                    ]));
+
+                    $aiSummary = $this->normalizeText($this->aiResponseTextToString($rawMaterial['summary'] ?? $cleaned['summary'] ?? $summary));
+                    $aiLibraryName = $this->safeName($this->aiResponseTextToString($rawMaterial['library_name'] ?? $cleaned['title'] ?? $libraryName));
+                    $aiKnowledge = trim($this->aiResponseTextToString($rawMaterial['knowledge_markdown'] ?? ''));
+                    if ($aiKnowledge === '') {
+                        $rawContent = (string) ($this->lastRawAiContent ?? '');
+                        if ($rawContent !== '') {
+                            $aiKnowledge = $rawContent;
+                            $this->log($job, 'warning', 'AI 未返回结构化 JSON，已将整段响应降级为知识库 Markdown（' . mb_strlen($aiKnowledge, 'UTF-8') . ' 字）');
+                        } else {
+                            $aiKnowledge = (string) ($cleaned['text'] ?? $parsed['text'] ?? '');
+                            $aiSummary = $aiSummary !== '' ? $aiSummary : (string) ($cleaned['summary'] ?? '');
+                            $this->log($job, 'warning', 'AI 完全无响应，已用清洗后的页面正文降级为知识库（' . mb_strlen($aiKnowledge, 'UTF-8') . ' 字）');
+                        }
+                    }
+                    $aiKnowledge = UrlImportTextSanitizer::cleanMarkdown($aiKnowledge);
+                    $cleaned['text'] = UrlImportTextSanitizer::cleanMarkdown((string) ($cleaned['text'] ?? ''));
+                    $knowledgeOutput = $this->summarizeKnowledgeForNode($rawMaterial, $aiKnowledge, $aiSummary, $aiLibraryName);
+                    $this->logNode(
+                        $job,
+                        'ai_knowledge',
+                        'AI 整理素材',
+                        array_merge(
+                            $this->nodeChainInput('ai_clean', $cleanedOutput),
+                            [
+                                'model' => $this->modelDisplayName($model),
+                                'pipeline_mode' => 'fast',
+                                'combined_with' => 'ai_clean',
+                            ]
+                        ),
+                        $knowledgeOutput,
+                        0,
+                        $attempt
+                    );
+                    $this->log($job, 'info', __('admin.url_import.log.knowledge_done', [
+                        'chars' => mb_strlen($aiKnowledge, 'UTF-8'),
+                    ]));
+
+                    $this->updateStep($job, 'keywords', 62);
+                    $this->log($job, 'info', __('admin.url_import.log.keywords_start'));
+                    $this->log($job, 'info', __('admin.url_import.log.titles_start'));
+                    $derivativesStart = microtime(true);
+                    $derivativesSystemPrompt = UrlImportPromptCatalog::combinedDerivativesSystem();
+                    $derivativesUserPrompt = UrlImportPromptCatalog::combinedDerivativesUser(
+                        $pageJson,
+                        $cleaned,
+                        $aiKnowledge,
+                        trim($this->latestPromptContent('keyword')),
+                        trim($this->latestPromptContent('content')),
+                    );
+                    $rawDerivatives = $this->requestAiJson(
+                        $runtime,
+                        $derivativesSystemPrompt,
+                        $derivativesUserPrompt
+                    );
+                    $derivativesMs = (int) round((microtime(true) - $derivativesStart) * 1000);
+                    $keywordValues = $rawDerivatives['keywords'] ?? (array_is_list($rawDerivatives) ? $rawDerivatives : []);
+                    $aiKeywords = array_slice($this->cleanKeywordList($this->stringList($keywordValues)), 0, 10);
+                    if ($aiKeywords === []) {
+                        throw new \RuntimeException(__('admin.url_import.error.ai_keywords_missing'));
+                    }
+                    $keywordsOutput = $this->summarizeKeywordsForNode($aiKeywords);
+                    $this->logNode(
+                        $job,
+                        'ai_keywords',
+                        'AI 提炼主题词',
+                        array_merge(
+                            $this->nodeChainInput('ai_knowledge', $knowledgeOutput),
+                            [
+                                'model' => $this->modelDisplayName($model),
+                                'pipeline_mode' => 'fast',
+                                'system_prompt' => $derivativesSystemPrompt,
+                                'user_prompt' => Str::limit($derivativesUserPrompt, 6000, '…'),
+                            ]
+                        ),
+                        ['keywords' => $aiKeywords],
+                        $derivativesMs,
+                        $attempt
+                    );
+                    $this->log($job, 'info', __('admin.url_import.log.keywords_done', ['count' => count($aiKeywords)]));
+
+                    $this->updateStep($job, 'titles', 80);
+                    $titleValues = $rawDerivatives['titles'] ?? [];
+                    $aiTitles = array_slice($this->stringList($titleValues), 0, $maxTitles);
+                    if ($aiTitles === []) {
+                        throw new \RuntimeException(__('admin.url_import.error.ai_titles_missing'));
+                    }
+                    $this->logNode(
+                        $job,
+                        'ai_titles',
+                        'AI 生成标题',
+                        array_merge(
+                            $this->nodeChainInput('ai_keywords', $keywordsOutput),
+                            [
+                                'model' => $this->modelDisplayName($model),
+                                'pipeline_mode' => 'fast',
+                                'combined_with' => 'ai_keywords',
+                                'knowledge_chars' => mb_strlen($aiKnowledge, 'UTF-8'),
+                            ]
+                        ),
+                        ['titles' => $aiTitles],
+                        0,
+                        $attempt
+                    );
+                    $this->log($job, 'info', __('admin.url_import.log.titles_done', ['count' => count($aiTitles)]));
+
+                    $this->log($job, 'info', __('admin.url_import.log.ai_analyze_done', ['model' => $this->modelDisplayName($model)]));
+
+                    return [
+                        'summary' => $aiSummary !== '' ? $aiSummary : Str::limit($text, 220, '...'),
+                        'library_name' => $aiLibraryName !== '' ? $aiLibraryName : $libraryName,
+                        'keywords' => $aiKeywords,
+                        'titles' => $aiTitles,
+                        'knowledge_markdown' => $aiKnowledge,
+                        'analysis_source' => 'ai',
+                        'model' => [
+                            'id' => (int) $model->id,
+                            'name' => (string) $model->name,
+                        ],
+                        'page_json' => $pageJson,
+                        'cleaned' => $cleaned,
+                    ];
+                } catch (Throwable $exception) {
+                    $message = $this->normalizeAiErrorMessage($exception, $model);
+                    $this->logNode(
+                        $job,
+                        'ai_call_failed',
+                        'AI 调用失败',
+                        ['model' => $this->modelDisplayName($model), 'attempt' => $attempt, 'max_attempts' => $maxAttempts, 'pipeline_mode' => 'fast'],
+                        null,
+                        0,
+                        $attempt,
+                        'failed',
+                        $message
+                    );
+                    if ($attempt < $maxAttempts) {
+                        $this->log($job, 'warning', __('admin.url_import.log.ai_model_retry', [
+                            'model' => $this->modelDisplayName($model),
+                            'current' => $attempt,
+                            'max' => $maxAttempts,
+                            'message' => $message,
+                        ]), (string) ($job->current_step ?: 'knowledge'));
+
+                        continue;
+                    }
+
+                    $errors[] = $this->formatModelFailure($model, $exception);
+                    $this->log($job, 'warning', __('admin.url_import.log.ai_model_failed', [
+                        'model' => $this->modelDisplayName($model),
+                        'message' => $message,
+                    ]), (string) ($job->current_step ?: 'knowledge'));
+                }
+            }
+        }
+
+        throw new \RuntimeException(__('admin.url_import.error.ai_parse_failed', [
+            'message' => __('admin.url_import.error.ai_all_models_failed', [
+                'messages' => implode('；', $errors),
+            ]),
+        ]));
+    }
+
+    /**
      * @return Collection<int, AiModel>
      */
     private function resolveAnalysisModels(?int $tenantId = null): Collection
@@ -1629,6 +2299,9 @@ final class UrlImportProcessingService
         $options = json_decode((string) $job->options_json, true);
         $options = is_array($options) ? $options : [];
 
+        // 块级分块：优先 raw_html（heading 切分），退到 text（段落切分）
+        $chunks = $this->resolveChunks($parsed);
+
         return [
             'source_url' => (string) $job->normalized_url,
             'source_domain' => (string) $job->source_domain,
@@ -1643,7 +2316,69 @@ final class UrlImportProcessingService
             'description' => (string) ($parsed['description'] ?? ''),
             'summary' => (string) ($parsed['summary'] ?? ''),
             'text' => Str::limit((string) ($parsed['text'] ?? ''), 12000, ''),
+            'chunks' => $chunks,
+            'chunk_strategy' => $chunks !== [] && (string) ($chunks[0]['heading'] ?? '') !== '正文'
+                ? 'heading'
+                : 'paragraph',
+            'chunk_count' => count($chunks),
         ];
+    }
+
+    /**
+     * @return list<array{chunk_id:string,heading:string,heading_level:int,section_path:string,text:string,char_count:int,token_estimate:int}>
+     */
+    private function resolveChunks(array $parsed): array
+    {
+        $rawHtml = (string) ($parsed['raw_html'] ?? '');
+        if ($rawHtml !== '') {
+            return UrlImportHtmlInspector::extractChunks($rawHtml, 200, 1200);
+        }
+
+        // fallback：按段落切，纯文本
+        $text = trim((string) ($parsed['text'] ?? ''));
+        if ($text === '') {
+            return [];
+        }
+        $paragraphs = preg_split('/\n{2,}/u', $text) ?: [];
+        $chunks = [];
+        $buf = '';
+        $i = 0;
+        foreach ($paragraphs as $p) {
+            $p = trim((string) $p);
+            if ($p === '') {
+                continue;
+            }
+            $candidate = $buf === '' ? $p : $buf."\n\n".$p;
+            if (mb_strlen($candidate, 'UTF-8') > 1200 && $buf !== '') {
+                $i++;
+                $chunks[] = [
+                    'chunk_id' => 'chunk_'.str_pad((string) $i, 3, '0', STR_PAD_LEFT),
+                    'heading' => '正文',
+                    'heading_level' => 2,
+                    'section_path' => '正文',
+                    'text' => $buf,
+                    'char_count' => mb_strlen($buf, 'UTF-8'),
+                    'token_estimate' => (int) max(1, ceil(mb_strlen($buf, 'UTF-8') / 2)),
+                ];
+                $buf = $p;
+            } else {
+                $buf = $candidate;
+            }
+        }
+        if ($buf !== '') {
+            $i++;
+            $chunks[] = [
+                'chunk_id' => 'chunk_'.str_pad((string) $i, 3, '0', STR_PAD_LEFT),
+                'heading' => '正文',
+                'heading_level' => 2,
+                'section_path' => '正文',
+                'text' => $buf,
+                'char_count' => mb_strlen($buf, 'UTF-8'),
+                'token_estimate' => (int) max(1, ceil(mb_strlen($buf, 'UTF-8') / 2)),
+            ];
+        }
+
+        return $chunks;
     }
 
     private function builtInGeoCollectionPrompt(): string
@@ -2021,7 +2756,7 @@ final class UrlImportProcessingService
             UrlImportNodeRecorder::record(
                 (int) $job->id,
                 'images_import',
-                '图片入库',
+                '图片下载',
                 'skipped',
                 ['detected_count' => 0],
                 ['message' => '页面未检测到可入库图片'],
@@ -2034,10 +2769,10 @@ final class UrlImportProcessingService
             UrlImportNodeRecorder::record(
                 (int) $job->id,
                 'images_import',
-                '图片入库',
+                '图片下载',
                 'skipped',
                 ['detected_count' => $detectedCount],
-                ['message' => '缺少租户上下文，已跳过图片入库'],
+                ['message' => '缺少租户上下文，已跳过图片下载'],
             );
 
             return;
@@ -2046,7 +2781,7 @@ final class UrlImportProcessingService
         UrlImportNodeRecorder::record(
             (int) $job->id,
             'images_import',
-            '图片入库',
+            '图片下载',
             'queued',
             [
                 'from_node' => 'parse',
@@ -2056,7 +2791,7 @@ final class UrlImportProcessingService
                 ],
                 'source_url' => (string) $job->normalized_url,
             ],
-            ['message' => '正文完成后并行执行，下载至网址采集图片库'],
+            ['message' => '正文完成后下载页面图片到本地'],
         );
 
         try {
@@ -2086,7 +2821,7 @@ final class UrlImportProcessingService
             UrlImportNodeRecorder::record(
                 (int) $job->id,
                 'images_import',
-                '图片入库',
+                '图片下载',
                 'failed',
                 ['detected_count' => $detectedCount],
                 null,
@@ -2304,6 +3039,16 @@ final class UrlImportProcessingService
     }
 
     /**
+     * 用户在前端终止任务后，后续步骤应尽早退出且不再覆盖为 failed。
+     */
+    private function abortIfCancelled(UrlImportJob $job): void
+    {
+        if ((string) $job->fresh()->status === 'cancelled') {
+            throw new \RuntimeException((string) __('admin.url_import.error.cancelled_by_user'));
+        }
+    }
+
+    /**
      * @param  array<string, mixed>  $extra
      */
     private function updateStep(UrlImportJob $job, string $step, int $progress, array $extra = []): void
@@ -2312,5 +3057,81 @@ final class UrlImportProcessingService
             'current_step' => $step,
             'progress_percent' => max(0, min(100, $progress)),
         ], $extra));
+    }
+
+    /**
+     * 把 facts 按 chunk_id 分组。AI 可能把 chunk_id 写在 fact 里，也可能在数组外层。
+     *
+     * @param  list<array<string, mixed>>  $facts
+     * @return array<string, list<array<string, mixed>>>
+     */
+    private function groupFactsByChunk(array $facts): array
+    {
+        $grouped = [];
+        foreach ($facts as $fact) {
+            if (! is_array($fact)) {
+                continue;
+            }
+            $chunkId = (string) ($fact['chunk_id'] ?? '');
+            if ($chunkId === '') {
+                continue;
+            }
+            $grouped[$chunkId] ??= [];
+            $grouped[$chunkId][] = $fact;
+        }
+
+        return $grouped;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $facts
+     */
+    private function averageConfidence(array $facts): float
+    {
+        if ($facts === []) {
+            return 0.70;
+        }
+        $sum = 0.0;
+        $count = 0;
+        foreach ($facts as $fact) {
+            $value = $fact['confidence'] ?? null;
+            if (is_numeric($value)) {
+                $sum += (float) $value;
+                $count++;
+            }
+        }
+        if ($count === 0) {
+            return 0.70;
+        }
+        $avg = $sum / $count;
+
+        return (float) max(0.0, min(1.0, round($avg, 2)));
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $facts
+     */
+    private function mergeTags(array $facts): string
+    {
+        $tags = [];
+        foreach ($facts as $fact) {
+            $raw = $fact['tags'] ?? [];
+            if (is_string($raw)) {
+                $raw = preg_split('/[,，;；\s]+/u', $raw) ?: [];
+            }
+            if (is_array($raw)) {
+                foreach ($raw as $t) {
+                    $t = trim((string) $t);
+                    if ($t !== '' && ! in_array($t, $tags, true)) {
+                        $tags[] = $t;
+                    }
+                }
+            }
+            if (count($tags) >= 8) {
+                break;
+            }
+        }
+
+        return implode(',', array_slice($tags, 0, 8));
     }
 }

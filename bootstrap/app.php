@@ -37,6 +37,13 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // 信任反代头（X-Forwarded-Proto/Host/Port）。本地 docker 直连时反代 IP 不固定，用 * 最稳；
+        // 公开部署时应写具体 CDN/反代 IP，避免被客户端伪造。
+        $trustedProxies = trim((string) env('TRUSTED_PROXIES', '*'));
+        if ($trustedProxies !== '') {
+            $middleware->trustProxies(at: $trustedProxies, headers: \Illuminate\Http\Request::HEADER_X_FORWARDED_FOR | \Illuminate\Http\Request::HEADER_X_FORWARDED_HOST | \Illuminate\Http\Request::HEADER_X_FORWARDED_PORT | \Illuminate\Http\Request::HEADER_X_FORWARDED_PROTO | \Illuminate\Http\Request::HEADER_X_FORWARDED_PREFIX);
+        }
+
         $middleware->alias([
             // 生成/透传 X-Request-Id，并写入响应头
             'api.request_id' => AssignApiRequestId::class,

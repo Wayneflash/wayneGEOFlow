@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Jobs\ProcessUrlImportJob;
 use App\Models\Image;
-use App\Models\ImageLibrary;
 use App\Models\KeywordLibrary;
 use App\Models\KnowledgeBase;
 use App\Models\TitleLibrary;
@@ -19,7 +18,9 @@ use App\Support\Tenancy\AdminTenant;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
@@ -100,11 +101,11 @@ class UrlImportController extends Controller
     {
         $job = UrlImportJob::query()->visibleToAdmin()->whereKey($jobId)->firstOrFail();
 
-        $canRun = in_array((string) $job->status, ['queued', 'failed'], true)
+        $canRun = in_array((string) $job->status, ['queued', 'failed', 'cancelled'], true)
             || ($this->isStaleRunningJob($job));
 
         if ($canRun) {
-            if ($this->isStaleRunningJob($job)) {
+            if ($this->isStaleRunningJob($job) || (string) $job->status === 'cancelled') {
                 $job->update([
                     'status' => 'queued',
                     'current_step' => 'queued',
@@ -162,6 +163,33 @@ class UrlImportController extends Controller
         return response()->json($this->statusPayload($job->refresh()));
     }
 
+    public function cancel(int $jobId): JsonResponse
+    {
+        $job = UrlImportJob::query()->visibleToAdmin()->whereKey($jobId)->firstOrFail();
+
+        if (! in_array((string) $job->status, ['queued', 'running'], true)) {
+            return response()->json([
+                'message' => __('admin.url_import.error.cancel_not_running'),
+            ], 422);
+        }
+
+        $message = (string) __('admin.url_import.log.cancelled_by_user');
+        $job->update([
+            'status' => 'cancelled',
+            'error_message' => $message,
+            'finished_at' => now(),
+        ]);
+
+        UrlImportJobLog::query()->create([
+            'job_id' => (int) $job->id,
+            'step' => (string) ($job->current_step ?: 'queued'),
+            'level' => 'warning',
+            'message' => $message,
+        ]);
+
+        return response()->json($this->statusPayload($job->refresh()));
+    }
+
     public function status(int $jobId): JsonResponse
     {
         $job = UrlImportJob::query()->visibleToAdmin()->whereKey($jobId)->firstOrFail();
@@ -183,7 +211,48 @@ class UrlImportController extends Controller
             'image_import_status' => (string) ($imageImport['status'] ?? ''),
             'images_import_finished' => $this->imagesImportFinished($job, $result, $this->buildNodeSteps($job), count($imported)),
             'images' => $imported,
-            'staging_library_url' => $this->stagingLibraryUrl(),
+        ]);
+    }
+
+    public function imageProxy(Request $request, int $jobId): Response
+    {
+        $job = UrlImportJob::query()->visibleToAdmin()->whereKey($jobId)->firstOrFail();
+        $url = trim((string) $request->query('url', ''));
+        if ($url === '' || filter_var($url, FILTER_VALIDATE_URL) === false) {
+            abort(404);
+        }
+
+        $result = $this->decodeJson((string) $job->result_json);
+        $allowed = array_values(array_filter(array_map(
+            static fn (array $item): string => trim((string) ($item['url'] ?? '')),
+            array_values((array) data_get($result, 'page.image_preview', [])),
+        ), static fn (string $item): bool => $item !== ''));
+
+        if (! in_array($url, $allowed, true)) {
+            abort(403);
+        }
+
+        $response = Http::timeout(15)
+            ->connectTimeout(8)
+            ->withHeaders([
+                'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                'Accept' => 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+                'Referer' => (string) $job->normalized_url,
+            ])
+            ->get($url);
+
+        if (! $response->successful()) {
+            abort(502);
+        }
+
+        $contentType = (string) ($response->header('Content-Type') ?? 'image/jpeg');
+        if (! str_starts_with(strtolower($contentType), 'image/')) {
+            abort(415);
+        }
+
+        return response($response->body(), 200, [
+            'Content-Type' => $contentType,
+            'Cache-Control' => 'private, max-age=3600',
         ]);
     }
 
@@ -214,10 +283,16 @@ class UrlImportController extends Controller
         $job = UrlImportJob::query()->visibleToAdmin()->whereKey($jobId)->firstOrFail();
         $validated = $request->validate([
             'image_library_name' => ['required', 'string', 'max:120'],
+            'image_ids' => ['required', 'array', 'min:1'],
+            'image_ids.*' => ['integer', 'min:1'],
         ]);
 
         try {
-            $summary = $this->urlImportProcessingService->commitImages($job, $validated['image_library_name']);
+            $summary = $this->urlImportProcessingService->commitImages(
+                $job,
+                $validated['image_library_name'],
+                array_values(array_map('intval', $validated['image_ids'])),
+            );
         } catch (\Throwable $exception) {
             return back()->withErrors(__('admin.url_import.error.commit_images_failed').': '.$exception->getMessage());
         }
@@ -225,8 +300,28 @@ class UrlImportController extends Controller
         return redirect()
             ->route('admin.url-import.show', ['jobId' => $jobId])
             ->with('message', __('admin.url_import.commit.images_success', [
-                'name' => $validated['image_library_name'],
+                'name' => (string) ($summary['library_name'] ?? $validated['image_library_name']),
                 'count' => $summary['image_count'],
+            ]));
+    }
+
+    public function undoImageBatch(Request $request, int $jobId): RedirectResponse
+    {
+        $job = UrlImportJob::query()->visibleToAdmin()->whereKey($jobId)->firstOrFail();
+        $validated = $request->validate([
+            'batch_id' => ['required', 'string', 'max:64'],
+        ]);
+
+        try {
+            $summary = $this->urlImportProcessingService->undoImageBatch($job, $validated['batch_id']);
+        } catch (\Throwable $exception) {
+            return back()->withErrors(__('admin.url_import.error.commit_images_failed').': '.$exception->getMessage());
+        }
+
+        return redirect()
+            ->route('admin.url-import.show', ['jobId' => $jobId])
+            ->with('message', __('admin.url_import.commit.images_undone', [
+                'count' => $summary['restored_count'],
             ]));
     }
 
@@ -249,7 +344,6 @@ class UrlImportController extends Controller
             'imagePreview' => array_values((array) data_get($result, 'page.image_preview', [])),
             'detectedImageCount' => (int) data_get($result, 'page.image_count', 0),
             'imageImport' => is_array($result['import']['images'] ?? null) ? $result['import']['images'] : [],
-            'stagingLibraryUrl' => $this->stagingLibraryUrl(),
             'nodeSteps' => $nodeSteps,
             'currentNodeKey' => $this->resolveCurrentNodeKey($job, $nodeSteps),
             'failureMessage' => $this->publicErrorMessage($job),
@@ -328,7 +422,7 @@ class UrlImportController extends Controller
             ['key' => 'ai_knowledge', 'label' => 'AI 整理素材', 'sequential' => true],
             ['key' => 'ai_keywords', 'label' => 'AI 提炼主题词', 'sequential' => true],
             ['key' => 'ai_titles', 'label' => 'AI 生成标题', 'sequential' => true],
-            ['key' => 'images_import', 'label' => '图片入库', 'sequential' => false],
+            ['key' => 'images_import', 'label' => '图片下载', 'sequential' => false],
         ];
 
         $steps = [];
@@ -430,7 +524,13 @@ class UrlImportController extends Controller
             static fn (int $id): bool => $id > 0
         ));
 
+        $tenantId = (int) ($job->tenant_id ?? 0);
+        $stagingLibraryId = $tenantId > 0 ? UrlImportImageLibrary::resolveLibraryId($tenantId) : 0;
+
         $query = Image::query();
+        if ($stagingLibraryId > 0) {
+            $query->where('library_id', $stagingLibraryId);
+        }
         if ($imageIds !== []) {
             $query->whereIn('id', $imageIds);
         } else {
@@ -456,6 +556,7 @@ class UrlImportController extends Controller
 
         return $query
             ->orderByDesc('id')
+            ->limit(max(4, (int) config('geoflow.url_import_max_images', 16)))
             ->get($columns)
             ->map(fn (Image $img): array => [
                 'id' => (int) $img->id,
@@ -562,25 +663,6 @@ class UrlImportController extends Controller
         return (string) $job->status === 'completed' && $importedCount > 0;
     }
 
-    private function stagingLibraryUrl(): ?string
-    {
-        if (! Schema::hasTable('image_libraries')) {
-            return route('admin.image-libraries.index');
-        }
-
-        $tenantId = AdminTenant::currentTenantId();
-        $query = ImageLibrary::query()->whereIn('name', UrlImportImageLibrary::names());
-        if ($tenantId !== null && ! AdminTenant::canSeeAll()) {
-            $query->where('tenant_id', $tenantId);
-        }
-
-        $libraryId = $query->value('id');
-
-        return $libraryId
-            ? route('admin.image-libraries.detail', ['libraryId' => (int) $libraryId])
-            : route('admin.image-libraries.index');
-    }
-
     private function shouldProcessUrlImportInline(): bool
     {
         if (app()->runningUnitTests()) {
@@ -648,6 +730,7 @@ class UrlImportController extends Controller
             'running' => '采集中',
             'completed' => '已完成',
             'failed' => '失败',
+            'cancelled' => '已终止',
         ][$status] ?? $status;
     }
 

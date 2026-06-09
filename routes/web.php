@@ -220,17 +220,26 @@ Route::prefix($adminPrefix)->name('admin.')->middleware(['surface.port:admin', '
         Route::post('url-import/{jobId}/run', [UrlImportController::class, 'run'])
             ->name('url-import.run')
             ->whereNumber('jobId');
+        Route::post('url-import/{jobId}/cancel', [UrlImportController::class, 'cancel'])
+            ->name('url-import.cancel')
+            ->whereNumber('jobId');
         Route::get('url-import/{jobId}/status', [UrlImportController::class, 'status'])
             ->name('url-import.status')
             ->whereNumber('jobId');
         Route::get('url-import/{jobId}/images', [UrlImportController::class, 'images'])
             ->name('url-import.images')
             ->whereNumber('jobId');
+        Route::get('url-import/{jobId}/image-proxy', [UrlImportController::class, 'imageProxy'])
+            ->name('url-import.image-proxy')
+            ->whereNumber('jobId');
         Route::post('url-import/{jobId}/commit', [UrlImportController::class, 'commit'])
             ->name('url-import.commit')
             ->whereNumber('jobId');
         Route::post('url-import/{jobId}/commit-images', [UrlImportController::class, 'commitImages'])
             ->name('url-import.commit-images')
+            ->whereNumber('jobId');
+        Route::post('url-import/{jobId}/undo-image-batch', [UrlImportController::class, 'undoImageBatch'])
+            ->name('url-import.undo-image-batch')
             ->whereNumber('jobId');
         Route::get('url-import/{jobId}', [UrlImportController::class, 'show'])
             ->name('url-import.show')

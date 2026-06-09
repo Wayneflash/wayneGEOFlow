@@ -265,6 +265,8 @@ class KnowledgeChunkSyncService
                 $flushCurrent();
                 $currentTitle = (string) ($block['heading_text'] ?? $text);
                 $currentSectionPath = (string) ($block['section_path'] ?? '');
+                // heading 块也并入 currentBlocks，保证 content 包含 #/## 标题
+                $currentBlocks[] = $block;
 
                 continue;
             }

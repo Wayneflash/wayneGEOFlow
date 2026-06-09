@@ -19,21 +19,23 @@
     <div class="materials-sub-shell">
         @include('admin.partials.materials-nav', ['active' => 'url-history'])
 
+        <div class="materials-sub-toolbar">
+            <a href="{{ route('admin.url-import') }}" class="materials-back-btn" aria-label="{{ __('admin.common.back') }}">
+                <i data-lucide="arrow-left" class="h-4 w-4"></i>
+                返回网址采集
+            </a>
+            <a href="{{ route('admin.url-import') }}" class="admin-btn-teal shrink-0">
+                <i data-lucide="plus" class="h-4 w-4"></i>
+                新采集
+            </a>
+        </div>
+
         <div class="admin-panel">
             <div class="admin-panel-header">
-                <div class="flex min-w-0 items-start gap-3">
-                    <a href="{{ route('admin.materials.index') }}" class="admin-icon-btn shrink-0" aria-label="{{ __('admin.common.back') }}">
-                        <i data-lucide="arrow-left" class="h-4 w-4"></i>
-                    </a>
-                    <div class="min-w-0">
-                        <h1 class="text-xl font-semibold tracking-tight text-slate-950">采集记录</h1>
-                        <p class="mt-1 text-sm text-slate-500">查看进度，完成后可确认入库。</p>
-                    </div>
+                <div class="min-w-0">
+                    <h1 class="text-xl font-semibold tracking-tight text-slate-950">采集记录</h1>
+                    <p class="mt-1 text-sm text-slate-500">查看进度，完成后可确认入库。</p>
                 </div>
-                <a href="{{ route('admin.url-import') }}" class="admin-btn-teal">
-                    <i data-lucide="plus" class="h-4 w-4"></i>
-                    新采集
-                </a>
             </div>
         </div>
 

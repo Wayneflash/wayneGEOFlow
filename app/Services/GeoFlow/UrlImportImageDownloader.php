@@ -29,13 +29,16 @@ class UrlImportImageDownloader
 
     public const VALUE_PENDING = 'pending';
 
-    /** 单次采集最多入库图片数（避免 1 个页面把库塞满） */
-    private const MAX_IMAGES_PER_JOB = 10;
+    /** 单次采集最多下载图片数（默认 16，UI 4×4 展示） */
+    private function maxImagesPerJob(): int
+    {
+        return max(4, (int) config('geoflow.url_import_max_images', 16));
+    }
 
-    /** 单张图最小尺寸（像素） */
-    private const MIN_WIDTH = 120;
+    /** 单张图最小尺寸（像素）— unknown 区可放宽 */
+    private const MIN_WIDTH = 80;
 
-    private const MIN_HEIGHT = 120;
+    private const MIN_HEIGHT = 80;
 
     /** 单张图最大文件大小（字节） */
     private const MAX_FILE_SIZE = 5 * 1024 * 1024;
@@ -48,6 +51,20 @@ class UrlImportImageDownloader
         'logo', 'icon', 'avatar', 'spinner', 'loading', 'pixel', 'tracking',
         'sprite', 'placeholder', 'spacer', 'blank', '1x1', 'transparent',
         'ads', 'banner-ad', 'pixel.gif', 'share-', 'social-',
+    ];
+
+    /** 图片/页面 URL 路径段：产品、解决方案类资源优先 */
+    private const PRODUCT_SOLUTION_PATH_SEGMENTS = [
+        'product', 'products', 'pro', 'goods', 'item', 'items', 'catalog', 'catalogue',
+        'solution', 'solutions', 'case-study', 'case_study', 'cases', 'case',
+        'application', 'applications', 'scenario', 'scenarios', 'industry',
+        'service', 'services', 'portfolio',
+    ];
+
+    /** 章节标题、alt、上下文中的产品/方案关键词 */
+    private const PRODUCT_SOLUTION_TEXT_HINTS = [
+        '产品', '解决方案', '方案', '应用方案', '产品中心', '解决方案中心', '行业方案',
+        'product', 'products', 'solution', 'solutions', 'case study', 'use case',
     ];
 
     /**
@@ -71,7 +88,7 @@ class UrlImportImageDownloader
         }
 
         $libraryId = UrlImportImageLibrary::resolveLibraryId($tenantId);
-        $candidates = array_slice($images, 0, self::MAX_IMAGES_PER_JOB);
+        $candidates = array_slice($images, 0, $this->maxImagesPerJob());
 
         $bodies = $this->fetchBodiesInParallel($candidates, $sourceUrl);
 
@@ -150,7 +167,7 @@ class UrlImportImageDownloader
                 CURLOPT_MAXREDIRS => 3,
                 CURLOPT_TIMEOUT => 15,
                 CURLOPT_CONNECTTIMEOUT => 6,
-                CURLOPT_USERAGENT => 'GEOFLOW/1.0 (+https://geoflow.local) URL-Import-Image',
+                CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
                 CURLOPT_HTTPHEADER => [
                     'Accept: image/avif,image/webp,image/png,image/jpeg,image/gif,image/*;q=0.8',
                     'Referer: '.$sourceUrl,
@@ -281,7 +298,7 @@ class UrlImportImageDownloader
             $seenUrls[$url] = true;
 
             $area = (string) ($image['area'] ?? 'unknown');
-            if (! in_array($area, ['hero', 'main', 'nav', 'og_image'], true)) {
+            if (! in_array($area, ['hero', 'main', 'nav', 'og_image', 'unknown'], true)) {
                 continue;
             }
 
@@ -298,13 +315,16 @@ class UrlImportImageDownloader
 
             $width = (int) ($image['width'] ?? 0);
             $height = (int) ($image['height'] ?? 0);
+            // unknown 区：无尺寸信息时仍尝试下载（懒加载站点常见），有尺寸则过滤过小图
             if ($width > 0 && $height > 0 && ($width < self::MIN_WIDTH || $height < self::MIN_HEIGHT)) {
-                continue;
+                if ($area !== 'og_image') {
+                    continue;
+                }
             }
 
-            $candidates[] = $image + ['_score' => $this->scoreCandidate($image, $area, $width, $height, $sourceDepth)];
+            $candidates[] = $image + ['_score' => $this->scoreCandidate($image, $area, $width, $height, $sourceDepth, $sourceUrl)];
 
-            if (count($candidates) >= self::MAX_IMAGES_PER_JOB * 3) {
+            if (count($candidates) >= $this->maxImagesPerJob() * 3) {
                 break;
             }
         }
@@ -313,7 +333,7 @@ class UrlImportImageDownloader
             return (int) ($b['_score'] ?? 0) <=> (int) ($a['_score'] ?? 0);
         });
 
-        $top = array_slice($candidates, 0, self::MAX_IMAGES_PER_JOB);
+        $top = array_slice($candidates, 0, $this->maxImagesPerJob());
 
         return array_map(static function (array $item): array {
             unset($item['_score']);
@@ -332,8 +352,10 @@ class UrlImportImageDownloader
      *  - 已有 alt 文本：+5
      *  - 大尺寸（> 800 宽）：+10
      *  - 一级页面：+10；二级：+5；三级及以上：+0
+     *  - 图片 URL / 页面 URL / 父链接落在产品或解决方案路径：+25~35
+     *  - 所在章节标题含「产品」「解决方案」等：+30
      */
-    private function scoreCandidate(array $image, string $area, int $width, int $height, int $sourceDepth): int
+    private function scoreCandidate(array $image, string $area, int $width, int $height, int $sourceDepth, string $sourceUrl): int
     {
         $score = 0;
         if ($area === 'og_image') {
@@ -344,7 +366,11 @@ class UrlImportImageDownloader
             $score += 20;
         } elseif ($area === 'nav') {
             $score += 8;
+        } elseif ($area === 'unknown') {
+            $score += 12;
         }
+
+        $score += $this->productSolutionRelevanceBoost($image, $sourceUrl);
 
         $paragraph = trim((string) ($image['paragraph'] ?? ''));
         if (mb_strlen($paragraph, 'UTF-8') > 50) {
@@ -370,6 +396,83 @@ class UrlImportImageDownloader
         }
 
         return $score;
+    }
+
+    /**
+     * 产品/解决方案相关图片加权：路径、章节、链接上下文。
+     */
+    private function productSolutionRelevanceBoost(array $image, string $sourceUrl): int
+    {
+        $boost = 0;
+
+        $imagePath = strtolower((string) parse_url((string) ($image['url'] ?? ''), PHP_URL_PATH));
+        if ($this->pathHintsProductOrSolution($imagePath)) {
+            $boost += 35;
+        }
+
+        $pagePath = strtolower((string) parse_url($sourceUrl, PHP_URL_PATH));
+        if ($this->pathHintsProductOrSolution($pagePath)) {
+            $boost += 25;
+        }
+
+        $linkPath = strtolower((string) parse_url((string) ($image['link_href'] ?? ''), PHP_URL_PATH));
+        if ($linkPath !== '' && $this->pathHintsProductOrSolution($linkPath)) {
+            $boost += 28;
+        }
+
+        $sectionPath = mb_strtolower((string) ($image['section_path'] ?? ''), 'UTF-8');
+        if ($this->textHintsProductOrSolution($sectionPath)) {
+            $boost += 30;
+        }
+
+        $alt = mb_strtolower((string) ($image['alt'] ?? ''), 'UTF-8');
+        if ($this->textHintsProductOrSolution($alt)) {
+            $boost += 12;
+        }
+
+        $paragraph = mb_strtolower(trim((string) ($image['paragraph'] ?? '')), 'UTF-8');
+        if ($paragraph !== '' && $this->textHintsProductOrSolution($paragraph)) {
+            $boost += 8;
+        }
+
+        return min($boost, 65);
+    }
+
+    private function pathHintsProductOrSolution(string $path): bool
+    {
+        $path = trim(str_replace('\\', '/', $path));
+        if ($path === '' || $path === '/') {
+            return false;
+        }
+
+        $normalized = '/'.trim($path, '/').'/';
+        $normalized = strtolower($normalized);
+
+        foreach (self::PRODUCT_SOLUTION_PATH_SEGMENTS as $segment) {
+            $segment = strtolower($segment);
+            if (str_contains($normalized, '/'.$segment.'/') || str_ends_with(rtrim($normalized, '/'), '/'.$segment)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function textHintsProductOrSolution(string $text): bool
+    {
+        $text = trim($text);
+        if ($text === '') {
+            return false;
+        }
+
+        $lower = mb_strtolower($text, 'UTF-8');
+        foreach (self::PRODUCT_SOLUTION_TEXT_HINTS as $hint) {
+            if (mb_strpos($lower, mb_strtolower($hint, 'UTF-8')) !== false) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function downloadAndStore(

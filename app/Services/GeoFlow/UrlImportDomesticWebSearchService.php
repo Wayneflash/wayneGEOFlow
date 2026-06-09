@@ -89,24 +89,47 @@ final class UrlImportDomesticWebSearchService
         $timeout = max(5, min(30, (int) config('geoflow.url_import_web_search.timeout_seconds', 15)));
         $merged = [];
 
-        foreach ($queries as $query) {
+        if ($queries === []) {
+            return $merged;
+        }
+
+        $responses = Http::pool(function ($pool) use ($queries, $apiUrl, $apiKey, $timeout, $maxResults): void {
+            foreach ($queries as $index => $query) {
+                $query = trim($query);
+                if ($query === '') {
+                    continue;
+                }
+
+                $pool->as((string) $index)
+                    ->timeout($timeout)
+                    ->connectTimeout(8)
+                    ->withHeaders([
+                        'Authorization' => 'Bearer '.$apiKey,
+                        'Content-Type' => 'application/json',
+                    ])
+                    ->post($apiUrl, [
+                        'query' => $query,
+                        'freshness' => 'noLimit',
+                        'summary' => true,
+                        'count' => $maxResults,
+                    ]);
+            }
+        });
+
+        foreach ($queries as $index => $query) {
             $query = trim($query);
             if ($query === '') {
                 continue;
             }
 
-            $response = Http::timeout($timeout)
-                ->connectTimeout(8)
-                ->withHeaders([
-                    'Authorization' => 'Bearer '.$apiKey,
-                    'Content-Type' => 'application/json',
-                ])
-                ->post($apiUrl, [
-                    'query' => $query,
-                    'freshness' => 'noLimit',
-                    'summary' => true,
-                    'count' => $maxResults,
-                ]);
+            $response = $responses[(string) $index] ?? null;
+            if ($response === null) {
+                continue;
+            }
+
+            if ($response instanceof Throwable) {
+                throw new \RuntimeException('博查搜索失败：'.$response->getMessage(), 0, $response);
+            }
 
             if (! $response->successful()) {
                 throw new \RuntimeException('博查搜索失败 HTTP '.$response->status().'：'.Str::limit((string) $response->body(), 200));
@@ -248,6 +271,11 @@ final class UrlImportDomesticWebSearchService
     }
 
     private static function classifyResultSource(string $url): string
+    {
+        return self::classifyResultSourcePublic($url);
+    }
+
+    public static function classifyResultSourcePublic(string $url): string
     {
         $url = strtolower(trim($url));
         if ($url === '') {

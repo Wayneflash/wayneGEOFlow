@@ -3129,8 +3129,10 @@ return [
             'preview_start' => '开始生成预览结果，汇总知识库、关键词和标题',
             'preview_ready' => '预览结果已生成，等待确认入库',
             'web_research_done' => '全网调研补充完成（模式：:mode，主体：:company，调研正文：:chars 字）',
+            'web_research_skipped_rich_direct' => '官网正文已足够且已识别主体，跳过全网调研以加速采集',
             'web_research_failed' => 'AI 全网调研未成功，已尝试仅使用官网直连素材：:message',
             'failed' => '任务失败：:message',
+            'cancelled_by_user' => '采集任务已由用户终止',
             'import_done' => '采集结果已写入知识库、关键词库和标题库',
         ],
         'label' => [
@@ -3140,6 +3142,13 @@ return [
             'imported_at_prefix' => '已入库：',
             'success' => '采集结果已入库',
             'images_success' => '图片已入库到「:name」图片库（:count 张）',
+            'images_success_batch' => '已创建图片分批「:name」（:count 张）',
+            'images_undone' => '已撤回到采集列表（:count 张），可重新勾选入库',
+            'images_none_selected' => '请至少勾选 1 张图片',
+            'images_duplicate_name' => '已存在同名图片库「:name」，已自动改名为「:suggested」',
+            'images_name_conflict' => '已存在同名图片库「:name」',
+            'images_suggested_hint' => '请改用「:suggested」或其它名称',
+            'images_no_eligible' => '所选图片均不属于本任务，请刷新后重试',
         ],
         'error' => [
             'url_required' => '请先输入要采集的 URL',
@@ -3172,6 +3181,8 @@ return [
             'commit_failed' => '入库失败',
             'commit_images_missing' => '本次采集没有可入库的图片',
             'commit_images_failed' => '图片入库失败',
+            'cancel_not_running' => '只有进行中的任务可以终止',
+            'cancelled_by_user' => '采集任务已由用户终止',
         ],
     ],
     'url_import_history' => [

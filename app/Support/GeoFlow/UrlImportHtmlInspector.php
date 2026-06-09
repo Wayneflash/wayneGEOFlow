@@ -219,6 +219,325 @@ final class UrlImportHtmlInspector
         return UrlImportTextSanitizer::clean($text);
     }
 
+    /**
+     * 块级分块：按 h1/h2/h3 把页面切成结构化 chunks，每个 chunk 200-1200 字。
+     *
+     * 输出格式：[
+     *   { chunk_id, heading, heading_level, section_path, text, char_count, token_estimate }
+     * ]
+     *
+     * 关键点：
+     *  - 优先在 <main>/<article> 内切；找不到就退到 <body>
+     *  - 切完后做"过短/过长"合并与拆分，保证单块 200-1200 字
+     *  - 块编号 chunk_id = 'chunk_' + 顺序（与 DB 主键解耦，便于在 result_json 跨阶段引用）
+     *
+     * @return list<array{chunk_id:string,heading:string,heading_level:int,section_path:string,text:string,char_count:int,token_estimate:int}>
+     */
+    public static function extractChunks(string $html, int $minChars = 200, int $maxChars = 1200): array
+    {
+        if (trim($html) === '') {
+            return [];
+        }
+
+        $loaded = self::loadDom($html);
+        self::pruneNoiseNodes($loaded['xpath'], $loaded['dom']);
+
+        $root = $loaded['xpath']->query('//main | //article | //*[@role="main"]')->item(0)
+            ?? $loaded['xpath']->query('//body')->item(0);
+
+        if (! $root instanceof \DOMNode) {
+            return [];
+        }
+
+        $rawBlocks = self::sliceByHeadings($root);
+        if ($rawBlocks === []) {
+            $fallback = self::normalizeText((string) $root->textContent);
+            if ($fallback === '') {
+                return [];
+            }
+            $rawBlocks = [[
+                'heading' => '正文',
+                'heading_level' => 2,
+                'section_path' => '正文',
+                'text' => $fallback,
+            ]];
+        }
+
+        $balanced = self::balanceChunks($rawBlocks, $minChars, $maxChars);
+        $chunks = [];
+        foreach ($balanced as $i => $block) {
+            $text = (string) ($block['text'] ?? '');
+            $chunks[] = [
+                'chunk_id' => 'chunk_'.str_pad((string) ($i + 1), 3, '0', STR_PAD_LEFT),
+                'heading' => (string) ($block['heading'] ?? ''),
+                'heading_level' => (int) ($block['heading_level'] ?? 2),
+                'section_path' => (string) ($block['section_path'] ?? ''),
+                'text' => $text,
+                'char_count' => mb_strlen($text, 'UTF-8'),
+                'token_estimate' => (int) max(1, ceil(mb_strlen($text, 'UTF-8') / 2)),
+            ];
+        }
+
+        return $chunks;
+    }
+
+    /**
+     * 按 h1-h4 切块。每个块 = [heading, heading_level, section_path, text]。
+     *
+     * @return list<array{heading:string,heading_level:int,section_path:string,text:string}>
+     */
+    private static function sliceByHeadings(\DOMNode $root): array
+    {
+        $doc = $root->ownerDocument;
+        if (! $doc instanceof \DOMDocument) {
+            return [];
+        }
+        $xpath = new DOMXPath($doc);
+
+        // 收集所有 heading，按"在文档中的出现顺序"排序
+        $headings = $xpath->query('.//*[self::h1 or self::h2 or self::h3 or self::h4]', $root) ?: [];
+        $positions = [];
+        foreach ($headings ?: [] as $node) {
+            if (! $node instanceof \DOMElement) {
+                continue;
+            }
+            $text = self::normalizeText((string) $node->textContent);
+            if ($text === '') {
+                continue;
+            }
+            $level = (int) ltrim($node->nodeName, 'h');
+            $positions[] = ['node' => $node, 'text' => $text, 'level' => $level];
+        }
+
+        if ($positions === []) {
+            return [];
+        }
+
+        $blocks = [];
+        $total = count($positions);
+        foreach ($positions as $i => $pos) {
+            $head = $pos['node'];
+            // 在 root 范围内，从 heading 之后一直收集 <p>/<li>/<pre>/<blockquote>，
+            // 直到遇到下一个 heading（任意 h1-h4）或 root 结束
+            $buf = [];
+            self::collectUntilNextHeading($head->nextSibling, $root, $buf, $positions, $i);
+
+            $text = trim(implode("\n\n", $buf));
+            if ($text === '') {
+                continue;
+            }
+
+            $blocks[] = [
+                'heading' => $pos['text'],
+                'heading_level' => $pos['level'],
+                'section_path' => $pos['text'],
+                'text' => $text,
+            ];
+        }
+
+        return $blocks;
+    }
+
+    /**
+     * 从 $cursor 起遍历同层节点，直到遇到下一个 heading（任意 h1-h4）或到达 $root 之外。
+     * 收集路径上的 <p> / <li> / <pre> / <blockquote> 文本。
+     *
+     * @param  list<array{node:\DOMElement,text:string,level:int}>  $positions
+     */
+    private static function collectUntilNextHeading(?\DOMNode $cursor, \DOMNode $root, array &$buf, array $positions, int $currentIndex): void
+    {
+        $endNode = $positions[$currentIndex + 1]['node'] ?? null;
+        $seen = 0;
+        $maxNodes = 200; // 防御性：单块最多看 200 个 sibling
+        while ($cursor instanceof \DOMNode && $seen < $maxNodes) {
+            $seen++;
+            if ($cursor === $endNode) {
+                break;
+            }
+            // 检查当前节点是否就是下一个 heading
+            if ($cursor instanceof \DOMElement && in_array(strtolower($cursor->nodeName), ['h1', 'h2', 'h3', 'h4'], true)) {
+                break;
+            }
+            if ($cursor instanceof \DOMElement) {
+                $tag = strtolower($cursor->nodeName);
+                if (in_array($tag, ['p', 'li', 'pre', 'blockquote'], true)) {
+                    $txt = self::normalizeText((string) $cursor->textContent);
+                    if ($txt !== '' && mb_strlen($txt, 'UTF-8') >= 5) {
+                        $buf[] = $txt;
+                    }
+                } elseif (! in_array($tag, ['script', 'style', 'noscript'], true)) {
+                    // 容器节点：递归拿里面的 <p>/<li>
+                    $inner = $cursor->getElementsByTagName('p');
+                    foreach ($inner as $p) {
+                        $txt = self::normalizeText((string) $p->textContent);
+                        if ($txt !== '' && mb_strlen($txt, 'UTF-8') >= 5) {
+                            $buf[] = $txt;
+                        }
+                    }
+                }
+            }
+            // 跨过 root 边界就停
+            if (! self::isDescendantOf($cursor, $root)) {
+                break;
+            }
+            $cursor = $cursor->nextSibling;
+        }
+    }
+
+    private static function isDescendantOf(\DOMNode $node, \DOMNode $root): bool
+    {
+        for ($cur = $node; $cur instanceof \DOMNode; $cur = $cur->parentNode) {
+            if ($cur === $root) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * 平衡块大小：过短合并、相邻同主题；过长按段落拆分。
+     *
+     * @param  list<array{heading:string,heading_level:int,section_path:string,text:string}>  $blocks
+     * @return list<array{heading:string,heading_level:int,section_path:string,text:string}>
+     */
+    private static function balanceChunks(array $blocks, int $minChars, int $maxChars): array
+    {
+        $balanced = [];
+        $buffer = null;
+
+        foreach ($blocks as $block) {
+            $text = (string) $block['text'];
+            $len = mb_strlen($text, 'UTF-8');
+
+            if ($len > $maxChars) {
+                if ($buffer !== null) {
+                    $balanced[] = $buffer;
+                    $buffer = null;
+                }
+                foreach (self::splitLongBlock($block, $maxChars) as $piece) {
+                    $balanced[] = $piece;
+                }
+                continue;
+            }
+
+            if ($len < $minChars) {
+                if ($buffer === null) {
+                    $buffer = $block;
+                } else {
+                    $buffer['text'] = trim($buffer['text']."\n\n".$text);
+                    $buffer['section_path'] = $buffer['heading'].' / '.(string) $block['heading'];
+                }
+                continue;
+            }
+
+            if ($buffer !== null) {
+                $balanced[] = $buffer;
+            }
+            $balanced[] = $block;
+            $buffer = null;
+        }
+
+        if ($buffer !== null) {
+            if ($balanced === []) {
+                $balanced[] = $buffer;
+            } else {
+                $last = array_pop($balanced);
+                $last['text'] = trim($last['text']."\n\n".$buffer['text']);
+                $last['section_path'] = $last['heading'].' / '.$buffer['heading'];
+                $balanced[] = $last;
+            }
+        }
+
+        return $balanced;
+    }
+
+    /**
+     * 把过长块按段落拆成多个 ≤ maxChars 的子块。
+     *
+     * @param  array{heading:string,heading_level:int,section_path:string,text:string}  $block
+     * @return list<array{heading:string,heading_level:int,section_path:string,text:string}>
+     */
+    private static function splitLongBlock(array $block, int $maxChars): array
+    {
+        $paragraphs = preg_split('/\n{2,}/u', (string) $block['text']) ?: [];
+        $pieces = [];
+        $buf = '';
+        $part = 1;
+
+        foreach ($paragraphs as $p) {
+            $p = trim((string) $p);
+            if ($p === '') {
+                continue;
+            }
+            if (mb_strlen($p, 'UTF-8') > $maxChars) {
+                if ($buf !== '') {
+                    $pieces[] = self::withPartSuffix($block, $buf, $part++);
+                    $buf = '';
+                }
+                $chunks = self::splitBySentence($p, $maxChars);
+                foreach ($chunks as $c) {
+                    $pieces[] = self::withPartSuffix($block, $c, $part++);
+                }
+                continue;
+            }
+            $candidate = $buf === '' ? $p : $buf."\n\n".$p;
+            if (mb_strlen($candidate, 'UTF-8') > $maxChars && $buf !== '') {
+                $pieces[] = self::withPartSuffix($block, $buf, $part++);
+                $buf = $p;
+            } else {
+                $buf = $candidate;
+            }
+        }
+        if ($buf !== '') {
+            $pieces[] = self::withPartSuffix($block, $buf, $part++);
+        }
+
+        return $pieces;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private static function splitBySentence(string $text, int $maxChars): array
+    {
+        // 中文/英文句末标点：。！？!?.\n；按标点切分（不强依赖标点后是否有空白）
+        $sentences = preg_split('/(?<=[。！？!?\.;；\n])/u', $text) ?: [$text];
+        $sentences = array_values(array_filter(array_map('trim', $sentences), static fn ($s) => $s !== ''));
+        $out = [];
+        $buf = '';
+        foreach ($sentences as $s) {
+            $candidate = $buf === '' ? $s : $buf.$s;
+            if (mb_strlen($candidate, 'UTF-8') > $maxChars && $buf !== '') {
+                $out[] = $buf;
+                $buf = $s;
+            } else {
+                $buf = $candidate;
+            }
+        }
+        if ($buf !== '') {
+            $out[] = $buf;
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param  array{heading:string,heading_level:int,section_path:string,text:string}  $block
+     * @return array{heading:string,heading_level:int,section_path:string,text:string}
+     */
+    private static function withPartSuffix(array $block, string $text, int $part): array
+    {
+        $suffix = ' (Part '.$part.')';
+
+        return [
+            'heading' => $block['heading'].$suffix,
+            'heading_level' => $block['heading_level'],
+            'section_path' => $block['section_path'].$suffix,
+            'text' => $text,
+        ];
+    }
+
     public static function mergeSupplementalText(string $primary, string $supplemental): string
     {
         $primary = trim($primary);

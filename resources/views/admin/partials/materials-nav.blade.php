@@ -7,7 +7,7 @@
     ];
 @endphp
 
-<nav class="analytics-tabs materials-quick-nav flex flex-wrap gap-1 border-b border-slate-100 bg-slate-50/60 p-2" aria-label="{{ __('admin.materials.heading') }}">
+<nav class="materials-quick-nav analytics-tabs" aria-label="{{ __('admin.materials.heading') }}">
     @foreach ($tabs as $key => $tab)
         <a
             href="{{ $tab['href'] }}"

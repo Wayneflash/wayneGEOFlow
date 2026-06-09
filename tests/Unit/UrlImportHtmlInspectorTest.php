@@ -61,4 +61,47 @@ class UrlImportHtmlInspectorTest extends TestCase
         $this->assertStringContainsString('工业物联网网关', $text);
         $this->assertStringContainsString('数据采集与上云方案', $text);
     }
+
+    public function test_it_splits_html_into_block_level_chunks(): void
+    {
+        $sections = [];
+        for ($i = 1; $i <= 4; $i++) {
+            $sections[] = '<h2>章节 '.$i.'</h2>';
+            for ($p = 0; $p < 4; $p++) {
+                $sections[] = '<p>'.str_repeat('工业网关在智慧工厂与远程运维场景中提供稳定组网与数据采集能力, '.mt_rand(0, 9999), 6).'</p>';
+            }
+        }
+        $html = '<html><body><main>'.implode('', $sections).'</main></body></html>';
+
+        $chunks = UrlImportHtmlInspector::extractChunks($html, 200, 1200);
+
+        $this->assertNotEmpty($chunks);
+        $this->assertGreaterThanOrEqual(4, count($chunks));
+        $this->assertSame('chunk_001', $chunks[0]['chunk_id']);
+        foreach ($chunks as $chunk) {
+            $this->assertNotEmpty($chunk['heading']);
+            $this->assertGreaterThanOrEqual(150, $chunk['char_count']);
+            $this->assertLessThanOrEqual(1300, $chunk['char_count']);
+            $this->assertGreaterThan(0, $chunk['token_estimate']);
+        }
+    }
+
+    public function test_it_balances_short_chunks_by_merging_and_long_chunks_by_splitting(): void
+    {
+        $shortHtml = '<html><body><main>'.
+            '<h2>小节 A</h2><p>四信是一家提供工业物联网网关的厂商。</p>'.
+            '<h2>小节 B</h2><p>本节也较短但与 A 同主题，会被合并。</p>'.
+            '</main></body></html>';
+        $chunks = UrlImportHtmlInspector::extractChunks($shortHtml, 200, 1200);
+        $this->assertCount(1, $chunks);
+        $this->assertStringContainsString('小节 A / 小节 B', $chunks[0]['section_path']);
+
+        $longParagraph = '<p>'.str_repeat('远程运维。', 800).'</p>';
+        $longHtml = '<html><body><main><h2>超长段</h2>'.$longParagraph.'</main></body></html>';
+        $chunks = UrlImportHtmlInspector::extractChunks($longHtml, 200, 800);
+        $this->assertGreaterThan(1, count($chunks));
+        foreach ($chunks as $chunk) {
+            $this->assertLessThanOrEqual(820, $chunk['char_count']);
+        }
+    }
 }

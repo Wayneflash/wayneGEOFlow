@@ -598,15 +598,19 @@
     }
 
     .materials-quick-nav {
-        @apply relative z-20;
+        @apply relative z-20 w-full sm:w-auto;
     }
 
     .materials-quick-nav .admin-tab-button {
-        @apply relative z-20 flex-none cursor-pointer text-slate-700;
+        @apply relative z-20 h-10 flex-none cursor-pointer rounded-xl px-4 text-[13px] font-medium text-slate-500 transition hover:text-slate-800;
     }
 
     .materials-quick-nav .admin-tab-button.is-active {
-        @apply bg-blue-600 text-white shadow-sm shadow-blue-600/20 hover:bg-blue-700 hover:text-white;
+        @apply bg-white text-slate-900 shadow-[0_1px_2px_rgba(15,23,42,0.06),0_4px_12px_-4px_rgba(37,99,235,0.18)] ring-1 ring-blue-100/80 hover:bg-white hover:text-slate-900;
+    }
+
+    .materials-sub-toolbar {
+        @apply flex flex-wrap items-center justify-between gap-3;
     }
 
 

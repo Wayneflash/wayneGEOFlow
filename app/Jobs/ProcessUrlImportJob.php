@@ -15,14 +15,14 @@ class ProcessUrlImportJob implements ShouldQueue
 
     public int $tries = 1;
 
-    public int $timeout = 300;
+    public int $timeout = 900;
 
     public function __construct(private readonly int $jobId) {}
 
     public function handle(UrlImportProcessingService $service): void
     {
         $job = UrlImportJob::query()->whereKey($this->jobId)->first();
-        if (! $job || in_array((string) $job->status, ['completed', 'imported'], true)) {
+        if (! $job || in_array((string) $job->status, ['completed', 'imported', 'cancelled'], true)) {
             return;
         }
 
@@ -32,7 +32,7 @@ class ProcessUrlImportJob implements ShouldQueue
     public function failed(?Throwable $exception): void
     {
         $job = UrlImportJob::query()->whereKey($this->jobId)->first();
-        if (! $job || in_array((string) $job->status, ['completed', 'imported'], true)) {
+        if (! $job || in_array((string) $job->status, ['completed', 'imported', 'cancelled'], true)) {
             return;
         }
 

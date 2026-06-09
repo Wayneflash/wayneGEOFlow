@@ -44,9 +44,13 @@
     $imageImportStatus = (string) ($imageImport['status'] ?? '');
     $imageImportDownloaded = (int) ($imageImport['downloaded'] ?? $importedImageCount);
     $imageImportCommitted = (bool) ($imageImport['committed'] ?? false);
+    $imageBatches = array_values((array) ($imageImport['batches'] ?? []));
+    $imageCommittedCount = (int) ($imageImport['committed_count'] ?? array_sum(array_map(static fn (array $b): int => (int) ($b['image_count'] ?? 0), $imageBatches)));
     $imageLibraryBaseName = old('image_library_name', (string) ($imageImport['committed_library_name'] ?? $libraryBaseName));
     $scrapedText = trim((string) data_get($page, 'text', ''));
+    $scrapedText = $scrapedText !== '' ? \App\Support\GeoFlow\UrlImportTextSanitizer::cleanMarkdown($scrapedText) : '';
     $scrapedTextLen = mb_strlen($scrapedText, 'UTF-8');
+    $scrapedPreview = $scrapedText !== '' ? \Illuminate\Support\Str::limit($scrapedText, 600, '…') : '';
     $collectionMode = (string) (data_get($result, 'source.collection_mode', data_get($page, 'collection_mode', 'direct')));
     $directTextChars = (int) data_get($page, 'direct_text_chars', 0);
     $aiResearchTextChars = (int) data_get($page, 'ai_research_text_chars', 0);
@@ -59,6 +63,19 @@
     $aiConfidence = trim((string) data_get($page, 'ai_research_confidence', ''));
     $scrapedWeak = $scrapedTextLen < 80 && $detectedImageCount === 0 && ! in_array($collectionMode, ['hybrid', 'ai_research'], true);
     $scrapedSupplemented = in_array($collectionMode, ['hybrid', 'ai_research'], true) && $scrapedTextLen >= 80;
+    $webResearchNode = collect($nodeSteps ?? [])->firstWhere('key', 'web_research');
+    $webResearch = (array) data_get($result, 'web_research_output', (array) ($webResearchNode['output'] ?? []));
+    $webResearchAvailable = ! empty($webResearch['ok']);
+    $webResearchQueries = array_values((array) ($webResearch['search_queries'] ?? []));
+    $webResearchResults = array_values((array) ($webResearch['search_results'] ?? []));
+    $webResearchSourceMix = collect($webResearchResults)
+        ->groupBy(static fn (array $row): string => (string) ($row['source_type'] ?? '其它'))
+        ->map->count()
+        ->all();
+    $webResearchErrors = array_values(array_filter([
+        (string) ($webResearch['search_error'] ?? ''),
+        (string) ($webResearch['error'] ?? ''),
+    ]));
     $imagesImportStep = collect($nodeSteps)->firstWhere('key', 'images_import');
     $imagesImportStepStatus = (string) ($imagesImportStep['status'] ?? 'pending');
     $imagesImportFinished = in_array($imageImportStatus, ['imported', 'empty'], true)
@@ -80,6 +97,11 @@
     <div class="materials-sub-shell">
         @include('admin.partials.materials-nav', ['active' => 'url-import'])
 
+        <a href="{{ route('admin.url-import') }}" class="materials-back-btn w-fit" aria-label="{{ __('admin.common.back') }}">
+            <i data-lucide="arrow-left" class="h-4 w-4"></i>
+            返回网址采集
+        </a>
+
         <div
             class="space-y-5"
             data-url-import-page
@@ -88,20 +110,26 @@
             data-has-result="{{ $result !== [] ? '1' : '0' }}"
             data-autostart="{{ in_array($job->status, ['queued', 'failed'], true) ? '1' : '0' }}"
             data-run-url="{{ route('admin.url-import.run', ['jobId' => $job->id], false) }}"
+            data-cancel-url="{{ route('admin.url-import.cancel', ['jobId' => $job->id], false) }}"
             data-status-url="{{ route('admin.url-import.status', ['jobId' => $job->id], false) }}"
         >
             <div class="admin-panel">
                 <div class="admin-panel-header">
                     <div class="min-w-0">
-                        <div class="flex items-center gap-3">
-                            <a href="{{ route('admin.url-import') }}" class="admin-icon-btn shrink-0" aria-label="{{ __('admin.common.back') }}">
-                                <i data-lucide="arrow-left" class="h-4 w-4"></i>
-                            </a>
-                            <h1 class="text-xl font-semibold tracking-tight text-slate-950">采集进度</h1>
-                        </div>
-                        <p class="mt-2 break-all pl-[3.25rem] text-sm text-slate-500">{{ $sourceUrl }}</p>
+                        <h1 class="text-xl font-semibold tracking-tight text-slate-950">采集进度</h1>
+                        <p class="mt-2 break-all text-sm text-slate-500">{{ $sourceUrl }}</p>
                     </div>
                     <div class="flex flex-wrap items-center gap-2">
+                        @if (in_array($job->status, ['queued', 'running'], true))
+                            <button
+                                type="button"
+                                class="admin-btn-secondary inline-flex items-center gap-2 text-amber-800 hover:border-amber-300 hover:bg-amber-50"
+                                data-url-import-cancel
+                            >
+                                <i data-lucide="circle-stop" class="h-4 w-4"></i>
+                                结束任务
+                            </button>
+                        @endif
                         <button
                             type="button"
                             class="admin-btn-secondary inline-flex items-center gap-2"
@@ -159,24 +187,15 @@
                                 @endif
                             </p>
                             @if (in_array($job->status, ['queued', 'running'], true))
-                                <p class="mt-2 text-xs text-slate-400">按顺序执行各节点，完成后可离开页面；图片入库与正文并行。</p>
+                                <p class="mt-2 text-xs text-slate-400">按顺序执行各节点，完成后可离开页面；图片下载与正文并行。</p>
                             @endif
                         </div>
                     </div>
-                    <div class="flex items-center justify-end gap-3 text-right">
+                    <div class="flex items-center justify-end text-right">
                         <div>
                             <div class="url-import-progress-percent" data-progress-number>{{ $progress }}%</div>
                             <div class="mt-1 text-xs text-slate-500">当前进度</div>
                         </div>
-                        <button
-                            type="button"
-                            class="admin-icon-btn shrink-0"
-                            data-url-import-refresh
-                            aria-label="刷新进度"
-                            title="刷新进度"
-                        >
-                            <i data-lucide="refresh-cw" class="h-4 w-4"></i>
-                        </button>
                     </div>
                     <div class="lg:col-span-2">
                         <div class="url-import-progress-track">
@@ -186,11 +205,18 @@
                 </div>
 
                 <div class="url-import-pipeline" data-url-import-pipeline>
-                    <p class="col-span-full mb-3 px-1 text-xs text-slate-500">
-                        串行流水线：读取网页 → 提取正文 → AI 清洗 → AI 整理素材 → AI 主题词 → AI 标题（每步输入 = 上一步输出）。
-                        仅「图片入库」在正文完成后<strong class="font-medium text-violet-700">并行</strong>执行，不走 AI 链。
-                        点击节点可查看上下游数据。
-                    </p>
+                    <div class="col-span-full mb-2 flex items-center justify-between gap-2 px-1">
+                        <p class="text-xs text-slate-400">点击节点可查看调试数据</p>
+                        <button
+                            type="button"
+                            class="admin-icon-btn h-8 w-8 shrink-0 text-slate-400 transition hover:text-blue-600"
+                            data-flow-help-open
+                            aria-label="查看采集流程说明"
+                            title="采集流程说明"
+                        >
+                            <i data-lucide="circle-help" class="h-4 w-4"></i>
+                        </button>
+                    </div>
                     @foreach ($nodeSteps as $node)
                         @php
                             $nodeStatus = (string) $node['status'];
@@ -251,6 +277,17 @@
                 </section>
             @endif
 
+            @if ($job->status === 'cancelled')
+                <section class="admin-panel border border-amber-200/80 bg-amber-50/60 p-5 text-amber-950">
+                    <h3 class="text-base font-semibold">任务已终止</h3>
+                    <p class="mt-2 text-sm leading-6 text-amber-900">{{ $failureMessage ?: '你可以重新采集以使用最新配置。' }}</p>
+                    <button type="button" class="admin-btn-secondary mt-4" data-url-import-retry>
+                        <i data-lucide="refresh-cw" class="h-4 w-4"></i>
+                        重新采集
+                    </button>
+                </section>
+            @endif
+
             @if ($job->status === 'failed')
                 <section class="admin-panel p-5 text-red-800">
                     <h3 class="text-base font-semibold">采集失败</h3>
@@ -281,15 +318,14 @@
                                             <li class="flex flex-wrap items-center gap-2">
                                                 <span class="url-import-flow-tag url-import-flow-tag--violet">图片</span>
                                                 @if ($imageImportStatus === 'imported' || $importedImageCount > 0)
-                                                    已入库 <b class="text-slate-800" data-flow-image-count>{{ $imageImportDownloaded ?: $importedImageCount }}</b> 张 →
+                                                    已下载 <b class="text-slate-800" data-flow-image-count>{{ $imageImportDownloaded ?: $importedImageCount }}</b> 张，可勾选入库
                                                 @elseif ($hasDetectedImages && ! $imagesImportFinished)
-                                                    后台下载中（识别 {{ $detectedImageCount }} 张，已入库 {{ $importedImageCount }} 张）→
+                                                    后台下载中（识别 {{ $detectedImageCount }} 张，已下载 {{ $importedImageCount }} 张）
                                                 @elseif ($hasDetectedImages)
-                                                    识别 {{ $detectedImageCount }} 张，过滤后暂无入库 →
+                                                    识别 {{ $detectedImageCount }} 张，过滤后暂无可选图
                                                 @else
-                                                    本次无图片 →
+                                                    本次无图片
                                                 @endif
-                                                <a href="{{ $stagingLibraryUrl }}" class="font-medium text-blue-600 hover:text-blue-800">网址采集</a>
                                             </li>
                                         </ul>
                                     </div>
@@ -299,7 +335,7 @@
                         <div class="flex flex-wrap items-start justify-between gap-3">
                             <div class="min-w-0">
                                 <h3 class="text-lg font-semibold text-slate-950">采集预览</h3>
-                                <p class="mt-1 text-sm text-slate-500">正文 / 关键词 / 标题在此确认；图片在「采集图片」页签，自动入库到图片库「网址采集」。</p>
+                                <p class="mt-1 text-sm text-slate-500">正文 / 关键词 / 标题在此确认；图片在「采集图片」页签下载到本地后，由你勾选入库。</p>
                             </div>
                             @if ($importStatus === 'imported')
                                 <span class="inline-flex shrink-0 rounded-full bg-green-50 px-3 py-1 text-sm font-medium text-green-700">已入库</span>
@@ -325,7 +361,7 @@
                             @if ($hasDetectedImages)
                                 <p class="text-xs text-slate-500">
                                     页面识别到 <b class="text-slate-700">{{ $detectedImageCount > 0 ? $detectedImageCount : count($imagePreview) }}</b> 张图，
-                                    已入库 <b class="text-slate-700" data-imported-count-inline>{{ $importedImageCount }}</b> 张
+                                    已下载 <b class="text-slate-700" data-imported-count-inline>{{ $importedImageCount }}</b> 张
                                     @if ($importedImageCount === 0)
                                         <span class="text-amber-700">（后台下载中，可点「采集图片」查看）</span>
                                     @endif
@@ -342,7 +378,7 @@
                                     · 识别主体：<b class="font-semibold">{{ $identifiedCompany }}</b>
                                 @endif
                                 （官网 {{ $directTextChars }} 字 + AI 调研 {{ $aiResearchTextChars }} 字，合并 {{ $scrapedTextLen }} 字）。
-                                流程：域名识别公司 → 全网反推 → 与官网片段合并。入库前请核对事实边界。
+                                流程：先读官网识别主体 → 全网反推补充 → 合并清洗。入库前请核对事实边界。
                             </div>
                         @elseif ($scrapedWeak)
                             <div class="rounded-xl border border-amber-200 bg-amber-50/90 px-4 py-3 text-sm leading-6 text-amber-950">
@@ -368,20 +404,79 @@
                             </div>
                         </div>
 
-                        <div class="rounded-lg border border-slate-200 p-4">
+                        <div class="rounded-lg border border-slate-200 p-4" data-url-import-original-wrap>
                             <div class="flex flex-wrap items-center justify-between gap-2">
-                                <h4 class="text-base font-semibold text-slate-950">页面抓取原文</h4>
-                                <span class="text-xs text-slate-500">{{ $scrapedTextLen }} 字</span>
+                                <h4 class="text-sm font-semibold text-slate-900">
+                                    <i data-lucide="text-cursor-input" class="mr-1 inline h-3.5 w-3.5 align-text-bottom text-slate-500"></i>
+                                    页面抓取原文
+                                    <span class="ml-1 font-normal text-xs text-slate-500" data-url-import-original-stat>（{{ $scrapedTextLen }} 字 · 清洗后）</span>
+                                </h4>
+                                <div class="flex items-center gap-1.5">
+                                    <button
+                                        type="button"
+                                        class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+                                        data-url-import-original-copy
+                                        aria-label="复制原文"
+                                        title="复制原文"
+                                    >
+                                        <i data-lucide="copy" class="h-3 w-3"></i>
+                                        <span>复制</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+                                        data-toggle-original-text
+                                        aria-expanded="false"
+                                    >
+                                        <i data-lucide="chevron-down" class="h-3 w-3 transition-transform" data-original-text-icon></i>
+                                        <span data-original-text-label>展开</span>
+                                    </button>
+                                </div>
                             </div>
-                            <pre class="mt-3 max-h-[220px] overflow-auto whitespace-pre-wrap rounded-lg bg-slate-50 p-4 text-sm leading-6 text-slate-700">{{ $scrapedText !== '' ? $scrapedText : '（未抓到可读正文）' }}</pre>
+                            @if ($scrapedText === '')
+                                <p class="mt-2 text-xs text-slate-500">（未抓到可读正文）</p>
+                            @else
+                                <div class="mt-2 max-h-24 overflow-hidden rounded-lg border border-slate-100 bg-slate-50/60 p-2.5 text-[12px] leading-5 text-slate-700" data-original-text-preview>{{ $scrapedPreview }}</div>
+                                <pre class="mt-2 hidden max-h-48 overflow-auto whitespace-pre-wrap rounded-lg border border-slate-100 bg-slate-50/60 p-2.5 font-mono text-[11.5px] leading-5 text-slate-700" data-original-text-full>{{ $scrapedText }}</pre>
+                            @endif
                         </div>
 
-                        <div class="rounded-lg border border-slate-200 p-4">
+                        <div class="rounded-lg border border-slate-200 p-4" data-url-import-knowledge-wrap>
                             <div class="flex flex-wrap items-center justify-between gap-2">
-                                <h4 class="text-base font-semibold text-slate-950">AI 整理素材</h4>
-                                <span class="text-xs text-slate-500">供入库预览</span>
+                                <h4 class="text-sm font-semibold text-slate-900">
+                                    <i data-lucide="book-marked" class="mr-1 inline h-3.5 w-3.5 align-text-bottom text-slate-500"></i>
+                                    AI 整理素材
+                                    <span class="ml-1 font-normal text-xs text-slate-500" data-url-import-knowledge-stat>（供入库预览）</span>
+                                </h4>
+                                <div class="flex items-center gap-1.5">
+                                    <button
+                                        type="button"
+                                        class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+                                        data-url-import-knowledge-copy
+                                        aria-label="复制整理结果"
+                                        title="复制整理结果"
+                                    >
+                                        <i data-lucide="copy" class="h-3 w-3"></i>
+                                        <span>复制</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+                                        data-toggle-ai-knowledge
+                                        aria-expanded="false"
+                                    >
+                                        <i data-lucide="chevron-down" class="h-3 w-3 transition-transform" data-ai-knowledge-icon></i>
+                                        <span data-ai-knowledge-label>展开</span>
+                                    </button>
+                                </div>
                             </div>
-                            <pre class="mt-3 max-h-[360px] overflow-auto whitespace-pre-wrap rounded-lg bg-slate-50 p-4 text-sm leading-6 text-slate-700">{{ data_get($analysis, 'knowledge_markdown', '暂无 AI 整理结果') }}</pre>
+                            @php $aiKnowledge = (string) data_get($analysis, 'knowledge_markdown', ''); @endphp
+                            @if ($aiKnowledge === '')
+                                <p class="mt-2 text-xs text-slate-500">暂无 AI 整理结果</p>
+                            @else
+                                <div class="mt-2 max-h-24 overflow-hidden whitespace-pre-wrap rounded-lg border border-slate-100 bg-slate-50/60 p-2.5 text-[12px] leading-5 text-slate-700" data-ai-knowledge-preview>{{ \Illuminate\Support\Str::limit($aiKnowledge, 500, '…') }}</div>
+                                <pre class="mt-2 hidden max-h-64 overflow-auto whitespace-pre-wrap rounded-lg border border-slate-100 bg-slate-50/60 p-2.5 text-[12px] leading-6 text-slate-700" data-ai-knowledge-full>{{ $aiKnowledge }}</pre>
+                            @endif
                         </div>
 
                         <div class="grid gap-4 lg:grid-cols-2">
@@ -408,73 +503,149 @@
                         </div>
                     </div>
 
-                    <div class="hidden px-5 py-5" data-url-import-panel="images">
-                        <div class="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-3 text-xs text-slate-600">
-                            <i data-lucide="info" class="h-3.5 w-3.5 shrink-0 text-blue-600"></i>
+                    <div class="hidden px-5 py-5" data-url-import-panel="images" data-images-context>
+                        <div class="mb-4 flex items-start gap-3 rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-3 text-xs text-slate-600">
+                            <i data-lucide="info" class="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-600"></i>
                             <span class="min-w-0 flex-1 leading-5">
-                                有价值的图片会自动下载到 <b class="text-slate-900">素材 → 图片库 → 网址采集</b>（普通图片库，与手动上传用法相同），与本次正文入库相互独立。
+                                采集完成后会自动把页面图片<strong class="text-slate-800">下载到本地</strong>并显示在下方（最多 {{ (int) config('geoflow.url_import_max_images', 16) }} 张，4 列排列）；勾选需要的图，填写图片库名称，点击「图片入库」即可。
                             </span>
-                            <a href="{{ $stagingLibraryUrl }}" class="inline-flex shrink-0 items-center gap-1 font-medium text-blue-600 transition hover:text-blue-800">
-                                打开网址采集图片库
-                                <i data-lucide="arrow-right" class="h-3.5 w-3.5"></i>
-                            </a>
                         </div>
 
                         <div data-imported-images-wrap class="{{ empty($importedImages) ? 'hidden' : '' }}">
-                            <h4 class="text-sm font-semibold text-slate-900">已入库图片 <span class="font-normal text-slate-500" data-imported-count-label>（{{ $importedImageCount }} 张）</span></h4>
-                            <div class="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4" data-imported-images-grid>
-                                @foreach ($importedImages as $img)
-                                    <figure class="group overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition hover:border-blue-200 hover:shadow-md">
-                                        <div class="aspect-video w-full overflow-hidden bg-slate-100">
-                                            <img src="{{ $img['preview_url'] ?? \App\Support\GeoFlow\ImageUrlNormalizer::toPublicUrl((string) ($img['file_path'] ?? '')) }}" alt="{{ $img['source_alt'] ?? '' }}" loading="lazy" class="h-full w-full object-cover transition duration-300 group-hover:scale-105">
-                                        </div>
-                                        <figcaption class="space-y-1 px-3 py-2.5">
-                                            <div class="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
-                                                <span class="rounded-md bg-slate-100 px-1.5 py-0.5 font-medium text-slate-600">{{ $img['source_area'] ?? 'main' }}</span>
-                                                @if ($img['width'] > 0 && $img['height'] > 0)
-                                                    <span>{{ $img['width'] }}×{{ $img['height'] }}</span>
-                                                @endif
-                                                @if ($img['file_size'] > 0)
-                                                    <span>{{ number_format($img['file_size'] / 1024) }} KB</span>
-                                                @endif
-                                            </div>
-                                            @if (! empty($img['source_alt']))
-                                                <p class="line-clamp-2 text-[11px] leading-4 text-slate-600">{{ $img['source_alt'] }}</p>
-                                            @endif
-                                        </figcaption>
-                                    </figure>
-                                @endforeach
+                            <div class="flex flex-wrap items-center justify-between gap-2">
+                                <h4 class="text-sm font-semibold text-slate-900">
+                                    采集到的图片 <span class="font-normal text-slate-500" data-imported-count-label>（{{ $importedImageCount }} 张）</span>
+                                </h4>
+                                @if ($importedImageCount > 0 && ! $imageImportCommitted)
+                                    <div class="flex flex-wrap items-center gap-2 text-[11px] text-slate-500" data-image-toolbar>
+                                        <label class="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 py-1 transition hover:border-blue-300 hover:text-blue-700">
+                                            <input type="checkbox" data-image-select-all class="h-3.5 w-3.5 rounded border-slate-300" checked>
+                                            <span>全选</span>
+                                        </label>
+                                        <button type="button" class="rounded-md border border-slate-200 bg-white px-2 py-1 transition hover:border-blue-300 hover:text-blue-700" data-image-select-high-value>仅高价值</button>
+                                        <button type="button" class="rounded-md border border-slate-200 bg-white px-2 py-1 transition hover:border-blue-300 hover:text-blue-700" data-image-select-none>清空选择</button>
+                                        <span class="text-[11px] text-slate-400" data-image-selected-count>已选 0 / {{ $importedImageCount }} 张</span>
+                                    </div>
+                                @endif
                             </div>
-                        </div>
 
-                        @if (! empty($imagePreview))
-                            <div class="mt-6 {{ empty($importedImages) ? '' : 'border-t border-slate-100 pt-6' }}">
-                                <h4 class="text-sm font-semibold text-slate-900">页面识别到的图片</h4>
-                                <p class="mt-1 text-xs text-slate-500">以下为抓取时检测到的原图链接；过滤通过后会自动出现在上方「已入库」区域。</p>
-                                <div class="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-                                    @foreach ($imagePreview as $preview)
-                                        <figure class="overflow-hidden rounded-xl border border-dashed border-slate-200 bg-slate-50/50">
+                            <form
+                                method="POST"
+                                action="{{ route('admin.url-import.commit-images', ['jobId' => $job->id]) }}"
+                                class="mt-3"
+                                data-image-commit-form
+                                data-auto-rename="1"
+                            >
+                                @csrf
+                                <div class="grid grid-cols-4 gap-3" data-imported-images-grid>
+                                    @foreach ($importedImages as $img)
+                                        @php
+                                            $value = (int) $img['id'];
+                                            $valueScore = (int) ($img['value_score'] ?? 0);
+                                            $valueStatus = (string) ($img['value_status'] ?? '');
+                                            $isHigh = $valueStatus === 'high' || $valueScore >= 70;
+                                        @endphp
+                                        <label class="group relative cursor-pointer overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition hover:border-blue-300 hover:shadow-md" data-image-card data-image-id="{{ $value }}" data-image-value="{{ $valueScore }}" data-image-value-status="{{ $valueStatus }}">
+                                            <input type="checkbox" name="image_ids[]" value="{{ $value }}" class="peer absolute left-2 top-2 z-10 h-4 w-4 rounded border-slate-300 bg-white shadow" data-image-checkbox checked>
+                                            <span class="pointer-events-none absolute left-2 top-2 z-0 h-4 w-4 rounded border border-slate-300 bg-white transition peer-checked:hidden"></span>
+                                            <span class="pointer-events-none absolute left-2 top-2 z-0 hidden h-4 w-4 items-center justify-center rounded bg-blue-600 text-white peer-checked:flex">
+                                                <i data-lucide="check" class="h-3 w-3"></i>
+                                            </span>
                                             <div class="aspect-video w-full overflow-hidden bg-slate-100">
-                                                <img src="{{ $preview['url'] ?? '' }}" alt="{{ $preview['alt'] ?? '' }}" loading="lazy" referrerpolicy="no-referrer" class="h-full w-full object-cover" onerror="this.closest('figure')?.classList.add('opacity-50')">
+                                                <img src="{{ $img['preview_url'] ?? \App\Support\GeoFlow\ImageUrlNormalizer::toPublicUrl((string) ($img['file_path'] ?? '')) }}" alt="{{ $img['source_alt'] ?? '' }}" loading="lazy" class="h-full w-full object-cover transition duration-300 group-hover:scale-105">
                                             </div>
-                                            <figcaption class="space-y-1 px-3 py-2.5 text-[11px] text-slate-500">
-                                                <span class="rounded-md bg-white px-1.5 py-0.5 font-medium text-slate-600">{{ $preview['area'] ?? 'detected' }}</span>
-                                                @if (! empty($preview['alt']))
-                                                    <p class="line-clamp-2 leading-4 text-slate-600">{{ $preview['alt'] }}</p>
+                                            <figcaption class="space-y-1 px-3 py-2.5">
+                                                <div class="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
+                                                    <span class="rounded-md bg-slate-100 px-1.5 py-0.5 font-medium text-slate-600">{{ $img['source_area'] ?? 'main' }}</span>
+                                                    @if ($img['width'] > 0 && $img['height'] > 0)
+                                                        <span>{{ $img['width'] }}×{{ $img['height'] }}</span>
+                                                    @endif
+                                                    @if ($img['file_size'] > 0)
+                                                        <span>{{ number_format($img['file_size'] / 1024) }} KB</span>
+                                                    @endif
+                                                    @if ($isHigh)
+                                                        <span class="rounded-md bg-emerald-50 px-1.5 py-0.5 font-medium text-emerald-700">高价值</span>
+                                                    @endif
+                                                </div>
+                                                @if (! empty($img['source_alt']))
+                                                    <p class="line-clamp-2 text-[11px] leading-4 text-slate-600">{{ $img['source_alt'] }}</p>
                                                 @endif
                                             </figcaption>
-                                        </figure>
+                                        </label>
                                     @endforeach
                                 </div>
+
+                                <div class="mt-4 grid gap-4 rounded-xl border border-violet-200 bg-violet-50/40 p-4 lg:grid-cols-[1fr_auto] lg:items-end">
+                                    <div>
+                                        <label for="image_library_name" class="admin-label">图片库名称 <span class="text-slate-400">（可分批命名；同任务同租户下重名会自动改名为 -2 / -3 …）</span></label>
+                                        <input
+                                            id="image_library_name"
+                                            name="image_library_name"
+                                            type="text"
+                                            required
+                                            maxlength="120"
+                                            value="{{ $imageLibraryBaseName }}"
+                                            class="admin-input mt-1.5"
+                                            data-image-library-name
+                                        >
+                                        <p class="mt-1.5 text-[11px] text-slate-500">
+                                            系统会按勾选图片新建一个独立图片库（库与库不互通），可重复多次点击提交来分批入库。
+                                        </p>
+                                        @error('image_library_name')
+                                            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                        @enderror
+                                    </div>
+                                    <button type="submit" class="admin-btn-primary shrink-0 self-start lg:self-auto" data-image-commit-btn>
+                                        <i data-lucide="image-plus" class="h-4 w-4"></i>
+                                        图片入库
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+
+                        @if (! empty($imageBatches))
+                            <div class="mt-6 {{ empty($importedImages) ? '' : 'border-t border-slate-100 pt-6' }}">
+                                <h4 class="text-sm font-semibold text-slate-900">本次已分批入库 <span class="font-normal text-slate-500">（{{ count($imageBatches) }} 批）</span></h4>
+                                <p class="mt-1 text-[11px] text-slate-500">撤回后图片会回到本页「采集到的图片」列表，可再次勾选入库。</p>
+                                <ul class="mt-3 space-y-2" data-image-batches>
+                                    @foreach ($imageBatches as $batch)
+                                        <li class="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
+                                            <div class="min-w-0 flex-1">
+                                                <div class="flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-900">
+                                                    <i data-lucide="library" class="h-4 w-4 text-violet-600"></i>
+                                                    <span>{{ $batch['library_name'] }}</span>
+                                                    @if (! empty($batch['renamed_from']))
+                                                        <span class="rounded-md bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-700">原名：{{ $batch['renamed_from'] }}（已自动改名）</span>
+                                                    @endif
+                                                </div>
+                                                <div class="mt-1 text-[11px] text-slate-500">
+                                                    {{ $batch['image_count'] }} 张 · {{ \Illuminate\Support\Carbon::parse($batch['committed_at'])->format('Y-m-d H:i') }}
+                                                </div>
+                                            </div>
+                                            <a href="{{ route('admin.image-libraries.detail', ['libraryId' => (int) $batch['library_id']]) }}" class="inline-flex items-center gap-1 text-[12px] font-medium text-blue-600 transition hover:text-blue-800">
+                                                查看图片库
+                                                <i data-lucide="arrow-right" class="h-3.5 w-3.5"></i>
+                                            </a>
+                                            <form method="POST" action="{{ route('admin.url-import.undo-image-batch', ['jobId' => $job->id]) }}" data-image-undo-form>
+                                                @csrf
+                                                <input type="hidden" name="batch_id" value="{{ $batch['batch_id'] }}">
+                                                <button type="submit" class="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1 text-[12px] font-medium text-rose-700 transition hover:border-rose-300 hover:bg-rose-100">
+                                                    <i data-lucide="rotate-ccw" class="h-3.5 w-3.5"></i>
+                                                    撤回
+                                                </button>
+                                            </form>
+                                        </li>
+                                    @endforeach
+                                </ul>
                             </div>
                         @endif
 
-                        <div class="{{ (! empty($importedImages) || ! empty($imagePreview)) ? 'hidden' : '' }} rounded-2xl border border-dashed border-slate-200 bg-slate-50/40 px-6 py-12 text-center" data-images-empty>
+                        <div class="{{ ! empty($importedImages) ? 'hidden' : '' }} rounded-2xl border border-dashed border-slate-200 bg-slate-50/40 px-6 py-12 text-center" data-images-empty>
                             <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
                                 <i data-lucide="image" class="h-5 w-5"></i>
                             </div>
-                            <div class="mt-3 text-sm font-semibold text-slate-700">本次采集未检测到可入库图片</div>
-                            <p class="mt-1 text-xs text-slate-500">可能页面以背景图 / JS 懒加载呈现，或图片尺寸、区域未通过过滤规则。</p>
+                            <div class="mt-3 text-sm font-semibold text-slate-700">暂无已下载图片</div>
+                            <p class="mt-1 text-xs text-slate-500">页面识别到 {{ $detectedImageCount }} 张图，后台下载完成后会自动显示在此；若长时间为空，可能是外链防盗链或尺寸过小。</p>
                         </div>
 
                         <p class="mt-4 hidden text-center text-xs text-slate-500" data-images-polling>
@@ -483,75 +654,42 @@
                         </p>
                     </div>
 
-                    @if ($job->status === 'completed' && ($importStatus !== 'imported' || ($importedImageCount > 0 && ! $imageImportCommitted)))
+                    @if ($job->status === 'completed' && $importStatus !== 'imported')
                         <div class="url-import-preview-foot space-y-4 border-t border-slate-100 bg-slate-50/50 px-5 py-4">
-                            @if ($importStatus !== 'imported')
-                                <form method="POST" action="{{ route('admin.url-import.commit', ['jobId' => $job->id]) }}" class="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-4 lg:flex-row lg:items-end lg:justify-between">
-                                    @csrf
-                                    <div class="min-w-0 flex-1 max-w-xl">
-                                        <div class="text-sm font-semibold text-slate-900">正文素材入库</div>
-                                        <label for="library_name" class="admin-label mt-3">{{ __('admin.url_import.field.project_name') }}</label>
-                                        <input
-                                            id="library_name"
-                                            name="library_name"
-                                            type="text"
-                                            required
-                                            maxlength="120"
-                                            value="{{ $libraryBaseName }}"
-                                            class="admin-input mt-1.5"
-                                        >
-                                        <p class="mt-1.5 text-xs text-slate-500">
-                                            将创建：<span class="font-medium text-slate-700">{{ $libraryBaseName }} 知识库</span>、
-                                            <span class="font-medium text-slate-700">{{ $libraryBaseName }} 关键词库</span>、
-                                            <span class="font-medium text-slate-700">{{ $libraryBaseName }} 标题库</span>
-                                        </p>
-                                        @error('library_name')
-                                            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                        @enderror
-                                    </div>
-                                    <button type="submit" class="admin-btn-teal shrink-0 self-start lg:self-auto">
-                                        <i data-lucide="database" class="h-4 w-4"></i>
-                                        确认正文入库
-                                    </button>
-                                </form>
-                            @else
-                                <div class="rounded-xl border border-emerald-200 bg-emerald-50/70 px-4 py-3 text-sm text-emerald-800">
-                                    正文素材已入库。
+                            <form method="POST" action="{{ route('admin.url-import.commit', ['jobId' => $job->id]) }}" class="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-4 lg:flex-row lg:items-end lg:justify-between">
+                                @csrf
+                                <div class="min-w-0 flex-1 max-w-xl">
+                                    <div class="text-sm font-semibold text-slate-900">正文素材入库</div>
+                                    <label for="library_name" class="admin-label mt-3">{{ __('admin.url_import.field.project_name') }}</label>
+                                    <input
+                                        id="library_name"
+                                        name="library_name"
+                                        type="text"
+                                        required
+                                        maxlength="120"
+                                        value="{{ $libraryBaseName }}"
+                                        class="admin-input mt-1.5"
+                                    >
+                                    <p class="mt-1.5 text-xs text-slate-500">
+                                        将创建：<span class="font-medium text-slate-700">{{ $libraryBaseName }} 知识库</span>、
+                                        <span class="font-medium text-slate-700">{{ $libraryBaseName }} 关键词库</span>、
+                                        <span class="font-medium text-slate-700">{{ $libraryBaseName }} 标题库</span>
+                                    </p>
+                                    @error('library_name')
+                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                    @enderror
                                 </div>
-                            @endif
-
-                            @if ($importedImageCount > 0)
-                                @if (! $imageImportCommitted)
-                                    <form method="POST" action="{{ route('admin.url-import.commit-images', ['jobId' => $job->id]) }}" class="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-4 lg:flex-row lg:items-end lg:justify-between">
-                                        @csrf
-                                        <div class="min-w-0 flex-1 max-w-xl">
-                                            <div class="text-sm font-semibold text-slate-900">图片素材入库</div>
-                                            <p class="mt-1 text-xs text-slate-500">已下载 {{ $importedImageCount }} 张图片，确认后将移入你命名的图片库（与正文入库相互独立）。</p>
-                                            <label for="image_library_name" class="admin-label mt-3">图片库名称</label>
-                                            <input
-                                                id="image_library_name"
-                                                name="image_library_name"
-                                                type="text"
-                                                required
-                                                maxlength="120"
-                                                value="{{ $imageLibraryBaseName }}"
-                                                class="admin-input mt-1.5"
-                                            >
-                                            @error('image_library_name')
-                                                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                            @enderror
-                                        </div>
-                                        <button type="submit" class="admin-btn-primary shrink-0 self-start lg:self-auto">
-                                            <i data-lucide="image" class="h-4 w-4"></i>
-                                            确认图片入库
-                                        </button>
-                                    </form>
-                                @else
-                                    <div class="rounded-xl border border-violet-200 bg-violet-50/70 px-4 py-3 text-sm text-violet-800">
-                                        图片已入库到「{{ $imageImport['committed_library_name'] ?? $imageLibraryBaseName }}」图片库（{{ $importedImageCount }} 张）。
-                                    </div>
-                                @endif
-                            @endif
+                                <button type="submit" class="admin-btn-teal shrink-0 self-start lg:self-auto">
+                                    <i data-lucide="database" class="h-4 w-4"></i>
+                                    确认正文入库
+                                </button>
+                            </form>
+                        </div>
+                    @elseif ($job->status === 'completed' && $importStatus === 'imported')
+                        <div class="url-import-preview-foot border-t border-slate-100 bg-slate-50/50 px-5 py-4">
+                            <div class="rounded-xl border border-emerald-200 bg-emerald-50/70 px-4 py-3 text-sm text-emerald-800">
+                                正文素材已入库。如需分批入库图片，请到上方「采集图片」标签操作。
+                            </div>
                         </div>
                     @endif
                 </section>
@@ -601,7 +739,7 @@
             const initialFailureMessage = @json($failureMessage);
             let polling = null;
             let startInFlight = false;
-            let hasFinished = ['completed', 'failed'].includes(initialStatus);
+            let hasFinished = ['completed', 'failed', 'cancelled'].includes(initialStatus);
             let reloadRequested = false;
             let lastRenderKey = '';
 
@@ -638,7 +776,12 @@
                 runtimeNotice.querySelector('[data-refresh-result]')?.addEventListener('click', () => window.location.reload());
             };
 
-            const iconForStatus = (status) => status === 'completed' ? 'check' : (status === 'failed' ? 'triangle-alert' : 'loader-circle');
+            const iconForStatus = (status) => {
+                if (status === 'completed') return 'check';
+                if (status === 'failed') return 'triangle-alert';
+                if (status === 'cancelled') return 'circle-stop';
+                return 'loader-circle';
+            };
 
             const failureText = (payload) => {
                 if (payload?.error_message) {
@@ -752,8 +895,8 @@
             };
 
             const shouldKeepPolling = (payload, effectiveStatus) => {
-                if (!['completed', 'failed'].includes(effectiveStatus)) return true;
-                if (effectiveStatus === 'failed') return false;
+                if (!['completed', 'failed', 'cancelled'].includes(effectiveStatus)) return true;
+                if (['failed', 'cancelled'].includes(effectiveStatus)) return false;
                 return imagesStillPending(payload);
             };
 
@@ -796,16 +939,18 @@
                 if (statusTitle) {
                     statusTitle.textContent = effectiveStatus === 'completed'
                         ? '采集完成'
-                        : (effectiveStatus === 'failed' ? '采集失败' : '正在采集');
+                        : (effectiveStatus === 'failed'
+                            ? '采集失败'
+                            : (effectiveStatus === 'cancelled' ? '任务已终止' : '正在采集'));
                 }
                 if (statusText) {
                     if (effectiveStatus === 'completed') {
                         const imported = Number(payload.imported_image_count || 0);
                         const detected = Number(payload.detected_image_count || 0);
                         statusText.textContent = imagesStillPending(payload)
-                            ? `正文已就绪；图片入库进行中（${imported}/${detected || '…'}）`
+                            ? `正文已就绪；图片下载进行中（${imported}/${detected || '…'}）`
                             : '正文与图片均已处理，可预览并确认入库。';
-                    } else if (effectiveStatus === 'failed') {
+                    } else if (effectiveStatus === 'failed' || effectiveStatus === 'cancelled') {
                         statusText.textContent = detailMessage;
                     } else if (isSlowRunning) {
                         statusText.textContent = '后台仍在处理，请稍候或查看下方节点进度';
@@ -817,7 +962,7 @@
                 runtimeError?.classList.add('hidden');
                 if (statusIcon) {
                     statusIcon.setAttribute('data-lucide', iconForStatus(effectiveStatus));
-                    statusIcon.classList.toggle('animate-spin', !['completed', 'failed'].includes(effectiveStatus));
+                    statusIcon.classList.toggle('animate-spin', !['completed', 'failed', 'cancelled'].includes(effectiveStatus));
                 }
 
                 applyNodeSteps(payload, effectiveStatus);
@@ -826,7 +971,7 @@
                 const statusRing = root.querySelector('[data-status-ring]');
                 if (statusRing) {
                     statusRing.classList.toggle('is-done', effectiveStatus === 'completed');
-                    statusRing.classList.toggle('is-failed', effectiveStatus === 'failed');
+                    statusRing.classList.toggle('is-failed', ['failed', 'cancelled'].includes(effectiveStatus));
                 }
 
                 if (processingPanel && processingTitle && processingMessage) {
@@ -862,7 +1007,7 @@
                     stopPolling();
                 }
 
-                if (['completed', 'failed'].includes(effectiveStatus) && !hasFinished) {
+                if (['completed', 'failed', 'cancelled'].includes(effectiveStatus) && !hasFinished) {
                     hasFinished = true;
                     if (effectiveStatus === 'failed') {
                         showError(detailMessage || '采集失败，请检查网址后重试。');
@@ -989,6 +1134,43 @@
                 button.addEventListener('click', () => retryJob().catch(() => {}));
             });
 
+            const cancelJob = async () => {
+                const cancelUrl = root.dataset.cancelUrl || '';
+                if (!cancelUrl || !csrf) {
+                    showError('页面已过期，请刷新后重试。');
+                    return;
+                }
+                if (!window.confirm('确定要结束当前采集任务吗？结束后可点击「重新采集」。')) {
+                    return;
+                }
+                try {
+                    const response = await fetch(cancelUrl, {
+                        method: 'POST',
+                        headers: {
+                            'Accept': 'application/json',
+                            'X-CSRF-TOKEN': csrf,
+                            'X-Requested-With': 'XMLHttpRequest',
+                        },
+                    });
+                    stopPolling();
+                    hasFinished = true;
+                    if (response.ok) {
+                        window.location.reload();
+                        return;
+                    }
+                    const payload = (response.headers.get('content-type') || '').includes('application/json')
+                        ? await response.json()
+                        : null;
+                    throw new Error(payload?.message || '结束任务失败，请刷新后重试。');
+                } catch (error) {
+                    showError(error?.message || '结束任务失败，请刷新后重试。');
+                }
+            };
+
+            root.querySelectorAll('[data-url-import-cancel]').forEach((button) => {
+                button.addEventListener('click', () => cancelJob().catch(() => {}));
+            });
+
             root.querySelectorAll('[data-url-import-refresh]').forEach((button) => {
                 button.addEventListener('click', () => manualRefresh().catch(() => {}));
             });
@@ -1102,8 +1284,14 @@
                     const alt = escapeHtml(img.source_alt || '');
                     const size = (img.width > 0 && img.height > 0) ? `${img.width}×${img.height}` : '';
                     const kb = img.file_size > 0 ? `${Math.round(img.file_size / 1024)} KB` : '';
+                    const id = Number(img.id || 0);
+                    const valueScore = Number(img.value_score || 0);
+                    const valueStatus = String(img.value_status || '');
+                    const isHigh = valueStatus === 'high' || valueScore >= 70;
+                    const highBadge = isHigh ? `<span class="rounded-md bg-emerald-50 px-1.5 py-0.5 font-medium text-emerald-700">高价值</span>` : '';
 
-                    return `<figure class="group overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition hover:border-blue-200 hover:shadow-md">
+                    return `<label class="group relative cursor-pointer overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition hover:border-blue-300 hover:shadow-md" data-image-card data-image-id="${id}" data-image-value="${valueScore}" data-image-value-status="${escapeHtml(valueStatus)}">
+                        <input type="checkbox" name="image_ids[]" value="${id}" class="peer absolute left-2 top-2 z-10 h-4 w-4 rounded border-slate-300 bg-white shadow" data-image-checkbox checked>
                         <div class="aspect-video w-full overflow-hidden bg-slate-100">
                             <img src="${src}" alt="${alt}" loading="lazy" class="h-full w-full object-cover transition duration-300 group-hover:scale-105">
                         </div>
@@ -1112,15 +1300,20 @@
                                 <span class="rounded-md bg-slate-100 px-1.5 py-0.5 font-medium text-slate-600">${area}</span>
                                 ${size ? `<span>${size}</span>` : ''}
                                 ${kb ? `<span>${kb}</span>` : ''}
+                                ${highBadge}
                             </div>
                             ${alt ? `<p class="line-clamp-2 text-[11px] leading-4 text-slate-600">${alt}</p>` : ''}
                         </figcaption>
-                    </figure>`;
+                    </label>`;
                 }).join('');
 
                 wrap.classList.remove('hidden');
                 if (empty) empty.classList.add('hidden');
                 updateImportedBadge(images.length);
+                if (window.lucide?.createIcons) {
+                    window.lucide.createIcons();
+                }
+                wireImageSelection();
             };
 
             const pollImages = async () => {
@@ -1149,6 +1342,96 @@
                     // ignore polling errors
                 }
             };
+
+            // 图片勾选 + 工具栏 + 重复名校验
+            const wireImageSelection = () => {
+                const form = root.querySelector('[data-image-commit-form]');
+                if (!form) return;
+                const checkboxes = Array.from(form.querySelectorAll('[data-image-checkbox]'));
+                const counter = root.querySelector('[data-image-selected-count]');
+                const selectAll = root.querySelector('[data-image-select-all]');
+                const selectHigh = root.querySelector('[data-image-select-high-value]');
+                const selectNone = root.querySelector('[data-image-select-none]');
+                const nameInput = form.querySelector('[data-image-library-name]');
+                const allNamesByServer = (window.__urlImportReservedImageLibs || new Set());
+
+                const updateCounter = () => {
+                    const selected = checkboxes.filter((cb) => cb.checked).length;
+                    if (counter) counter.textContent = `已选 ${selected} / ${checkboxes.length} 张`;
+                    if (selectAll) {
+                        selectAll.checked = checkboxes.length > 0 && selected === checkboxes.length;
+                        selectAll.indeterminate = selected > 0 && selected < checkboxes.length;
+                    }
+                };
+
+                checkboxes.forEach((cb) => cb.addEventListener('change', updateCounter));
+                updateCounter();
+
+                if (selectAll) {
+                    selectAll.addEventListener('change', () => {
+                        const on = selectAll.checked;
+                        checkboxes.forEach((cb) => { cb.checked = on; });
+                        updateCounter();
+                    });
+                }
+                if (selectHigh) {
+                    selectHigh.addEventListener('click', () => {
+                        checkboxes.forEach((cb) => {
+                            const card = cb.closest('[data-image-card]');
+                            const score = Number(card?.dataset.imageValue || 0);
+                            const status = String(card?.dataset.imageValueStatus || '');
+                            const isHigh = status === 'high' || score >= 70;
+                            cb.checked = isHigh;
+                        });
+                        updateCounter();
+                    });
+                }
+                if (selectNone) {
+                    selectNone.addEventListener('click', () => {
+                        checkboxes.forEach((cb) => { cb.checked = false; });
+                        updateCounter();
+                    });
+                }
+
+                if (nameInput) {
+                    nameInput.addEventListener('input', () => {
+                        nameInput.classList.remove('border-amber-300', 'border-rose-300');
+                        const hint = form.querySelector('[data-image-name-hint]');
+                        if (hint) hint.remove();
+                    });
+                }
+
+                form.addEventListener('submit', (event) => {
+                    const selectedCount = checkboxes.filter((cb) => cb.checked).length;
+                    if (selectedCount === 0) {
+                        event.preventDefault();
+                        window.alert('请至少勾选 1 张图片');
+                        return;
+                    }
+                    if (!nameInput) return;
+                    const raw = nameInput.value.trim();
+                    if (raw === '') {
+                        event.preventDefault();
+                        nameInput.focus();
+                        return;
+                    }
+                    // 客户端预检：同库内已有同名的图库时给出友好提示
+                    if (allNamesByServer.has(raw)) {
+                        const suggestion = window.__urlImportSuggestNextName ? window.__urlImportSuggestNextName(raw) : '';
+                        if (suggestion && form.dataset.autoRename !== '1') {
+                            const ok = window.confirm(`已存在同名图片库「${raw}」。\n点击"确定"自动改名为「${suggestion}」并继续入库；\n点击"取消"返回修改。`);
+                            if (!ok) {
+                                event.preventDefault();
+                                nameInput.focus();
+                            } else {
+                                nameInput.value = suggestion;
+                            }
+                        }
+                    }
+                });
+            };
+
+            wireImageSelection();
 
             tabs.forEach((tab) => {
                 tab.addEventListener('click', () => activate(tab.getAttribute('data-url-import-tab') || 'content'));
@@ -1214,8 +1497,81 @@
             } else {
                 maybeStartImagePoll();
             }
+
+            // 把已用过的图库名集合传给前端：用于「同名校验」客户端预检 + 自动改名建议
+            const usedNames = Array.from(new Set([
+                ...(Array.isArray(@json($imageBatches)) ? @json($imageBatches).map((b) => String(b.library_name || '')) : []),
+            ].filter(Boolean)));
+            window.__urlImportReservedImageLibs = new Set(usedNames);
+            window.__urlImportSuggestNextName = (name) => {
+                const base = String(name || '').replace(/-\d+$/u, '');
+                for (let i = 2; i < 200; i++) {
+                    const candidate = `${base}-${i}`;
+                    if (!window.__urlImportReservedImageLibs.has(candidate)) return candidate;
+                }
+                return `${base}-${Date.now()}`;
+            };
+
+            // 撤回按钮：弹确认
+            document.querySelectorAll('[data-image-undo-form]').forEach((form) => {
+                form.addEventListener('submit', (event) => {
+                    if (!window.confirm('确认撤回这一批图片？图片会回到「采集到的图片」列表，不会删除。')) {
+                        event.preventDefault();
+                    }
+                });
+            });
         })();
     </script>
+
+    <div id="url-import-flow-help-modal" class="admin-modal-shell fixed inset-0 z-50 hidden" role="dialog" aria-modal="true" aria-labelledby="url-import-flow-help-title">
+        <div class="admin-modal-backdrop absolute inset-0 bg-slate-900/45 backdrop-blur-sm" data-flow-help-close></div>
+        <div class="relative mx-auto mt-[8vh] w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+            <div class="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+                <div class="flex items-center gap-3">
+                    <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+                        <i data-lucide="route" class="h-4 w-4"></i>
+                    </span>
+                    <div>
+                        <h3 id="url-import-flow-help-title" class="text-base font-semibold text-slate-950">采集流程说明</h3>
+                        <p class="mt-0.5 text-xs text-slate-500">三阶段 · 串行 + 图片并行</p>
+                    </div>
+                </div>
+                <button type="button" data-flow-help-close class="admin-icon-btn" aria-label="{{ __('admin.common.close') }}">
+                    <i data-lucide="x" class="h-4 w-4"></i>
+                </button>
+            </div>
+            <div class="space-y-3 px-5 py-4">
+                <div class="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+                    <div class="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                        <span class="flex h-6 w-6 items-center justify-center rounded-lg bg-white text-xs font-bold text-blue-600 shadow-sm">1</span>
+                        识主体 + 收资料
+                    </div>
+                    <p class="mt-2 text-sm leading-6 text-slate-600">读取网页 → 提取正文 → 识别公司/品牌 → AI 全网调研 → 合并官网与调研素材</p>
+                </div>
+                <div class="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+                    <div class="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                        <span class="flex h-6 w-6 items-center justify-center rounded-lg bg-white text-xs font-bold text-blue-600 shadow-sm">2</span>
+                        AI 加工（串行）
+                    </div>
+                    <p class="mt-2 text-sm leading-6 text-slate-600">清洗 → 整理知识库素材 → 主题词 → 标题<br><span class="text-xs text-slate-500">每步输入 = 上一步输出</span></p>
+                </div>
+                <div class="rounded-xl border border-violet-200 bg-violet-50/50 p-4">
+                    <div class="flex items-center gap-2 text-sm font-semibold text-violet-900">
+                        <i data-lucide="image" class="h-4 w-4"></i>
+                        图片下载（并行）
+                    </div>
+                    <p class="mt-2 text-sm leading-6 text-violet-800/90">正文完成后后台下载到本地，不走 AI 链</p>
+                </div>
+                <div class="rounded-xl border border-emerald-200 bg-emerald-50/50 p-4">
+                    <div class="flex items-center gap-2 text-sm font-semibold text-emerald-900">
+                        <span class="flex h-6 w-6 items-center justify-center rounded-lg bg-white text-xs font-bold text-emerald-600 shadow-sm">3</span>
+                        你确认入库
+                    </div>
+                    <p class="mt-2 text-sm leading-6 text-emerald-800/90">预览核对 → 正文入库（知识库/关键词/标题）· 图片勾选入库</p>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <div id="node-debug-modal" class="admin-modal-shell fixed inset-0 z-50 hidden" role="dialog" aria-modal="true" aria-labelledby="node-debug-title">
         <div class="admin-modal-backdrop absolute inset-0 bg-slate-900/45 backdrop-blur-sm" data-node-debug-close></div>
@@ -1258,6 +1614,32 @@
             </div>
         </div>
     </div>
+
+    <script>
+        (() => {
+            const flowHelpModal = document.getElementById('url-import-flow-help-modal');
+            const openFlowHelp = () => {
+                if (!flowHelpModal) return;
+                flowHelpModal.classList.remove('hidden');
+                document.documentElement.classList.add('admin-modal-open');
+                window.dispatchEvent(new CustomEvent('geoflow:icons:refresh'));
+            };
+            const closeFlowHelp = () => {
+                if (!flowHelpModal) return;
+                flowHelpModal.classList.add('hidden');
+                document.documentElement.classList.remove('admin-modal-open');
+            };
+            document.querySelector('[data-flow-help-open]')?.addEventListener('click', openFlowHelp);
+            flowHelpModal?.querySelectorAll('[data-flow-help-close]').forEach((el) => {
+                el.addEventListener('click', closeFlowHelp);
+            });
+            document.addEventListener('keydown', (event) => {
+                if (event.key === 'Escape' && flowHelpModal && !flowHelpModal.classList.contains('hidden')) {
+                    closeFlowHelp();
+                }
+            });
+        })();
+    </script>
 
     <script>
         (() => {
@@ -1351,6 +1733,88 @@
             document.addEventListener('keydown', (e) => {
                 if (e.key === 'Escape' && modal && !modal.classList.contains('hidden')) close();
             });
+        })();
+    </script>
+
+    <script>
+        (() => {
+            const setupToggle = (buttonAttr, previewAttr, fullAttr, iconAttr, labelAttr) => {
+                const btn = document.querySelector(`[${buttonAttr}]`);
+                if (!btn) return;
+                const preview = document.querySelector(`[${previewAttr}]`);
+                const full = document.querySelector(`[${fullAttr}]`);
+                const icon = document.querySelector(`[${iconAttr}]`);
+                const label = document.querySelector(`[${labelAttr}]`);
+                if (!full) return;
+                btn.addEventListener('click', () => {
+                    const expanded = btn.getAttribute('aria-expanded') === 'true';
+                    const next = !expanded;
+                    btn.setAttribute('aria-expanded', next ? 'true' : 'false');
+                    full.classList.toggle('hidden', !next);
+                    if (preview) preview.classList.toggle('hidden', next);
+                    icon?.classList.toggle('rotate-180', next);
+                    if (label) {
+                        const expandText = btn.getAttribute('data-expand-text') || '展开';
+                        const collapseText = btn.getAttribute('data-collapse-text') || '收起';
+                        label.textContent = next ? collapseText : expandText;
+                    }
+                });
+            };
+
+            setupToggle('data-toggle-original-text', 'data-original-text-preview', 'data-original-text-full', 'data-original-text-icon', 'data-original-text-label');
+            setupToggle('data-toggle-ai-knowledge', 'data-ai-knowledge-preview', 'data-ai-knowledge-full', 'data-ai-knowledge-icon', 'data-ai-knowledge-label');
+
+            const origBtn = document.querySelector('[data-toggle-original-text]');
+            if (origBtn) {
+                origBtn.setAttribute('data-expand-text', '展开');
+                origBtn.setAttribute('data-collapse-text', '收起');
+                origBtn.querySelector('[data-original-text-label]').textContent = '展开';
+            }
+            const aiBtn = document.querySelector('[data-toggle-ai-knowledge]');
+            if (aiBtn) {
+                aiBtn.setAttribute('data-expand-text', '展开');
+                aiBtn.setAttribute('data-collapse-text', '收起');
+                aiBtn.querySelector('[data-ai-knowledge-label]').textContent = '展开';
+            }
+
+            // 复制按钮（页面抓取原文 / AI 整理素材）
+            const setupCopy = (buttonAttr, sourceAttr, successText = '已复制') => {
+                const btn = document.querySelector(`[${buttonAttr}]`);
+                const source = document.querySelector(`[${sourceAttr}]`);
+                if (!btn || !source) return;
+                btn.addEventListener('click', async () => {
+                    const text = (source.textContent || source.innerText || '').trim();
+                    if (!text) return;
+                    const labelNode = btn.querySelector('span');
+                    const original = labelNode ? labelNode.textContent : '';
+                    try {
+                        if (navigator.clipboard?.writeText) {
+                            await navigator.clipboard.writeText(text);
+                        } else {
+                            const ta = document.createElement('textarea');
+                            ta.value = text;
+                            ta.style.position = 'fixed';
+                            ta.style.opacity = '0';
+                            document.body.appendChild(ta);
+                            ta.select();
+                            document.execCommand('copy');
+                            document.body.removeChild(ta);
+                        }
+                        if (labelNode) labelNode.textContent = successText;
+                        btn.classList.add('text-emerald-600');
+                        setTimeout(() => {
+                            if (labelNode) labelNode.textContent = original;
+                            btn.classList.remove('text-emerald-600');
+                        }, 1200);
+                    } catch (error) {
+                        if (labelNode) labelNode.textContent = '复制失败';
+                        setTimeout(() => { if (labelNode) labelNode.textContent = original; }, 1200);
+                    }
+                });
+            };
+
+            setupCopy('data-url-import-original-copy', 'data-original-text-full');
+            setupCopy('data-url-import-knowledge-copy', 'data-ai-knowledge-full');
         })();
     </script>
 @endsection

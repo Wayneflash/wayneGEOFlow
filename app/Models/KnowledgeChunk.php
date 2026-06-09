@@ -19,6 +19,10 @@ class KnowledgeChunk extends Model
         'chunk_strategy',
         'metadata_json',
         'source_hash',
+        'source_url',
+        'source_type',
+        'confidence',
+        'tags',
         'token_count',
         'embedding_json',
         'embedding_model_id',
@@ -35,6 +39,7 @@ class KnowledgeChunk extends Model
             'token_count' => 'integer',
             'embedding_model_id' => 'integer',
             'embedding_dimensions' => 'integer',
+            'confidence' => 'float',
         ];
     }
 
