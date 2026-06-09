@@ -35,6 +35,9 @@ class DownloadUrlImportImagesJob implements ShouldQueue
     {
         $tenantId = (int) (UrlImportJob::query()->whereKey($this->jobId)->value('tenant_id') ?? 0);
         if ($tenantId <= 0) {
+            $tenantId = (int) (\App\Support\Tenancy\AdminTenant::defaultTenantId() ?? 0);
+        }
+        if ($tenantId <= 0) {
             UrlImportNodeRecorder::record(
                 $this->jobId,
                 'images_import',
