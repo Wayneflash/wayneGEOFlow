@@ -488,16 +488,21 @@ class UrlImportController extends Controller
         if ($log !== null) {
             $output = is_array($log->output_json) ? $log->output_json : [];
             $skipReason = (string) ($output['skip_reason'] ?? '');
+            $status = (string) $log->status;
+            if ($status === 'failed' && (bool) ($output['bocha_fallback'] ?? false)) {
+                $status = 'success';
+            }
 
             return [
                 'label' => 'AI 全网调研',
-                'status' => (string) $log->status,
+                'status' => $status,
                 'duration_ms' => (int) ($log->duration_ms ?? 0),
                 'attempt' => (int) $log->attempt,
-                'error' => (string) ($log->error_message ?? '') ?: null,
+                'error' => $status === 'success' ? null : ((string) ($log->error_message ?? '') ?: null),
                 'created_at' => $log->created_at?->toIso8601String(),
                 'web_research_enabled' => $enabled,
                 'skip_reason' => $skipReason,
+                'output' => $output,
             ];
         }
 
@@ -607,6 +612,7 @@ class UrlImportController extends Controller
                 'created_at' => $createdAt,
                 'web_research_enabled' => ($entry['key'] === 'web_research') ? ($webResearchEnabled ?? $job->webResearchEnabled()) : null,
                 'skip_reason' => ($entry['key'] === 'web_research') ? ($skipReason ?? '') : null,
+                'output' => ($entry['key'] === 'web_research') ? ($webResearch['output'] ?? null) : null,
             ];
         }
 
@@ -710,10 +716,6 @@ class UrlImportController extends Controller
             $query->whereIn('id', $imageIds);
         } else {
             $query->where('source_url', (string) $job->normalized_url);
-            $since = $job->started_at ?? $job->created_at;
-            if ($since !== null) {
-                $query->where('created_at', '>=', $since);
-            }
         }
 
         $columns = array_values(array_filter([

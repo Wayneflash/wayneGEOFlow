@@ -243,7 +243,7 @@ class UrlImportImageDownloader
         $hash = hash('sha256', $body);
         $existing = Image::query()->where('file_path', 'like', '%/'.$hash.'.%')->first();
         if ($existing) {
-            return null;
+            return (int) $existing->id;
         }
 
         $extension = $this->extensionFromMime($mime, $imageUrl);
@@ -522,7 +522,7 @@ class UrlImportImageDownloader
         $hash = hash('sha256', $body);
         $existing = Image::query()->where('file_path', 'like', '%/'.$hash.'.%')->first();
         if ($existing) {
-            return null;
+            return (int) $existing->id;
         }
 
         $extension = $this->extensionFromMime($mime, $imageUrl);

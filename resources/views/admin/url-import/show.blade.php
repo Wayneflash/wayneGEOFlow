@@ -80,7 +80,8 @@
     $webResearchStep = collect($nodeSteps ?? [])->firstWhere('key', 'web_research');
     $webResearchStepStatus = (string) ($webResearchStep['status'] ?? 'pending');
     $webResearchAiFailed = $webResearchEnabled
-        && in_array($webResearchStepStatus, ['failed'], true);
+        && in_array($webResearchStepStatus, ['failed'], true)
+        && ! (bool) ($webResearch['bocha_fallback'] ?? false);
     $webResearchSkippedDisabled = ! $webResearchEnabled
         || (($webResearchStep['skip_reason'] ?? '') === 'disabled_by_user');
     $imagesImportStep = collect($nodeSteps)->firstWhere('key', 'images_import');
@@ -99,6 +100,7 @@
         'error' => (string) ($step['error'] ?? ''),
         'web_research_enabled' => $step['web_research_enabled'] ?? null,
         'skip_reason' => (string) ($step['skip_reason'] ?? ''),
+        'output' => is_array($step['output'] ?? null) ? $step['output'] : null,
     ], $nodeSteps);
 @endphp
 
@@ -1034,7 +1036,9 @@
                 const wrFailure = root.querySelector('[data-web-research-failure]');
                 if (wrFailure) {
                     const wrStep = (payload.node_steps || []).find((step) => step.key === 'web_research');
-                    const showWrFail = Boolean(payload.web_research_enabled) && String(wrStep?.status || '') === 'failed';
+                    const showWrFail = Boolean(payload.web_research_enabled)
+                        && String(wrStep?.status || '') === 'failed'
+                        && ! Boolean(wrStep?.output?.bocha_fallback);
                     wrFailure.classList.toggle('hidden', !showWrFail);
                     const wrDetail = wrFailure.querySelector('[data-web-research-failure-detail]');
                     if (wrDetail && wrStep?.error) {
