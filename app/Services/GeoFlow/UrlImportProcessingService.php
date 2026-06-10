@@ -19,9 +19,11 @@ use App\Models\UrlImportJobArtifact;
 use App\Models\UrlImportJobNodeLog;
 use App\Support\GeoFlow\ApiKeyCrypto;
 use App\Support\GeoFlow\OutboundHttpProxy;
+use App\Support\GeoFlow\OutboundHttpSsl;
 use App\Support\GeoFlow\OpenAiRuntimeProvider;
 use App\Support\GeoFlow\UrlImportCompanyHint;
 use App\Support\GeoFlow\UrlImportHtmlInspector;
+use App\Support\GeoFlow\UrlImportPipelineBudget;
 use App\Support\GeoFlow\UrlImportPromptCatalog;
 use App\Support\GeoFlow\UrlImportTextSanitizer;
 use App\Support\GeoFlow\UrlImportWebResearchNormalizer;
@@ -44,6 +46,8 @@ final class UrlImportProcessingService
     private const AI_WEB_RESEARCH_MAX_ATTEMPTS = 1;
 
     private ?string $lastRawAiContent = null;
+
+    private ?UrlImportPipelineBudget $pipelineBudget = null;
 
     public function __construct(
         private readonly ApiKeyCrypto $apiKeyCrypto,
@@ -150,6 +154,7 @@ final class UrlImportProcessingService
             return $job;
         }
 
+        $this->pipelineBudget = new UrlImportPipelineBudget();
         $this->updateStep($job, 'fetch', 10, [
             'status' => 'running',
             'started_at' => now(),
@@ -195,30 +200,46 @@ final class UrlImportProcessingService
                 $parseMs
             );
 
-            if (($collection['web_research_output'] ?? null) !== null) {
-                $webOut = (array) $collection['web_research_output'];
+            $webOut = (array) ($collection['web_research_output'] ?? []);
+            $webStatus = 'success';
+            if (($webOut['skipped'] ?? false)) {
+                $webStatus = 'skipped';
+            } elseif (! ($webOut['ok'] ?? false) && ($webOut['bocha_fallback'] ?? false)) {
                 $webStatus = 'success';
-                if (($webOut['skipped'] ?? false)) {
-                    $webStatus = 'skipped';
-                } elseif (! ($webOut['ok'] ?? false) && ($webOut['error'] ?? '') !== '') {
-                    $webStatus = 'failed';
-                }
-                $this->logNode(
-                    $job,
-                    'web_research',
-                    'AI 全网调研',
-                    ['url' => (string) $job->normalized_url, 'mode' => $collectionMode],
-                    $webOut,
-                    (int) ($collection['web_research_ms'] ?? 0),
-                    1,
-                    $webStatus,
-                    $webStatus === 'failed' ? (string) ($webOut['error'] ?? '') : null
-                );
+            } elseif (! ($webOut['ok'] ?? false) && ($webOut['error'] ?? '') !== '') {
+                $webStatus = 'failed';
             }
+            $this->logNode(
+                $job,
+                'web_research',
+                'AI 全网调研',
+                array_merge(
+                    $this->nodeChainInput('parse', $parseOutput),
+                    [
+                        'url' => (string) $job->normalized_url,
+                        'collection_mode' => $collectionMode,
+                        'web_research_enabled' => $this->jobWebResearchEnabled($job),
+                        'search_provider' => (string) ($webOut['search_provider'] ?? 'none'),
+                        'search_queries' => array_values((array) ($webOut['search_queries'] ?? [])),
+                    ]
+                ),
+                $webOut,
+                (int) ($collection['web_research_ms'] ?? 0),
+                1,
+                $webStatus,
+                $webStatus === 'failed' ? (string) ($webOut['error'] ?? '') : null
+            );
 
             $pageJson = $this->buildPageJson($parsed, $job);
             $this->abortIfCancelled($job);
             $analysis = $this->buildAnalysis($parsed, $job, $pageJson);
+            $this->logAiAnalysisSummaryNode(
+                $job,
+                $parseOutput,
+                is_array($collection['web_research_output'] ?? null) ? $collection['web_research_output'] : null,
+                $analysis,
+                $collectionMode
+            );
             $this->abortIfCancelled($job);
             $pageForStore = $parsed;
             $pageForStore['image_count'] = count($parsed['images'] ?? []);
@@ -249,15 +270,17 @@ final class UrlImportProcessingService
                     'status' => 'preview',
                     'summary' => null,
                 ],
+                'pipeline_budget' => $this->pipelineBudget?->snapshot(),
             ];
 
             $this->updateStep($job, 'preview', 96);
             $this->log($job, 'info', __('admin.url_import.log.preview_start'));
 
-            $this->dispatchImageDownload($job, $parsed);
-
             $this->abortIfCancelled($job);
             $resultRow = $this->saveResultJson($job, $result, 'preview');
+            $job->update($resultRow);
+            $this->dispatchImageDownload($job->fresh(), $parsed);
+
             $this->updateStep($job, 'preview', 100, array_merge(
                 ['page_title' => $parsed['title'], 'status' => 'completed', 'finished_at' => now()],
                 $resultRow
@@ -772,12 +795,16 @@ final class UrlImportProcessingService
     private function collectPageMaterials(UrlImportJob $job): array
     {
         $jobId = (int) $job->id;
-        $webResearchEnabled = (bool) config('geoflow.url_import_web_research_enabled', true);
+        $webResearchEnabled = $this->jobWebResearchEnabled($job);
         $webResearchMode = (string) config('geoflow.url_import_web_research_mode', 'sequential');
         $runWebResearchInParallel = $webResearchEnabled && $webResearchMode === 'parallel';
 
         $directOutcome = null;
         $aiOutcome = null;
+
+        if (! $webResearchEnabled) {
+            $this->log($job, 'info', __('admin.url_import.log.web_research_skipped_disabled'));
+        }
 
         if ($runWebResearchInParallel) {
             try {
@@ -795,7 +822,11 @@ final class UrlImportProcessingService
             }
         } elseif ($webResearchMode === 'fallback') {
             $directOutcome = $this->collectDirect($jobId);
-            if ($webResearchEnabled && $this->directNeedsSupplement($directOutcome)) {
+            $this->updateStep($job, 'page_json', 18);
+            if ($webResearchEnabled
+                && $this->directNeedsSupplement($directOutcome)
+                && ($this->pipelineBudget?->hasTimeFor('web_research') ?? true)) {
+                $this->updateStep($job, 'page_json', 22);
                 $aiOutcome = $this->collectAiWebResearch($jobId, $directOutcome['parsed'] ?? null);
             }
         } else {
@@ -803,8 +834,12 @@ final class UrlImportProcessingService
             $directOutcome = $this->collectDirect($jobId);
             $this->updateStep($job, 'page_json', 18);
             if ($webResearchEnabled && $this->shouldRunWebResearch($job, $directOutcome)) {
-                $this->updateStep($job, 'page_json', 22);
-                $aiOutcome = $this->collectAiWebResearch($jobId, $directOutcome['parsed'] ?? null);
+                if (! ($this->pipelineBudget?->hasTimeFor('web_research') ?? true)) {
+                    $this->log($job, 'warning', __('admin.url_import.log.web_research_skipped_budget'));
+                } else {
+                    $this->updateStep($job, 'page_json', 22);
+                    $aiOutcome = $this->collectAiWebResearch($jobId, $directOutcome['parsed'] ?? null);
+                }
             }
         }
 
@@ -818,11 +853,32 @@ final class UrlImportProcessingService
         }
 
         if ($this->directHasIdentificationHints($directParsed)
-            && $this->webResearchNeedsDirectRetry($aiOutcome, $directParsed, $job)) {
+            && $this->webResearchNeedsDirectRetry($aiOutcome, $directParsed, $job)
+            && ($this->pipelineBudget?->hasTimeFor('web_research_retry') ?? true)) {
             $aiOutcome = $this->collectAiWebResearch($jobId, $directParsed);
         }
 
+        $searchPayload = is_array($aiOutcome['search'] ?? null) ? $aiOutcome['search'] : null;
         $aiResearch = is_array($aiOutcome['research'] ?? null) ? $aiOutcome['research'] : null;
+        if (! ($aiOutcome['ok'] ?? false)
+            && $webResearchEnabled
+            && is_array($searchPayload)
+            && ($searchPayload['enabled'] ?? false)
+            && is_array($searchPayload['results'] ?? null)
+            && ($searchPayload['results'] ?? []) !== []) {
+            $fallbackResearch = $this->buildWebResearchFromSearchFallback($searchPayload, $directParsed, $job);
+            if ($this->webResearchNormalizer->isUsable($fallbackResearch, max(40, (int) config('geoflow.url_import_min_text_chars', 80)))) {
+                $aiResearch = $fallbackResearch;
+                $aiOutcome['bocha_fallback'] = true;
+                $aiOutcome['research'] = $fallbackResearch;
+                $this->log($job, 'warning', __('admin.url_import.log.web_research_bocha_fallback', [
+                    'provider' => (string) ($searchPayload['provider'] ?? 'bocha'),
+                    'results' => count($searchPayload['results'] ?? []),
+                    'chars' => mb_strlen((string) ($fallbackResearch['research_text'] ?? ''), 'UTF-8'),
+                ]));
+            }
+        }
+
         $jobOptions = json_decode((string) $job->options_json, true);
         $jobOptions = is_array($jobOptions) ? $jobOptions : [];
         $minTextChars = max(40, (int) config('geoflow.url_import_min_text_chars', 80));
@@ -837,13 +893,13 @@ final class UrlImportProcessingService
         $parsed = $merged['parsed'];
         $collectionMode = (string) $merged['collection_mode'];
 
-        if (($aiOutcome['ok'] ?? false)) {
+        if (($aiOutcome['ok'] ?? false) || ($aiOutcome['bocha_fallback'] ?? false)) {
             $this->log($job, 'info', __('admin.url_import.log.web_research_done', [
                 'mode' => $collectionMode,
                 'chars' => (int) ($merged['ai_meta']['text_chars'] ?? 0),
                 'company' => (string) ($merged['ai_meta']['company_name'] ?? ''),
             ]));
-        } elseif ($webResearchEnabled && ! ($aiOutcome['skipped'] ?? false) && ($aiOutcome['error'] ?? '') !== '') {
+        } elseif ($webResearchEnabled && ! ($aiOutcome['skipped'] ?? false) && ($aiOutcome['error'] ?? '') !== '' && ! ($aiOutcome['bocha_fallback'] ?? false)) {
             $this->log($job, 'warning', __('admin.url_import.log.web_research_failed', [
                 'message' => (string) ($aiOutcome['error'] ?? ''),
             ]));
@@ -863,28 +919,190 @@ final class UrlImportProcessingService
                 'status' => (int) ($fetched['status'] ?? 0),
                 'html_length' => strlen((string) ($fetched['html'] ?? '')),
                 'is_bot_challenge' => (bool) ($fetched['is_bot_challenge'] ?? false),
-                'html_preview' => Str::limit((string) ($fetched['html'] ?? ''), 800, '…'),
+                'html_preview' => Str::limit((string) ($fetched['html'] ?? ''), 2000, '…'),
+                'url' => (string) $job->normalized_url,
+                'domain' => (string) $job->source_domain,
+                'feeds_into' => 'parse',
+                'chain_note' => '原始 HTML，供正文解析使用',
             ],
             'parse_output' => $parseOutput,
             'fetch_ms' => (int) ($directOutcome['fetch_ms'] ?? 0),
             'parse_ms' => (int) ($directOutcome['parse_ms'] ?? 0),
-            'web_research_output' => $aiOutcome === null ? null : [
-                'ok' => (bool) ($aiOutcome['ok'] ?? false),
-                'skipped' => (bool) ($aiOutcome['skipped'] ?? false),
-                'error' => (string) ($aiOutcome['error'] ?? ''),
-                'company_name' => (string) ($parsed['identified_company'] ?? ''),
-                'brand_names' => $parsed['brand_names'] ?? [],
-                'confidence' => (string) ($merged['ai_meta']['confidence'] ?? ''),
-                'text_chars' => (int) ($merged['ai_meta']['text_chars'] ?? 0),
-                'evidence_limits' => (string) ($merged['ai_meta']['evidence_limits'] ?? ''),
-                'search_provider' => (string) data_get($aiOutcome, 'search.provider', 'none'),
-                'search_queries' => array_values((array) data_get($aiOutcome, 'search.queries', [])),
-                'search_results' => $this->summarizeSearchResults((array) data_get($aiOutcome, 'search.results', [])),
-                'search_result_count' => count((array) data_get($aiOutcome, 'search.results', [])),
-                'search_error' => (string) data_get($aiOutcome, 'search.error', ''),
-            ],
+            'web_research_output' => $this->buildWebResearchNodeOutput($aiOutcome, $parsed, $merged, $webResearchEnabled),
             'web_research_ms' => (int) ($aiOutcome['duration_ms'] ?? 0),
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $aiOutcome
+     * @param  array<string, mixed>  $parsed
+     * @param  array<string, mixed>  $merged
+     * @return array<string, mixed>
+     */
+    private function buildWebResearchNodeOutput(?array $aiOutcome, array $parsed, array $merged, bool $enabled): array
+    {
+        $aiOutcome ??= ['ok' => false, 'skipped' => true, 'error' => '', 'duration_ms' => 0];
+        $skipped = (bool) ($aiOutcome['skipped'] ?? false);
+        $bochaFallback = (bool) ($aiOutcome['bocha_fallback'] ?? false);
+        $ok = (bool) ($aiOutcome['ok'] ?? false) || $bochaFallback;
+
+        $skipReason = match (true) {
+            ! $enabled => 'disabled_by_user',
+            $skipped && ($aiOutcome['error'] ?? '') !== '' => 'error',
+            $skipped => 'not_needed_or_budget',
+            default => '',
+        };
+
+        return [
+            'ok' => $ok,
+            'skipped' => $skipped,
+            'skip_reason' => $skipReason,
+            'skip_reason_label' => match ($skipReason) {
+                'disabled_by_user' => '未勾选 AI 辅助采集',
+                'not_needed_or_budget' => '官网正文已足够或未分配调研时间',
+                'error' => '调研失败',
+                default => '',
+            },
+            'error' => (string) ($aiOutcome['error'] ?? ''),
+            'company_name' => (string) ($parsed['identified_company'] ?? ''),
+            'brand_names' => array_values((array) ($parsed['brand_names'] ?? [])),
+            'confidence' => (string) ($merged['ai_meta']['confidence'] ?? ''),
+            'text_chars' => (int) ($merged['ai_meta']['text_chars'] ?? 0),
+            'direct_text_chars' => (int) ($merged['direct_meta']['text_chars'] ?? 0),
+            'merged_text_chars' => mb_strlen((string) ($parsed['text'] ?? ''), 'UTF-8'),
+            'evidence_limits' => (string) ($merged['ai_meta']['evidence_limits'] ?? ''),
+            'search_provider' => (string) data_get($aiOutcome, 'search.provider', 'none'),
+            'search_enabled' => (bool) data_get($aiOutcome, 'search.enabled', false),
+            'search_queries' => array_values((array) data_get($aiOutcome, 'search.queries', [])),
+            'search_results' => $this->summarizeSearchResults((array) data_get($aiOutcome, 'search.results', [])),
+            'search_result_count' => count((array) data_get($aiOutcome, 'search.results', [])),
+            'search_error' => (string) data_get($aiOutcome, 'search.error', ''),
+            'bocha_fallback' => (bool) ($aiOutcome['bocha_fallback'] ?? false),
+            'feeds_into' => 'ai_analysis',
+            'chain_note' => match (true) {
+                $ok => '调研摘要已合并进正文，供 AI 分析使用',
+                (bool) ($aiOutcome['bocha_fallback'] ?? false) => 'AI 汇总失败，已用博查搜索结果降级合并进正文',
+                default => '跳过时 AI 分析直接使用「提取正文」输出',
+            },
+        ];
+    }
+
+    /**
+     * AI 全网调研失败时，用博查/联网搜索摘要拼接可合并的调研结构。
+     *
+     * @param  array<string, mixed>  $searchPayload
+     * @param  array<string, mixed>  $directParsed
+     * @return array<string, mixed>
+     */
+    private function buildWebResearchFromSearchFallback(array $searchPayload, array $directParsed, UrlImportJob $job): array
+    {
+        $jobOptions = json_decode((string) $job->options_json, true);
+        $jobOptions = is_array($jobOptions) ? $jobOptions : [];
+        $hint = UrlImportCompanyHint::build(
+            (string) $job->normalized_url,
+            (string) $job->source_domain,
+            $jobOptions,
+            $directParsed,
+        );
+        $companyName = UrlImportCompanyHint::inferCompanyName($hint);
+        $searchBlock = UrlImportDomesticWebSearchService::formatResultsForPrompt($searchPayload);
+        $directText = trim((string) ($directParsed['text'] ?? ''));
+        $directSnippet = $directText !== '' ? Str::limit($directText, 1200, '…') : '';
+
+        $sections = ["## 联网搜索摘要（AI 汇总未成功，系统自动拼接）", $searchBlock];
+        if ($directSnippet !== '') {
+            $sections[] = "## 官网直连片段\n".$directSnippet;
+        }
+
+        $products = [];
+        $industries = [];
+        foreach ($searchPayload['results'] ?? [] as $result) {
+            if (! is_array($result)) {
+                continue;
+            }
+            $title = trim((string) ($result['title'] ?? ''));
+            if ($title !== '' && preg_match('/产品|方案|系统|平台|设备|服务/u', $title) === 1) {
+                $products[] = $title;
+            }
+            if ($title !== '' && preg_match('/行业|应用|场景|客户|案例/u', $title) === 1) {
+                $industries[] = $title;
+            }
+        }
+
+        $evidenceLimits = 'AI 全网汇总未成功；以下内容来自博查实时搜索摘要与官网直连片段，未经 AI 交叉验证，下游整理时需标注来源边界。';
+
+        return $this->webResearchNormalizer->normalize([
+            'company_name' => $companyName,
+            'brand_names' => array_values((array) ($directParsed['brand_names'] ?? [])),
+            'domain_analysis' => '由域名 '.((string) $job->source_domain).' 与联网搜索条目推断主体',
+            'research_title' => ($companyName !== '' ? $companyName : (string) $job->source_domain).' 公开资料摘要',
+            'research_summary' => '基于 '.count($searchPayload['results'] ?? []).' 条联网搜索结果的自动摘要（非 AI 汇总）',
+            'research_text' => implode("\n\n", $sections),
+            'products_services' => array_slice(array_values(array_unique($products)), 0, 12),
+            'industries' => array_slice(array_values(array_unique($industries)), 0, 8),
+            'scenarios' => [],
+            'confidence' => 'low',
+            'evidence_limits' => $evidenceLimits,
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $parseOutput
+     * @param  array<string, mixed>|null  $webResearchOutput
+     * @param  array<string, mixed>  $analysis
+     */
+    private function logAiAnalysisSummaryNode(
+        UrlImportJob $job,
+        array $parseOutput,
+        ?array $webResearchOutput,
+        array $analysis,
+        string $collectionMode,
+    ): void {
+        $webOk = is_array($webResearchOutput) && ($webResearchOutput['ok'] ?? false);
+        $fromNode = $webOk ? 'web_research' : 'parse';
+        $upstream = $webOk
+            ? array_merge($parseOutput, ['web_research' => $webResearchOutput])
+            : $parseOutput;
+
+        $knowledge = trim((string) ($analysis['knowledge_markdown'] ?? ''));
+        $keywords = array_values((array) ($analysis['keywords'] ?? []));
+        $titles = array_slice(array_values((array) ($analysis['titles'] ?? [])), 0, 24);
+
+        $fastOneShot = $this->isFastPipelineMode();
+        $label = $fastOneShot ? 'AI 分析（一站式）' : 'AI 分析';
+
+        $durationMs = (int) UrlImportJobNodeLog::query()
+            ->where('job_id', (int) $job->id)
+            ->whereIn('node_key', ['ai_clean', 'ai_knowledge', 'ai_keywords', 'ai_titles'])
+            ->sum('duration_ms');
+
+        $this->logNode(
+            $job,
+            'ai_analysis',
+            $label,
+            array_merge(
+                $this->nodeChainInput($fromNode, $upstream),
+                [
+                    'collection_mode' => $collectionMode,
+                    'pipeline_mode' => $fastOneShot ? 'fast' : 'standard',
+                ]
+            ),
+            [
+                'summary' => (string) ($analysis['summary'] ?? ''),
+                'library_name' => (string) ($analysis['library_name'] ?? ''),
+                'knowledge_markdown_chars' => mb_strlen($knowledge, 'UTF-8'),
+                'knowledge_markdown_preview' => Str::limit($knowledge, 4000, '…'),
+                'keywords' => $keywords,
+                'keyword_count' => count($keywords),
+                'titles' => $titles,
+                'title_count' => count($titles),
+                'model' => $analysis['model'] ?? null,
+                'analysis_source' => (string) ($analysis['analysis_source'] ?? 'ai'),
+                'feeds_into' => 'preview',
+                'chain_note' => '本步输出即页面预览区的知识库 Markdown、关键词与标题',
+            ],
+            $durationMs
+        );
     }
 
     /**
@@ -962,32 +1180,35 @@ final class UrlImportProcessingService
      */
     private function collectAiWebResearch(int $jobId, ?array $directParsed): array
     {
-        if (! (bool) config('geoflow.url_import_web_research_enabled', true)) {
+        $job = UrlImportJob::query()->findOrFail($jobId);
+        if (! $this->jobWebResearchEnabled($job)) {
             return ['ok' => false, 'research' => null, 'error' => '', 'skipped' => true, 'duration_ms' => 0];
         }
 
-        $job = UrlImportJob::query()->findOrFail($jobId);
         $started = microtime(true);
 
         $hostKey = 'url_import_company_resolve:'.strtolower(trim((string) $job->source_domain));
         $cached = self::readCompanyCache($hostKey);
         if ($cached !== null) {
             $search = (array) ($cached['search'] ?? []);
+            $research = $this->webResearchNormalizer->normalize([
+                'company_name' => (string) ($cached['company_name'] ?? ''),
+                'research_text' => (string) ($cached['text'] ?? ''),
+                'facts' => (array) ($cached['facts'] ?? []),
+                'evidence_limits' => $cached['evidence_limits'] ?? '',
+            ]);
+
             return [
                 'ok' => true,
-                'research' => [
-                    'company_name' => (string) ($cached['company_name'] ?? ''),
-                    'text' => (string) ($cached['text'] ?? ''),
-                    'facts' => (array) ($cached['facts'] ?? []),
-                    'evidence_limits' => (array) ($cached['evidence_limits'] ?? []),
-                    'from_cache' => true,
-                ],
+                'research' => $research + ['from_cache' => true],
                 'error' => '',
                 'skipped' => false,
                 'duration_ms' => (int) round((microtime(true) - $started) * 1000),
                 'search' => $search + ['cached' => true],
             ];
         }
+
+        $searchPayload = $this->domesticWebSearch->searchForJob($job, $directParsed);
 
         try {
             $models = $this->resolveAnalysisModels((int) ($job->tenant_id ?? 0) ?: null);
@@ -998,11 +1219,12 @@ final class UrlImportProcessingService
                     'error' => __('admin.url_import.error.ai_model_required'),
                     'skipped' => true,
                     'duration_ms' => (int) round((microtime(true) - $started) * 1000),
+                    'search' => $searchPayload,
                 ];
             }
 
             $errors = [];
-            $searchPayload = $this->domesticWebSearch->searchForJob($job, $directParsed);
+            $webResearchTimeout = $this->webResearchAiTimeoutSeconds();
             foreach ($models as $model) {
                 for ($attempt = 1; $attempt <= self::AI_WEB_RESEARCH_MAX_ATTEMPTS; $attempt++) {
                     try {
@@ -1011,6 +1233,8 @@ final class UrlImportProcessingService
                             $runtime,
                             UrlImportPromptCatalog::webResearchSystem($searchPayload),
                             $this->buildWebResearchUserPrompt($job, $directParsed, $searchPayload),
+                            null,
+                            $webResearchTimeout,
                         );
                         $research = $this->normalizeWebResearchPayload($raw);
                         if (! $this->webResearchNormalizer->isUsable($research, max(40, (int) config('geoflow.url_import_min_text_chars', 80)))) {
@@ -1043,6 +1267,7 @@ final class UrlImportProcessingService
                 'error' => implode('；', $errors),
                 'skipped' => false,
                 'duration_ms' => (int) round((microtime(true) - $started) * 1000),
+                'search' => $searchPayload,
             ];
         } catch (Throwable $exception) {
             return [
@@ -1051,6 +1276,7 @@ final class UrlImportProcessingService
                 'error' => $exception->getMessage(),
                 'skipped' => false,
                 'duration_ms' => (int) round((microtime(true) - $started) * 1000),
+                'search' => $searchPayload,
             ];
         }
     }
@@ -1238,11 +1464,17 @@ final class UrlImportProcessingService
         );
         $hint['page_description'] = Str::limit((string) ($hint['page_description'] ?? ''), 300, '…');
         $hint['identified_company'] = UrlImportCompanyHint::inferCompanyName($hint, '');
-        $hint['identified_brands'] = UrlImportCompanyHint::extractBrandHints(
-            (string) ($hint['page_title'] ?? ''),
-            (string) ($hint['page_description'] ?? ''),
-            (string) ($directParsed['text'] ?? ''),
-        );
+        $userBrands = array_values(array_filter([
+            trim((string) ($hint['brand_name'] ?? '')),
+        ], static fn (string $name): bool => $name !== ''));
+        $hint['identified_brands'] = array_values(array_unique(array_merge(
+            $userBrands,
+            UrlImportCompanyHint::extractBrandHints(
+                (string) ($hint['page_title'] ?? ''),
+                (string) ($hint['page_description'] ?? ''),
+                (string) ($directParsed['text'] ?? ''),
+            ),
+        )));
         $directSnippet = trim((string) ($directParsed['text'] ?? ''));
         $hasDirectBody = mb_strlen($directSnippet, 'UTF-8') >= 30;
         $searchPayload ??= $this->domesticWebSearch->searchForJob($job, $directParsed);
@@ -1263,34 +1495,18 @@ final class UrlImportProcessingService
      */
     private function fetchPage(string $url, bool $lenient = false): array
     {
-        $verifySsl = (bool) config('geoflow.url_import_verify_ssl', true);
-        $attempts = [
-            [
-                'verify' => $verifySsl,
-                'retry_on_ssl_failure' => str_starts_with($url, 'https://') && $verifySsl,
-            ],
-        ];
-
-        if (str_starts_with($url, 'https://') && $verifySsl) {
-            $attempts[] = [
-                'verify' => false,
-                'retry_on_ssl_failure' => false,
-            ];
-        }
-
         $lastException = null;
 
-        foreach ($attempts as $attempt) {
+        foreach (OutboundHttpSsl::httpAttempts() as $attempt) {
             try {
                 $proxyOptions = $this->fetchProxyOptions($url);
-                $response = Http::timeout(25)
+                $response = Http::timeout($this->fetchTimeoutSeconds())
                     ->connectTimeout(10)
                     ->withOptions(array_merge($proxyOptions, [
                         'verify' => $attempt['verify'],
                         'curl' => [
                             CURLOPT_SSLVERSION => CURL_SSLVERSION_TLSv1_2,
                             CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-                            CURLOPT_ENCODING => '',
                             CURLOPT_FOLLOWLOCATION => true,
                             CURLOPT_MAXREDIRS => 5,
                         ],
@@ -1323,7 +1539,7 @@ final class UrlImportProcessingService
             } catch (ConnectionException $exception) {
                 $lastException = $exception;
 
-                if ($attempt['retry_on_ssl_failure'] && $this->isSslConnectionFailure($exception)) {
+                if ($attempt['verify'] && OutboundHttpSsl::isSslFailure($exception)) {
                     continue;
                 }
 
@@ -1336,17 +1552,6 @@ final class UrlImportProcessingService
         }
 
         throw new \RuntimeException(__('admin.url_import.error.empty_page'));
-    }
-
-    private function isSslConnectionFailure(Throwable $exception): bool
-    {
-        $message = strtolower($exception->getMessage());
-
-        return str_contains($message, 'ssl')
-            || str_contains($message, 'tls')
-            || str_contains($message, 'certificate')
-            || str_contains($message, 'curl error 35')
-            || str_contains($message, 'curl error 60');
     }
 
     /**
@@ -1394,6 +1599,9 @@ final class UrlImportProcessingService
             $text = UrlImportHtmlInspector::extractMainText($xpath);
         }
         $text = UrlImportHtmlInspector::mergeSupplementalText($text, $jsonLdText);
+        if (mb_strlen(trim($text), 'UTF-8') < 80 && $description !== '') {
+            $text = UrlImportHtmlInspector::mergeSupplementalText($description, $text);
+        }
         $jsonLdStruct = UrlImportHtmlInspector::extractJsonLdStructured($xpath, $dom);
         $contactInfo   = UrlImportHtmlInspector::extractContactInfo($xpath, $dom);
         $summary = $description !== '' ? $description : Str::limit($text, 220, '...');
@@ -1697,6 +1905,48 @@ final class UrlImportProcessingService
     }
 
     /**
+     * 任务级开关优先：表单勾选「AI 辅助采集 / 全网调研」时才跑博查 + AI 调研。
+     */
+    private function jobWebResearchEnabled(UrlImportJob $job): bool
+    {
+        $options = json_decode((string) $job->options_json, true);
+        $options = is_array($options) ? $options : [];
+
+        if (array_key_exists('web_research_enabled', $options)) {
+            return filter_var($options['web_research_enabled'], FILTER_VALIDATE_BOOLEAN);
+        }
+
+        return (bool) config('geoflow.url_import_web_research_enabled', false);
+    }
+
+    private function fetchTimeoutSeconds(): int
+    {
+        return $this->isFastPipelineMode() ? 20 : 25;
+    }
+
+    private function webResearchAiTimeoutSeconds(): int
+    {
+        $configured = max(30, min(180, (int) config('geoflow.url_import_web_research_ai_timeout', 90)));
+        if ($this->pipelineBudget === null) {
+            return $configured;
+        }
+
+        $remaining = $this->pipelineBudget->remainingSeconds();
+
+        return max(30, min($configured, $remaining - 20));
+    }
+
+    private function fastMaxAnalysisAttempts(): int
+    {
+        $configured = max(1, (int) config('geoflow.url_import_fast.max_analysis_attempts', 2));
+        if ($this->pipelineBudget !== null && $this->pipelineBudget->remainingSeconds() < 90) {
+            return 1;
+        }
+
+        return $configured;
+    }
+
+    /**
      * @param  array<string, mixed>  $parsed
      * @param  array<string, mixed>|null  $pageJson
      * @return array{summary:string,library_name:string,keywords:list<string>,titles:list<string>,knowledge_markdown:string,analysis_source:string,model:mixed}
@@ -1734,6 +1984,8 @@ final class UrlImportProcessingService
                         $cleanSystemPrompt,
                         $cleanUserPrompt
                     );
+                    $cleaned = $this->normalizeCleanedPage($rawClean, $parsed);
+                    $cleanedOutput = $this->summarizeCleanedForNode($cleaned);
                     $this->logNode(
                         $job,
                         'ai_clean',
@@ -1746,12 +1998,10 @@ final class UrlImportProcessingService
                                 'user_prompt' => Str::limit($cleanUserPrompt, 6000, '…'),
                             ]
                         ),
-                        $rawClean,
+                        $cleanedOutput,
                         (int) round((microtime(true) - $cleanStart) * 1000),
                         $attempt
                     );
-                    $cleaned = $this->normalizeCleanedPage($rawClean, $parsed);
-                    $cleanedOutput = $this->summarizeCleanedForNode($cleaned);
                     $this->log($job, 'info', __('admin.url_import.log.clean_done', [
                         'chars' => mb_strlen((string) $cleaned['text'], 'UTF-8'),
                     ]));
@@ -1983,7 +2233,7 @@ final class UrlImportProcessingService
         $parseOutput = $this->summarizeParseForNode($parsed, $pageJson);
 
         $models = $this->assertAnalysisModelsReady((int) ($job->tenant_id ?? 0) ?: null);
-        $maxAttempts = max(1, (int) config('geoflow.url_import_fast.max_analysis_attempts', 2));
+        $maxAttempts = $this->fastMaxAnalysisAttempts();
         $maxTitles = max(12, (int) config('geoflow.url_import_fast.max_titles', 24));
         $errors = [];
 
@@ -2026,7 +2276,7 @@ final class UrlImportProcessingService
                                 'user_prompt' => Str::limit($userPrompt, 6000, '…'),
                             ]
                         ),
-                        $raw,
+                        $cleanedOutput,
                         $durationMs,
                         $attempt
                     );
@@ -2184,7 +2434,7 @@ final class UrlImportProcessingService
         $parseOutput = $this->summarizeParseForNode($parsed, $pageJson);
 
         $models = $this->assertAnalysisModelsReady((int) ($job->tenant_id ?? 0) ?: null);
-        $maxAttempts = max(1, (int) config('geoflow.url_import_fast.max_analysis_attempts', 2));
+        $maxAttempts = $this->fastMaxAnalysisAttempts();
         $maxTitles = max(12, (int) config('geoflow.url_import_fast.max_titles', 24));
         $errors = [];
 
@@ -2228,7 +2478,7 @@ final class UrlImportProcessingService
                                 'user_prompt' => Str::limit($materialUserPrompt, 6000, '…'),
                             ]
                         ),
-                        $rawMaterial,
+                        $cleanedOutput,
                         $materialMs,
                         $attempt
                     );
@@ -2458,7 +2708,7 @@ final class UrlImportProcessingService
      * @param  array{provider:string,model_id:string,model:AiModel}  $runtime
      * @return array<string, mixed>
      */
-    private function requestAiJson(array $runtime, string $systemPrompt, string $userPrompt, ?string $listFallbackKey = null): array
+    private function requestAiJson(array $runtime, string $systemPrompt, string $userPrompt, ?string $listFallbackKey = null, ?int $timeout = null): array
     {
         $agent = new MarkdownContentWriterAgent($systemPrompt);
 
@@ -2467,7 +2717,8 @@ final class UrlImportProcessingService
                 $userPrompt,
                 [],
                 $runtime['provider'],
-                $runtime['model_id']
+                $runtime['model_id'],
+                $timeout,
             );
         } catch (Throwable $exception) {
             /** @var AiModel $model */
@@ -3035,7 +3286,7 @@ final class UrlImportProcessingService
     }
 
     /**
-     * 派发图片下载到队列，不阻塞主流程。
+     * 派发图片下载：默认与主任务同步完成，避免预览页长时间「等待图片」。
      *
      * @param  array{title:string,description:string,text:string,summary:string,images?:list<array<string,mixed>>,raw_json:array<string,mixed>}  $parsed
      */
@@ -3074,6 +3325,18 @@ final class UrlImportProcessingService
             return;
         }
 
+        $imagePayload = [
+            'title' => (string) ($parsed['title'] ?? ''),
+            'images' => array_values($images),
+        ];
+
+        $inline = (bool) config('geoflow.url_import_images_inline', true);
+        if ($inline || app()->runningUnitTests() || config('queue.default') === 'sync') {
+            $this->runImageDownloadInline($job, $parsed, $imagePayload, $detectedCount);
+
+            return;
+        }
+
         UrlImportNodeRecorder::record(
             (int) $job->id,
             'images_import',
@@ -3091,28 +3354,12 @@ final class UrlImportProcessingService
         );
 
         try {
-            $imagePayload = [
-                'title' => (string) ($parsed['title'] ?? ''),
-                'images' => array_values($images),
-            ];
-
-            // 测试 / sync 队列：同步入库，保证断言与预览立即可用
-            if (app()->runningUnitTests() || config('queue.default') === 'sync') {
-                \App\Jobs\DownloadUrlImportImagesJob::dispatchSync(
-                    (int) $job->id,
-                    (string) $job->normalized_url,
-                    (string) $parsed['title'],
-                    $imagePayload
-                );
-            } else {
-                // 生产：立即投递 geoflow 队列（不用 afterResponse，避免 CLI/Worker 场景不触发）
-                \App\Jobs\DownloadUrlImportImagesJob::dispatch(
-                    (int) $job->id,
-                    (string) $job->normalized_url,
-                    (string) $parsed['title'],
-                    $imagePayload
-                )->onQueue('geoflow');
-            }
+            \App\Jobs\DownloadUrlImportImagesJob::dispatch(
+                (int) $job->id,
+                (string) $job->normalized_url,
+                (string) $parsed['title'],
+                $imagePayload
+            )->onQueue('geoflow');
         } catch (Throwable $exception) {
             UrlImportNodeRecorder::record(
                 (int) $job->id,
@@ -3129,6 +3376,90 @@ final class UrlImportProcessingService
                 'job_id' => (int) $job->id,
                 'reason' => $exception->getMessage(),
             ]);
+        }
+    }
+
+    /**
+     * @param  array{title:string,description:string,text:string,summary:string,images?:list<array<string,mixed>>,raw_json:array<string,mixed>}  $parsed
+     * @param  array{title:string,images:list<array<string,mixed>>}  $imagePayload
+     */
+    private function runImageDownloadInline(UrlImportJob $job, array $parsed, array $imagePayload, int $detectedCount): void
+    {
+        $tenantId = (int) ($job->tenant_id ?? 0);
+        if ($tenantId <= 0) {
+            $tenantId = (int) (\App\Support\Tenancy\AdminTenant::defaultTenantId() ?? 0);
+        }
+
+        $startedAt = microtime(true);
+        UrlImportNodeRecorder::record(
+            (int) $job->id,
+            'images_import',
+            '图片下载',
+            'running',
+            [
+                'from_node' => 'parse',
+                'upstream' => [
+                    'image_count' => $detectedCount,
+                    'images' => array_slice($imagePayload['images'] ?? [], 0, 8),
+                    'title' => (string) ($parsed['title'] ?? ''),
+                ],
+                'source_url' => (string) $job->normalized_url,
+            ],
+            ['message' => '与正文同步下载页面图片'],
+        );
+
+        try {
+            $result = (new UrlImportImageDownloader())->downloadFromParsed(
+                $tenantId,
+                (string) $job->normalized_url,
+                (string) $parsed['title'],
+                $imagePayload
+            );
+            $durationMs = (int) round((microtime(true) - $startedAt) * 1000);
+            $downloaded = (int) ($result['downloaded'] ?? 0);
+
+            UrlImportNodeRecorder::record(
+                (int) $job->id,
+                'images_import',
+                '图片下载',
+                $downloaded > 0 ? 'success' : 'skipped',
+                [
+                    'from_node' => 'parse',
+                    'upstream' => [
+                        'image_count' => $detectedCount,
+                        'images' => array_slice($imagePayload['images'] ?? [], 0, 8),
+                    ],
+                    'source_url' => (string) $job->normalized_url,
+                    'candidate_count' => $detectedCount,
+                ],
+                [
+                    'downloaded' => $downloaded,
+                    'skipped' => (int) ($result['skipped'] ?? 0),
+                    'failed' => (int) ($result['failed'] ?? 0),
+                    'library_id' => $result['library_id'] ?? null,
+                    'image_ids' => $result['image_ids'] ?? [],
+                    'elapsed_ms' => (int) ($result['elapsed_ms'] ?? $durationMs),
+                    'feeds_into' => 'images_tab',
+                    'chain_note' => $downloaded > 0
+                        ? '已下载图片可在「采集图片」Tab 勾选入库'
+                        : '全部候选图被尺寸/防盗链/格式规则过滤',
+                ],
+                $durationMs,
+            );
+
+            $this->mergeImageImportResult((int) $job->id, $result);
+        } catch (Throwable $exception) {
+            UrlImportNodeRecorder::record(
+                (int) $job->id,
+                'images_import',
+                '图片下载',
+                'failed',
+                ['source_url' => (string) $job->normalized_url],
+                null,
+                (int) round((microtime(true) - $startedAt) * 1000),
+                1,
+                $exception->getMessage(),
+            );
         }
     }
 
@@ -3216,14 +3547,21 @@ final class UrlImportProcessingService
      */
     private function summarizeParseForNode(array $parsed, array $pageJson): array
     {
+        $pageJsonJson = json_encode($pageJson, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+
         return [
             'title' => (string) ($parsed['title'] ?? ''),
             'description' => (string) ($parsed['description'] ?? ''),
             'text_chars' => mb_strlen((string) ($parsed['text'] ?? ''), 'UTF-8'),
-            'text_preview' => Str::limit((string) ($parsed['text'] ?? ''), 1500, '…'),
+            'text_preview' => Str::limit((string) ($parsed['text'] ?? ''), 4000, '…'),
             'image_count' => count($parsed['images'] ?? []),
-            'images' => array_slice($parsed['images'] ?? [], 0, 6),
-            'page_json' => $pageJson,
+            'images' => array_slice($parsed['images'] ?? [], 0, 8),
+            'identified_company' => (string) ($parsed['identified_company'] ?? ''),
+            'brand_names' => array_values((array) ($parsed['brand_names'] ?? [])),
+            'page_json_chars' => is_string($pageJsonJson) ? mb_strlen($pageJsonJson, 'UTF-8') : 0,
+            'page_json_chunk_count' => count($pageJson['chunks'] ?? []),
+            'feeds_into' => 'web_research',
+            'chain_note' => '结构化正文与图片清单，供全网调研与 AI 分析',
         ];
     }
 
@@ -3255,7 +3593,7 @@ final class UrlImportProcessingService
             'summary' => $aiSummary,
             'library_name' => $aiLibraryName,
             'knowledge_markdown_chars' => mb_strlen($aiKnowledge, 'UTF-8'),
-            'knowledge_markdown_preview' => Str::limit($aiKnowledge, 2500, '…'),
+            'knowledge_markdown_preview' => Str::limit($aiKnowledge, 4000, '…'),
             'raw_field_keys' => is_array($rawKnowledge) ? array_values(array_keys($rawKnowledge)) : [],
         ];
     }
@@ -3325,20 +3663,24 @@ final class UrlImportProcessingService
         }
 
         if ($heavy !== []) {
-            $artifact = UrlImportJobArtifact::query()->create([
-                'job_id' => (int) $job->id,
-                'node_log_id' => null,
-                'artifact_key' => 'result_json:' . ($context !== '' ? $context : 'snapshot'),
-                'mime' => 'application/json',
-                'byte_size' => strlen(json_encode($heavy, JSON_UNESCAPED_UNICODE)),
-                'payload' => json_encode([
-                    'context' => $context,
-                    'heavy' => $heavy,
-                    'saved_at' => now()->toIso8601String(),
-                ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-            ]);
-            $result['_truncated'] = true;
-            $result['_artifact_id'] = (int) $artifact->id;
+            try {
+                $artifact = UrlImportJobArtifact::query()->create([
+                    'job_id' => (int) $job->id,
+                    'node_log_id' => null,
+                    'artifact_key' => 'result_json:'.($context !== '' ? $context : 'snapshot'),
+                    'mime' => 'application/json',
+                    'byte_size' => strlen(json_encode($heavy, JSON_UNESCAPED_UNICODE)),
+                    'payload' => json_encode([
+                        'context' => $context,
+                        'heavy' => $heavy,
+                        'saved_at' => now()->toIso8601String(),
+                    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                ]);
+                $result['_truncated'] = true;
+                $result['_artifact_id'] = (int) $artifact->id;
+            } catch (Throwable) {
+                // artifact 表不可用时仍保存主表摘要
+            }
         }
 
         $json = json_encode($result, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
@@ -3439,21 +3781,25 @@ final class UrlImportProcessingService
             return [$payload, null];
         }
 
-        $artifact = UrlImportJobArtifact::query()->create([
-            'job_id' => (int) $job->id,
-            'node_log_id' => null,
-            'artifact_key' => $nodeKey.':'.$side,
-            'mime' => 'application/json',
-            'byte_size' => strlen($json),
-            'payload' => $json,
-        ]);
+        try {
+            $artifact = UrlImportJobArtifact::query()->create([
+                'job_id' => (int) $job->id,
+                'node_log_id' => null,
+                'artifact_key' => $nodeKey.':'.$side,
+                'mime' => 'application/json',
+                'byte_size' => strlen($json),
+                'payload' => $json,
+            ]);
 
-        return [[
-            '_truncated' => true,
-            '_artifact_id' => (int) $artifact->id,
-            '_original_chars' => mb_strlen($json, 'UTF-8'),
-            '_preview' => mb_substr($json, 0, $rowChars, 'UTF-8').'…',
-        ], (int) $artifact->id];
+            return [[
+                '_truncated' => true,
+                '_artifact_id' => (int) $artifact->id,
+                '_original_chars' => mb_strlen($json, 'UTF-8'),
+                '_preview' => mb_substr($json, 0, $rowChars, 'UTF-8').'…',
+            ], (int) $artifact->id];
+        } catch (Throwable) {
+            return [$this->truncateNodePayload($payload, $rowChars), null];
+        }
     }
 
     /**

@@ -18,6 +18,7 @@ use App\Http\Middleware\LogAdminActivity;
 use App\Http\Middleware\RecordSiteViewLog;
 use App\Http\Middleware\SiteWebLocale;
 use App\Support\ApiResponse;
+use Illuminate\Auth\Middleware\RedirectIfAuthenticated;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -43,6 +44,16 @@ return Application::configure(basePath: dirname(__DIR__))
         if ($trustedProxies !== '') {
             $middleware->trustProxies(at: $trustedProxies, headers: \Illuminate\Http\Request::HEADER_X_FORWARDED_FOR | \Illuminate\Http\Request::HEADER_X_FORWARDED_HOST | \Illuminate\Http\Request::HEADER_X_FORWARDED_PORT | \Illuminate\Http\Request::HEADER_X_FORWARDED_PROTO | \Illuminate\Http\Request::HEADER_X_FORWARDED_PREFIX);
         }
+
+        // guest:admin 默认会把已登录用户 redirect 到 `/`，与 EnsureWebSurfacePort 形成死循环。
+        RedirectIfAuthenticated::redirectUsing(function (Request $request): string {
+            $adminPrefix = trim((string) config('geoflow.admin_base_path', '/geo_admin'), '/');
+            if ($request->is($adminPrefix) || $request->is($adminPrefix.'/*')) {
+                return route('admin.dashboard');
+            }
+
+            return '/';
+        });
 
         $middleware->alias([
             // 生成/透传 X-Request-Id，并写入响应头

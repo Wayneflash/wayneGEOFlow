@@ -14,6 +14,7 @@ use App\Models\UrlImportJobNodeLog;
 use App\Services\GeoFlow\UrlImportProcessingService;
 use App\Support\GeoFlow\ImageUrlNormalizer;
 use App\Support\GeoFlow\UrlImportImageLibrary;
+use App\Support\GeoFlow\UrlImportNodeChainPresenter;
 use App\Support\Tenancy\AdminTenant;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -44,10 +45,13 @@ class UrlImportController extends Controller
     {
         $validated = $request->validate([
             'url' => ['required', 'string', 'max:2048'],
+            'company_name' => ['nullable', 'string', 'max:120'],
+            'brand_name' => ['nullable', 'string', 'max:120'],
             'project_name' => ['nullable', 'string', 'max:120'],
             'source_label' => ['nullable', 'string', 'max:120'],
             'content_language' => ['nullable', 'string', 'max:20'],
             'notes' => ['nullable', 'string', 'max:1000'],
+            'enable_web_research' => ['sometimes', 'boolean'],
             'outputs' => ['array'],
             'outputs.*' => ['string', 'in:knowledge,keywords,titles'],
         ]);
@@ -67,19 +71,29 @@ class UrlImportController extends Controller
                 ->withErrors(['ai_model' => '采集能力还没有准备好，请先完成基础配置。']);
         }
 
+        $companyName = trim((string) ($validated['company_name'] ?? ''));
+        $brandName = trim((string) ($validated['brand_name'] ?? ''));
+        $projectName = trim((string) ($validated['project_name'] ?? ''));
+        if ($projectName === '' && $companyName !== '') {
+            $projectName = $companyName;
+        }
+
         $job = UrlImportJob::query()->create(AdminTenant::stamp([
             'url' => $validated['url'],
             'normalized_url' => $normalized['url'],
             'source_domain' => $normalized['host'],
-            'page_title' => $validated['project_name'] ?? '',
+            'page_title' => $projectName !== '' ? $projectName : $companyName,
             'status' => 'queued',
             'current_step' => 'queued',
             'progress_percent' => 0,
             'options_json' => json_encode([
-                'project_name' => $validated['project_name'] ?? '',
+                'company_name' => $companyName,
+                'brand_name' => $brandName,
+                'project_name' => $projectName,
                 'source_label' => $validated['source_label'] ?? '',
                 'content_language' => $validated['content_language'] ?? '',
                 'notes' => $validated['notes'] ?? '',
+                'web_research_enabled' => $request->boolean('enable_web_research'),
                 'outputs' => $validated['outputs'] ?? ['knowledge', 'keywords', 'titles'],
             ], JSON_UNESCAPED_UNICODE),
             'result_json' => '',
@@ -348,6 +362,7 @@ class UrlImportController extends Controller
             'currentNodeKey' => $this->resolveCurrentNodeKey($job, $nodeSteps),
             'failureMessage' => $this->publicErrorMessage($job),
             'isStaleRunning' => $isStale,
+            'webResearchEnabled' => $job->webResearchEnabled(),
         ]);
     }
 
@@ -360,42 +375,158 @@ class UrlImportController extends Controller
             return response()->json(['error' => 'node_key required'], 400);
         }
 
-        $query = UrlImportJobNodeLog::query()
-            ->where('job_id', $jobId)
-            ->where('node_key', $nodeKey)
-            ->orderByDesc('id');
-        if ($attempt > 0) {
-            $query->where('attempt', $attempt);
-        }
-        $log = $query->first();
+        return response()->json(
+            app(UrlImportNodeChainPresenter::class)->payload($jobId, $nodeKey, $attempt)
+        );
+    }
 
-        if (! $log) {
-            return response()->json([
-                'node_key' => $nodeKey,
-                'node_label' => '',
-                'attempt' => 0,
+    /**
+     * @return list<string>
+     */
+    private function aiAnalysisSubNodeKeys(): array
+    {
+        return ['ai_clean', 'ai_knowledge', 'ai_keywords', 'ai_titles'];
+    }
+
+    /**
+     * @param  array<string, UrlImportJobNodeLog>  $byKey
+     * @return array{label:string,status:string,duration_ms:int,attempt:int,error:?string,created_at:?string,fast_one_shot:bool}
+     */
+    private function aggregateAiAnalysisStep(array $byKey): array
+    {
+        if (isset($byKey['ai_analysis'])) {
+            $log = $byKey['ai_analysis'];
+
+            return [
+                'label' => (string) $log->node_label,
+                'status' => (string) $log->status,
+                'duration_ms' => (int) ($log->duration_ms ?? 0),
+                'attempt' => (int) $log->attempt,
+                'error' => (string) ($log->error_message ?? '') ?: null,
+                'created_at' => $log->created_at?->toIso8601String(),
+                'fast_one_shot' => str_contains((string) $log->node_label, '一站式'),
+            ];
+        }
+
+        $subLogs = [];
+        foreach ($this->aiAnalysisSubNodeKeys() as $key) {
+            if (isset($byKey[$key])) {
+                $subLogs[$key] = $byKey[$key];
+            }
+        }
+
+        if ($subLogs === []) {
+            return [
+                'label' => 'AI 分析',
                 'status' => 'pending',
                 'duration_ms' => 0,
-                'input' => null,
-                'output' => null,
-                'error' => '',
-                'message' => '该节点尚未执行，暂无调试数据',
-            ]);
+                'attempt' => 0,
+                'error' => null,
+                'created_at' => null,
+                'fast_one_shot' => false,
+            ];
         }
 
-        return response()->json([
-            'id' => (int) $log->id,
-            'job_id' => (int) $log->job_id,
-            'node_key' => (string) $log->node_key,
-            'node_label' => (string) $log->node_label,
-            'attempt' => (int) $log->attempt,
-            'status' => (string) $log->status,
-            'duration_ms' => (int) ($log->duration_ms ?? 0),
-            'input' => $log->input_json ?? new \stdClass,
-            'output' => $log->output_json ?? new \stdClass,
-            'error' => (string) ($log->error_message ?? ''),
-            'created_at' => $log->created_at?->toIso8601String() ?? '',
-        ]);
+        $knowledgeLog = $byKey['ai_knowledge'] ?? null;
+        $fastOneShot = $knowledgeLog !== null && str_contains((string) $knowledgeLog->node_label, '一站式');
+        $label = $fastOneShot ? 'AI 分析（一站式）' : 'AI 分析';
+
+        $statuses = array_map(static fn (UrlImportJobNodeLog $log): string => (string) $log->status, $subLogs);
+        $error = null;
+        if (in_array('failed', $statuses, true)) {
+            $status = 'failed';
+            foreach ($subLogs as $log) {
+                if ((string) $log->status === 'failed') {
+                    $error = (string) ($log->error_message ?? '');
+                    break;
+                }
+            }
+        } elseif (in_array('running', $statuses, true) || in_array('queued', $statuses, true)) {
+            $status = 'running';
+        } elseif (($byKey['ai_titles'] ?? null)?->status === 'success') {
+            $status = 'success';
+        } elseif ($fastOneShot && ($knowledgeLog?->status === 'success')) {
+            $status = 'success';
+        } elseif (in_array('success', $statuses, true)) {
+            $status = 'running';
+        } else {
+            $status = 'pending';
+        }
+
+        $durationMs = array_sum(array_map(static fn (UrlImportJobNodeLog $log): int => (int) ($log->duration_ms ?? 0), $subLogs));
+        $lastLog = end($subLogs) ?: reset($subLogs);
+
+        return [
+            'label' => $label,
+            'status' => $status,
+            'duration_ms' => $durationMs,
+            'attempt' => $lastLog ? (int) $lastLog->attempt : 0,
+            'error' => $error !== '' ? $error : null,
+            'created_at' => $lastLog?->created_at?->toIso8601String(),
+            'fast_one_shot' => $fastOneShot,
+        ];
+    }
+
+    private function mapJobStepToNodeKey(string $step): ?string
+    {
+        return match ($step) {
+            'fetch' => 'fetch',
+            'page_json' => 'parse',
+            'knowledge', 'keywords', 'titles' => 'ai_analysis',
+            default => null,
+        };
+    }
+
+    /**
+     * @param  array<string, UrlImportJobNodeLog>  $byKey
+     */
+    private function resolveWebResearchStepStatus(array $byKey, UrlImportJob $job): array
+    {
+        $enabled = $job->webResearchEnabled();
+        $log = $byKey['web_research'] ?? null;
+
+        if ($log !== null) {
+            $output = is_array($log->output_json) ? $log->output_json : [];
+            $skipReason = (string) ($output['skip_reason'] ?? '');
+
+            return [
+                'label' => 'AI 全网调研',
+                'status' => (string) $log->status,
+                'duration_ms' => (int) ($log->duration_ms ?? 0),
+                'attempt' => (int) $log->attempt,
+                'error' => (string) ($log->error_message ?? '') ?: null,
+                'created_at' => $log->created_at?->toIso8601String(),
+                'web_research_enabled' => $enabled,
+                'skip_reason' => $skipReason,
+            ];
+        }
+
+        $pending = in_array((string) $job->status, ['queued', 'running'], true)
+            && ! isset($byKey['parse']);
+
+        if (! $enabled) {
+            return [
+                'label' => 'AI 全网调研',
+                'status' => 'skipped',
+                'duration_ms' => 0,
+                'attempt' => 0,
+                'error' => null,
+                'created_at' => null,
+                'web_research_enabled' => false,
+                'skip_reason' => 'disabled_by_user',
+            ];
+        }
+
+        return [
+            'label' => 'AI 全网调研',
+            'status' => $pending ? 'pending' : 'skipped',
+            'duration_ms' => 0,
+            'attempt' => 0,
+            'error' => null,
+            'created_at' => null,
+            'web_research_enabled' => true,
+            'skip_reason' => $pending ? '' : 'not_run',
+        ];
     }
 
     /**
@@ -414,29 +545,68 @@ class UrlImportController extends Controller
             $byKey[(string) $log->node_key] = $log;
         }
 
+        $aiAggregate = $this->aggregateAiAnalysisStep($byKey);
+        $webResearch = $this->resolveWebResearchStepStatus($byKey, $job);
+
         $pipeline = [
             ['key' => 'fetch', 'label' => '读取网页', 'sequential' => true],
             ['key' => 'parse', 'label' => '提取正文', 'sequential' => true],
-            ['key' => 'web_research', 'label' => 'AI 全网调研', 'sequential' => true],
-            ['key' => 'ai_clean', 'label' => 'AI 清洗正文', 'sequential' => true],
-            ['key' => 'ai_knowledge', 'label' => 'AI 整理素材', 'sequential' => true],
-            ['key' => 'ai_keywords', 'label' => 'AI 提炼主题词', 'sequential' => true],
-            ['key' => 'ai_titles', 'label' => 'AI 生成标题', 'sequential' => true],
+            ['key' => 'web_research', 'label' => (string) $webResearch['label'], 'sequential' => true],
+            ['key' => 'ai_analysis', 'label' => (string) $aiAggregate['label'], 'sequential' => true],
             ['key' => 'images_import', 'label' => '图片下载', 'sequential' => false],
         ];
 
         $steps = [];
+        $webResearchEnabled = $job->webResearchEnabled();
+        $skipReason = '';
         foreach ($pipeline as $entry) {
             $log = $byKey[$entry['key']] ?? null;
+            $label = $entry['label'];
+            $status = 'pending';
+            $durationMs = 0;
+            $attempt = 0;
+            $error = null;
+            $createdAt = null;
+
+            if ($entry['key'] === 'web_research') {
+                $status = (string) $webResearch['status'];
+                $durationMs = (int) $webResearch['duration_ms'];
+                $attempt = (int) $webResearch['attempt'];
+                $error = $webResearch['error'];
+                $createdAt = $webResearch['created_at'];
+                $webResearchEnabled = (bool) ($webResearch['web_research_enabled'] ?? $job->webResearchEnabled());
+                $skipReason = (string) ($webResearch['skip_reason'] ?? '');
+            } elseif ($entry['key'] === 'ai_analysis') {
+                $status = (string) $aiAggregate['status'];
+                $durationMs = (int) $aiAggregate['duration_ms'];
+                $attempt = (int) $aiAggregate['attempt'];
+                $error = $aiAggregate['error'];
+                $createdAt = $aiAggregate['created_at'];
+            } elseif ($log !== null) {
+                $status = (string) $log->status;
+                $durationMs = (int) ($log->duration_ms ?? 0);
+                $attempt = (int) $log->attempt;
+                $error = (string) ($log->error_message ?? '') ?: null;
+                $createdAt = $log->created_at?->toIso8601String();
+            } elseif (
+                $entry['key'] === 'parse'
+                && (string) $job->status === 'completed'
+                && in_array((string) $aiAggregate['status'], ['success', 'running'], true)
+            ) {
+                $status = 'success';
+            }
+
             $steps[] = [
                 'key' => $entry['key'],
-                'label' => $entry['label'],
+                'label' => $label,
                 'sequential' => (bool) ($entry['sequential'] ?? true),
-                'status' => $log ? (string) $log->status : 'pending',
-                'duration_ms' => $log ? (int) ($log->duration_ms ?? 0) : 0,
-                'attempt' => $log ? (int) $log->attempt : 0,
-                'error' => $log ? (string) ($log->error_message ?? '') : null,
-                'created_at' => $log?->created_at?->toIso8601String(),
+                'status' => $status,
+                'duration_ms' => $durationMs,
+                'attempt' => $attempt,
+                'error' => $error,
+                'created_at' => $createdAt,
+                'web_research_enabled' => ($entry['key'] === 'web_research') ? ($webResearchEnabled ?? $job->webResearchEnabled()) : null,
+                'skip_reason' => ($entry['key'] === 'web_research') ? ($skipReason ?? '') : null,
             ];
         }
 
@@ -456,6 +626,11 @@ class UrlImportController extends Controller
             }
 
             return null;
+        }
+
+        $mapped = $this->mapJobStepToNodeKey((string) $job->current_step);
+        if ($mapped !== null) {
+            return $mapped;
         }
 
         foreach ($nodeSteps as $step) {
@@ -607,6 +782,7 @@ class UrlImportController extends Controller
         $result = $this->decodeJson((string) $job->result_json);
         $imageImport = is_array($result['import']['images'] ?? null) ? $result['import']['images'] : [];
         $importedImages = $this->loadImportedImages($job);
+        $webResearchStep = collect($nodeSteps)->firstWhere('key', 'web_research');
 
         return [
             'id' => (int) $job->id,
@@ -625,6 +801,9 @@ class UrlImportController extends Controller
             'detected_image_count' => (int) data_get($result, 'page.image_count', 0),
             'image_import_status' => (string) ($imageImport['status'] ?? ''),
             'images_import_finished' => $this->imagesImportFinished($job, $result, $nodeSteps, count($importedImages)),
+            'web_research_enabled' => $job->webResearchEnabled(),
+            'web_research_step_status' => (string) ($webResearchStep['status'] ?? 'pending'),
+            'collection_mode' => (string) data_get($result, 'source.collection_mode', ''),
             'node_steps' => array_map(fn (array $step): array => [
                 'key' => (string) $step['key'],
                 'label' => (string) $step['label'],
@@ -633,6 +812,8 @@ class UrlImportController extends Controller
                 'status_label' => $this->nodeStatusLabel((string) $step['status']),
                 'duration_ms' => (int) ($step['duration_ms'] ?? 0),
                 'error' => (string) ($step['error'] ?? ''),
+                'web_research_enabled' => $step['web_research_enabled'] ?? null,
+                'skip_reason' => (string) ($step['skip_reason'] ?? ''),
             ], $nodeSteps),
             'logs' => [],
         ];

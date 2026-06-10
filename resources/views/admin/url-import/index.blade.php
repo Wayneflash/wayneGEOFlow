@@ -64,6 +64,45 @@
                         >
                         <span class="url-import-input-beam"></span>
                     </div>
+                    <div class="grid gap-4 sm:grid-cols-2">
+                        <div class="admin-field">
+                            <label for="company_name" class="admin-label">{{ __('admin.url_import.field.company_name') }}</label>
+                            <input
+                                id="company_name"
+                                name="company_name"
+                                type="text"
+                                value="{{ old('company_name') }}"
+                                maxlength="120"
+                                placeholder="{{ __('admin.url_import.placeholder.company_name') }}"
+                                class="admin-input"
+                            >
+                        </div>
+                        <div class="admin-field">
+                            <label for="brand_name" class="admin-label">{{ __('admin.url_import.field.brand_name') }}</label>
+                            <input
+                                id="brand_name"
+                                name="brand_name"
+                                type="text"
+                                value="{{ old('brand_name') }}"
+                                maxlength="120"
+                                placeholder="{{ __('admin.url_import.placeholder.brand_name') }}"
+                                class="admin-input"
+                            >
+                        </div>
+                    </div>
+                    <label class="mt-3 flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200/80 bg-slate-50/60 px-4 py-3">
+                        <input
+                            type="checkbox"
+                            name="enable_web_research"
+                            value="1"
+                            class="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                            @checked(old('enable_web_research'))
+                        >
+                        <span class="min-w-0">
+                            <span class="block text-sm font-medium text-slate-800">{{ __('admin.url_import.field.enable_web_research') }}</span>
+                            <span class="mt-0.5 block text-xs leading-5 text-slate-500">{{ __('admin.url_import.help.enable_web_research') }}</span>
+                        </span>
+                    </label>
                     <div class="admin-field">
                         <label for="project_name" class="admin-label">{{ __('admin.url_import.field.project_name') }}</label>
                         <input
@@ -75,13 +114,19 @@
                             placeholder="{{ __('admin.url_import.placeholder.project_name') }}"
                             class="admin-input"
                         >
-                        <p class="mt-1.5 text-xs text-slate-500">用于生成知识库 / 关键词库 / 标题库名称，建议填写项目或主题名。</p>
+                        <p class="mt-1.5 text-xs text-slate-500">可选；不填则使用公司名作为素材库名称。</p>
                         <p class="mt-2 text-xs leading-5 text-slate-500">
                             当前为<strong class="font-medium text-slate-700">单页采集</strong>：只抓取你粘贴的这一条 URL。
-                            流程：<strong class="font-medium text-slate-700">先读官网识别公司/品牌</strong> → AI 全网补资料 → 清洗整理 → 预览确认入库。
-                            建议填写<strong class="font-medium text-slate-700">项目名</strong>辅助识别；URL 优先用官网首页或方案详情页。
+                            流程：<strong class="font-medium text-slate-700">读官网 →（可选）AI 全网补充 → AI 整理 → 预览入库</strong>。
+                            URL 建议用官网首页或方案详情页。
                         </p>
                     </div>
+                    @error('company_name')
+                        <p class="text-sm text-red-600">{{ $message }}</p>
+                    @enderror
+                    @error('brand_name')
+                        <p class="text-sm text-red-600">{{ $message }}</p>
+                    @enderror
                     @error('url')
                         <p class="text-sm text-red-600">{{ $message }}</p>
                     @enderror
@@ -92,7 +137,7 @@
                         <p class="text-sm text-red-600">{{ $message }}</p>
                     @enderror
                     <div class="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between">
-                        <p class="text-xs text-slate-400">正文按节点顺序处理；图片后台下载到本地，由你勾选后入库</p>
+                        <p class="text-xs text-slate-400">默认仅抓官网；勾选 AI 辅助后额外联网补资料，整体约 4–6 分钟</p>
                         <button type="submit" class="url-import-launch" @disabled(! $aiModelReady)>
                             <i data-lucide="zap" class="h-4 w-4"></i>
                             开始采集

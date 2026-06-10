@@ -23,7 +23,14 @@ final class UrlImportWebResearchNormalizer
         $industries = $this->stringList($raw['industries'] ?? []);
         $scenarios = $this->stringList($raw['scenarios'] ?? []);
         $confidence = $this->normalizeConfidence((string) ($raw['confidence'] ?? 'medium'));
-        $evidenceLimits = trim((string) ($raw['evidence_limits'] ?? ''));
+        $evidenceLimits = $raw['evidence_limits'] ?? '';
+        if (is_array($evidenceLimits)) {
+            $evidenceLimits = implode('；', array_values(array_filter(array_map(
+                static fn (mixed $item): string => trim((string) $item),
+                $evidenceLimits,
+            ), static fn (string $item): bool => $item !== '')));
+        }
+        $evidenceLimits = trim((string) $evidenceLimits);
 
         $text = trim((string) ($raw['research_text'] ?? $raw['text'] ?? $raw['knowledge_markdown'] ?? ''));
         if ($text === '' && $fallbackRawText !== '') {

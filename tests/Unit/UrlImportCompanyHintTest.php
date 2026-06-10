@@ -7,6 +7,20 @@ use Tests\TestCase;
 
 class UrlImportCompanyHintTest extends TestCase
 {
+    public function test_it_builds_search_queries_from_company_and_brand_names(): void
+    {
+        $hint = UrlImportCompanyHint::build(
+            'https://www.shensilian.com/',
+            'www.shensilian.com',
+            ['company_name' => '厦门深斯联科技', 'brand_name' => '深联云GEO'],
+            ['title' => '深联云GEO | AI 收录优化', 'description' => 'GEO 服务'],
+        );
+
+        $this->assertSame('厦门深斯联科技', $hint['company_name']);
+        $this->assertSame('深联云GEO', $hint['brand_name']);
+        $this->assertContains('深联云GEO 产品 解决方案', $hint['search_queries']);
+    }
+
     public function test_it_builds_domain_stem_and_search_queries(): void
     {
         $hint = UrlImportCompanyHint::build(
@@ -47,6 +61,19 @@ class UrlImportCompanyHintTest extends TestCase
     }
 
     public function test_it_infers_company_from_project_name_or_title(): void
+    {
+        $hint = UrlImportCompanyHint::build(
+            'https://www.shensilian.com/',
+            'shensilian.com',
+            ['company_name' => '深联云GEO'],
+            ['title' => '深联云GEO | AI 收录优化'],
+        );
+
+        $this->assertSame('深联云', UrlImportCompanyHint::inferCompanyName($hint, '深思联（暂定）'));
+        $this->assertSame('深联云', UrlImportCompanyHint::inferCompanyName($hint, '深联云科技'));
+    }
+
+    public function test_it_infers_company_from_legacy_project_name(): void
     {
         $hint = UrlImportCompanyHint::build(
             'https://www.shensilian.com/',

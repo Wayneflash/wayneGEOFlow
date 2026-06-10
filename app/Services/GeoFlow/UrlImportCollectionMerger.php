@@ -56,6 +56,12 @@ final class UrlImportCollectionMerger
             trim((string) ($aiResearch['company_name'] ?? '')),
         );
         $brandNames = $this->stringList($aiResearch['brand_names'] ?? []);
+        if ($brandNames === []) {
+            $userBrand = trim((string) ($options['brand_name'] ?? ''));
+            if ($userBrand !== '') {
+                $brandNames = [$userBrand];
+            }
+        }
 
         $title = $this->pickTitle($directParsed, $aiResearch, $sourceDomain, $identifiedCompany);
         $description = $this->pickDescription($directParsed, $aiResearch);
@@ -90,8 +96,8 @@ final class UrlImportCollectionMerger
             'domain_analysis' => trim((string) ($aiResearch['domain_analysis'] ?? '')),
             'direct_text_chars' => mb_strlen($directText, 'UTF-8'),
             'ai_research_text_chars' => mb_strlen($aiText, 'UTF-8'),
-            'ai_research_confidence' => (string) ($aiResearch['confidence'] ?? ''),
-            'ai_evidence_limits' => (string) ($aiResearch['evidence_limits'] ?? ''),
+            'ai_research_confidence' => $this->scalarText($aiResearch['confidence'] ?? ''),
+            'ai_evidence_limits' => $this->scalarText($aiResearch['evidence_limits'] ?? ''),
             'raw_json' => [
                 'title' => $title,
                 'description' => $description,
@@ -111,8 +117,8 @@ final class UrlImportCollectionMerger
             'ai_meta' => [
                 'ok' => $aiOk,
                 'text_chars' => mb_strlen($aiText, 'UTF-8'),
-                'confidence' => (string) ($aiResearch['confidence'] ?? ''),
-                'evidence_limits' => (string) ($aiResearch['evidence_limits'] ?? ''),
+                'confidence' => $this->scalarText($aiResearch['confidence'] ?? ''),
+                'evidence_limits' => $this->scalarText($aiResearch['evidence_limits'] ?? ''),
                 'company_name' => $identifiedCompany,
             ],
         ];
@@ -267,5 +273,17 @@ final class UrlImportCollectionMerger
         }
 
         return array_values(array_unique($items));
+    }
+
+    private function scalarText(mixed $value): string
+    {
+        if (is_array($value)) {
+            return implode('；', array_values(array_filter(array_map(
+                static fn (mixed $item): string => trim((string) $item),
+                $value,
+            ), static fn (string $item): bool => $item !== '')));
+        }
+
+        return trim((string) $value);
     }
 }

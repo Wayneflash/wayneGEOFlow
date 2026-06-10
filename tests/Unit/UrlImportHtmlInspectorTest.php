@@ -42,6 +42,27 @@ class UrlImportHtmlInspectorTest extends TestCase
         ]));
     }
 
+    public function test_it_merges_json_ld_graph_supplemental_text(): void
+    {
+        $html = <<<'HTML'
+        <html><head>
+            <script type="application/ld+json">{
+                "@context":"https://schema.org",
+                "@graph":[
+                    {"@type":"WebSite","name":"深联云GEO","description":"AI 收录优化与官网 GEO 解决方案"},
+                    {"@type":"Organization","name":"深联云","description":"面向企业的 GEO 内容优化平台"}
+                ]
+            }</script>
+        </head><body><main><p>短</p></main></body></html>
+        HTML;
+
+        $loaded = UrlImportHtmlInspector::loadDom($html);
+        $jsonLdText = UrlImportHtmlInspector::extractJsonLdText($loaded['xpath']);
+
+        $this->assertStringContainsString('深联云GEO', $jsonLdText);
+        $this->assertStringContainsString('GEO 内容优化平台', $jsonLdText);
+    }
+
     public function test_it_merges_json_ld_supplemental_text(): void
     {
         $html = <<<'HTML'

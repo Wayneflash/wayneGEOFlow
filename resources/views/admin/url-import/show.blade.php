@@ -76,6 +76,13 @@
         (string) ($webResearch['search_error'] ?? ''),
         (string) ($webResearch['error'] ?? ''),
     ]));
+    $webResearchEnabled = (bool) ($webResearchEnabled ?? $job->webResearchEnabled());
+    $webResearchStep = collect($nodeSteps ?? [])->firstWhere('key', 'web_research');
+    $webResearchStepStatus = (string) ($webResearchStep['status'] ?? 'pending');
+    $webResearchAiFailed = $webResearchEnabled
+        && in_array($webResearchStepStatus, ['failed'], true);
+    $webResearchSkippedDisabled = ! $webResearchEnabled
+        || (($webResearchStep['skip_reason'] ?? '') === 'disabled_by_user');
     $imagesImportStep = collect($nodeSteps)->firstWhere('key', 'images_import');
     $imagesImportStepStatus = (string) ($imagesImportStep['status'] ?? 'pending');
     $imagesImportFinished = in_array($imageImportStatus, ['imported', 'empty'], true)
@@ -90,6 +97,8 @@
         'status' => (string) $step['status'],
         'duration_ms' => (int) ($step['duration_ms'] ?? 0),
         'error' => (string) ($step['error'] ?? ''),
+        'web_research_enabled' => $step['web_research_enabled'] ?? null,
+        'skip_reason' => (string) ($step['skip_reason'] ?? ''),
     ], $nodeSteps);
 @endphp
 
@@ -112,12 +121,31 @@
             data-run-url="{{ route('admin.url-import.run', ['jobId' => $job->id], false) }}"
             data-cancel-url="{{ route('admin.url-import.cancel', ['jobId' => $job->id], false) }}"
             data-status-url="{{ route('admin.url-import.status', ['jobId' => $job->id], false) }}"
+            data-web-research-enabled="{{ $webResearchEnabled ? '1' : '0' }}"
         >
             <div class="admin-panel">
                 <div class="admin-panel-header">
                     <div class="min-w-0">
-                        <h1 class="text-xl font-semibold tracking-tight text-slate-950">采集进度</h1>
+                        <div class="flex flex-wrap items-center gap-2">
+                            <h1 class="text-xl font-semibold tracking-tight text-slate-950">采集进度</h1>
+                            @if ($webResearchEnabled)
+                                <span class="inline-flex items-center gap-1 rounded-full border border-violet-200 bg-violet-50 px-2.5 py-0.5 text-xs font-semibold text-violet-700" data-web-research-badge>
+                                    <i data-lucide="globe" class="h-3 w-3"></i>
+                                    AI 辅助采集
+                                </span>
+                            @else
+                                <span class="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-xs font-semibold text-slate-600" data-web-research-badge>
+                                    <i data-lucide="link" class="h-3 w-3"></i>
+                                    仅官网直连
+                                </span>
+                            @endif
+                        </div>
                         <p class="mt-2 break-all text-sm text-slate-500">{{ $sourceUrl }}</p>
+                        @if ($webResearchEnabled)
+                            <p class="mt-1 text-xs text-slate-500">
+                                已勾选全网调研：先博查搜索，再由 AI 汇总；若调研失败会自动降级为官网正文继续。
+                            </p>
+                        @endif
                     </div>
                     <div class="flex flex-wrap items-center gap-2">
                         @if (in_array($job->status, ['queued', 'running'], true))
@@ -155,6 +183,28 @@
                     {{ $errors->first() }}
                 </div>
             @endif
+
+            <div class="admin-panel border border-amber-200/90 bg-amber-50/90 p-4 text-sm text-amber-950 {{ $webResearchAiFailed ? '' : 'hidden' }}" data-web-research-failure>
+                    <div class="flex items-start gap-3">
+                        <i data-lucide="triangle-alert" class="mt-0.5 h-4 w-4 shrink-0 text-amber-600"></i>
+                        <div class="min-w-0">
+                            <p class="font-semibold">AI 全网调研未成功</p>
+                            <p class="mt-1 leading-6 text-amber-900">
+                                @if (! empty($webResearch['search_provider']) && ($webResearch['search_provider'] ?? '') !== 'none')
+                                    博查搜索已执行（{{ count($webResearchQueries) }} 条检索词，{{ (int) ($webResearch['search_result_count'] ?? 0) }} 条结果），但 AI 模型调用失败。
+                                @else
+                                    联网搜索或 AI 汇总未完成。
+                                @endif
+                                任务已改用<strong class="font-semibold">官网直连正文</strong>继续后续步骤。
+                            </p>
+                            @if ($webResearchErrors !== [])
+                                <p class="mt-2 break-all text-xs text-amber-800" data-web-research-failure-detail>{{ \Illuminate\Support\Str::limit(implode(' · ', $webResearchErrors), 280) }}</p>
+                            @else
+                                <p class="mt-2 hidden break-all text-xs text-amber-800" data-web-research-failure-detail></p>
+                            @endif
+                        </div>
+                    </div>
+                </div>
 
             <div class="hidden admin-panel p-5 text-sm font-medium text-red-700" data-runtime-error></div>
             <div class="hidden admin-panel p-5 text-sm font-medium text-blue-800" data-runtime-notice></div>
@@ -206,7 +256,7 @@
 
                 <div class="url-import-pipeline" data-url-import-pipeline>
                     <div class="col-span-full mb-2 flex items-center justify-between gap-2 px-1">
-                        <p class="text-xs text-slate-400">点击节点可查看调试数据</p>
+                        <p class="text-xs text-slate-400">点击节点查看调试数据 · 输入 upstream = 上一步输出</p>
                         <button
                             type="button"
                             class="admin-icon-btn h-8 w-8 shrink-0 text-slate-400 transition hover:text-blue-600"
@@ -228,7 +278,15 @@
                                 || ($job->status === 'completed' && $queued && $node['key'] === 'images_import');
                             $statusText = match ($nodeStatus) {
                                 'success' => number_format((int) $node['duration_ms']).' ms · 已完成',
-                                'skipped' => ($node['key'] ?? '') === 'images_import' ? '无图片或已跳过' : '已跳过',
+                                'skipped' => match ($node['key'] ?? '') {
+                                    'images_import' => '无图片或已跳过',
+                                    'web_research' => match (true) {
+                                        ! ($node['web_research_enabled'] ?? $webResearchEnabled) => '未勾选 · 已跳过',
+                                        ($node['skip_reason'] ?? '') === 'not_needed_or_budget' => '正文已够 · 已跳过',
+                                        default => '已跳过',
+                                    },
+                                    default => '已跳过',
+                                },
                                 'failed' => '失败'.($node['error'] ? '：'.\Illuminate\Support\Str::limit($node['error'], 40) : ''),
                                 'queued' => ($node['key'] ?? '') === 'images_import' ? '等待采集' : '队列处理中…',
                                 'running' => '执行中…',
@@ -507,7 +565,7 @@
                         <div class="mb-4 flex items-start gap-3 rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-3 text-xs text-slate-600">
                             <i data-lucide="info" class="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-600"></i>
                             <span class="min-w-0 flex-1 leading-5">
-                                采集完成后会自动把页面图片<strong class="text-slate-800">下载到本地</strong>并显示在下方（最多 {{ (int) config('geoflow.url_import_max_images', 16) }} 张，4 列排列）；勾选需要的图，填写图片库名称，点击「图片入库」即可。
+                                采集完成后会自动把页面图片<strong class="text-slate-800">下载到本地</strong>并显示在下方（最多 {{ (int) config('geoflow.url_import_max_images', 16) }} 张，宽屏 6 列 / 中屏 4 列）；勾选需要的图，填写图片库名称，点击「图片入库」即可。
                             </span>
                         </div>
 
@@ -537,7 +595,7 @@
                                 data-auto-rename="1"
                             >
                                 @csrf
-                                <div class="grid grid-cols-4 gap-3" data-imported-images-grid>
+                                <div class="url-import-images-grid" data-imported-images-grid>
                                     @foreach ($importedImages as $img)
                                         @php
                                             $value = (int) $img['id'];
@@ -545,16 +603,16 @@
                                             $valueStatus = (string) ($img['value_status'] ?? '');
                                             $isHigh = $valueStatus === 'high' || $valueScore >= 70;
                                         @endphp
-                                        <label class="group relative cursor-pointer overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition hover:border-blue-300 hover:shadow-md" data-image-card data-image-id="{{ $value }}" data-image-value="{{ $valueScore }}" data-image-value-status="{{ $valueStatus }}">
-                                            <input type="checkbox" name="image_ids[]" value="{{ $value }}" class="peer absolute left-2 top-2 z-10 h-4 w-4 rounded border-slate-300 bg-white shadow" data-image-checkbox checked>
-                                            <span class="pointer-events-none absolute left-2 top-2 z-0 h-4 w-4 rounded border border-slate-300 bg-white transition peer-checked:hidden"></span>
-                                            <span class="pointer-events-none absolute left-2 top-2 z-0 hidden h-4 w-4 items-center justify-center rounded bg-blue-600 text-white peer-checked:flex">
-                                                <i data-lucide="check" class="h-3 w-3"></i>
+                                        <label class="url-import-image-card group cursor-pointer" data-image-card data-image-id="{{ $value }}" data-image-value="{{ $valueScore }}" data-image-value-status="{{ $valueStatus }}">
+                                            <input type="checkbox" name="image_ids[]" value="{{ $value }}" class="peer absolute left-1.5 top-1.5 z-10 h-3.5 w-3.5 rounded border-slate-300 bg-white shadow" data-image-checkbox checked>
+                                            <span class="pointer-events-none absolute left-1.5 top-1.5 z-0 h-3.5 w-3.5 rounded border border-slate-300 bg-white transition peer-checked:hidden"></span>
+                                            <span class="pointer-events-none absolute left-1.5 top-1.5 z-0 hidden h-3.5 w-3.5 items-center justify-center rounded bg-blue-600 text-white peer-checked:flex">
+                                                <i data-lucide="check" class="h-2.5 w-2.5"></i>
                                             </span>
-                                            <div class="aspect-video w-full overflow-hidden bg-slate-100">
-                                                <img src="{{ $img['preview_url'] ?? \App\Support\GeoFlow\ImageUrlNormalizer::toPublicUrl((string) ($img['file_path'] ?? '')) }}" alt="{{ $img['source_alt'] ?? '' }}" loading="lazy" class="h-full w-full object-cover transition duration-300 group-hover:scale-105">
+                                            <div class="url-import-image-thumb">
+                                                <img src="{{ $img['preview_url'] ?? \App\Support\GeoFlow\ImageUrlNormalizer::toPublicUrl((string) ($img['file_path'] ?? '')) }}" alt="{{ $img['source_alt'] ?? '' }}" loading="lazy" decoding="async">
                                             </div>
-                                            <figcaption class="space-y-1 px-3 py-2.5">
+                                            <figcaption class="url-import-image-meta">
                                                 <div class="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
                                                     <span class="rounded-md bg-slate-100 px-1.5 py-0.5 font-medium text-slate-600">{{ $img['source_area'] ?? 'main' }}</span>
                                                     @if ($img['width'] > 0 && $img['height'] > 0)
@@ -726,12 +784,12 @@
             const stepOrder = @json($stepKeys);
             const nodeStepAlias = (step) => {
                 if (!step) return null;
-                const map = {fetch: 'fetch', page_json: 'parse', knowledge: 'ai_knowledge', keywords: 'ai_keywords', titles: 'ai_titles', preview: null, done: null};
+                const map = {fetch: 'fetch', page_json: 'parse', knowledge: 'ai_analysis', keywords: 'ai_analysis', titles: 'ai_analysis', preview: null, done: null};
                 return map[step] || null;
             };
             const aliasToNodeKey = (step) => {
                 if (!step) return null;
-                const map = {fetch: 'fetch', page_json: 'parse', knowledge: 'ai_knowledge', keywords: 'ai_keywords', titles: 'ai_titles'};
+                const map = {fetch: 'fetch', page_json: 'parse', knowledge: 'ai_analysis', keywords: 'ai_analysis', titles: 'ai_analysis'};
                 return map[step] || null;
             };
             const stepDescriptions = @json($stepDescriptions);
@@ -829,7 +887,14 @@
                     return `${Number(step.duration_ms || 0).toLocaleString()} ms · 已完成`;
                 }
                 if (status === 'skipped') {
-                    return isImageNode ? '无图片或已跳过' : '已跳过';
+                    if (step?.key === 'images_import') return '无图片或已跳过';
+                    if (step?.key === 'web_research') {
+                        const enabled = step.web_research_enabled ?? root.dataset.webResearchEnabled === '1';
+                        if (!enabled) return '未勾选 · 已跳过';
+                        if (step.skip_reason === 'not_needed_or_budget') return '正文已够 · 已跳过';
+                        return '已跳过';
+                    }
+                    return '已跳过';
                 }
                 if (status === 'failed') {
                     return step.error ? `失败：${String(step.error).slice(0, 48)}` : '失败';
@@ -966,6 +1031,16 @@
                 }
 
                 applyNodeSteps(payload, effectiveStatus);
+                const wrFailure = root.querySelector('[data-web-research-failure]');
+                if (wrFailure) {
+                    const wrStep = (payload.node_steps || []).find((step) => step.key === 'web_research');
+                    const showWrFail = Boolean(payload.web_research_enabled) && String(wrStep?.status || '') === 'failed';
+                    wrFailure.classList.toggle('hidden', !showWrFail);
+                    const wrDetail = wrFailure.querySelector('[data-web-research-failure-detail]');
+                    if (wrDetail && wrStep?.error) {
+                        wrDetail.textContent = String(wrStep.error).slice(0, 280);
+                    }
+                }
                 updateFlowClosure(payload);
                 window.dispatchEvent(new CustomEvent('url-import:status', { detail: payload }));
                 const statusRing = root.querySelector('[data-status-ring]');
@@ -1076,6 +1151,8 @@
                 images_import_finished: @json($imagesImportFinished),
                 is_stale: @json($isStaleRunning),
                 result_ready: @json($result !== []),
+                web_research_enabled: @json($webResearchEnabled),
+                web_research_step_status: @json($webResearchStepStatus),
             };
             renderStatus(initialPayload);
 
@@ -1290,12 +1367,12 @@
                     const isHigh = valueStatus === 'high' || valueScore >= 70;
                     const highBadge = isHigh ? `<span class="rounded-md bg-emerald-50 px-1.5 py-0.5 font-medium text-emerald-700">高价值</span>` : '';
 
-                    return `<label class="group relative cursor-pointer overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition hover:border-blue-300 hover:shadow-md" data-image-card data-image-id="${id}" data-image-value="${valueScore}" data-image-value-status="${escapeHtml(valueStatus)}">
-                        <input type="checkbox" name="image_ids[]" value="${id}" class="peer absolute left-2 top-2 z-10 h-4 w-4 rounded border-slate-300 bg-white shadow" data-image-checkbox checked>
-                        <div class="aspect-video w-full overflow-hidden bg-slate-100">
-                            <img src="${src}" alt="${alt}" loading="lazy" class="h-full w-full object-cover transition duration-300 group-hover:scale-105">
+                    return `<label class="url-import-image-card group cursor-pointer" data-image-card data-image-id="${id}" data-image-value="${valueScore}" data-image-value-status="${escapeHtml(valueStatus)}">
+                        <input type="checkbox" name="image_ids[]" value="${id}" class="peer absolute left-1.5 top-1.5 z-10 h-3.5 w-3.5 rounded border-slate-300 bg-white shadow" data-image-checkbox checked>
+                        <div class="url-import-image-thumb">
+                            <img src="${src}" alt="${alt}" loading="lazy" decoding="async">
                         </div>
-                        <figcaption class="space-y-1 px-3 py-2.5">
+                        <figcaption class="url-import-image-meta">
                             <div class="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
                                 <span class="rounded-md bg-slate-100 px-1.5 py-0.5 font-medium text-slate-600">${area}</span>
                                 ${size ? `<span>${size}</span>` : ''}
@@ -1546,14 +1623,14 @@
                         <span class="flex h-6 w-6 items-center justify-center rounded-lg bg-white text-xs font-bold text-blue-600 shadow-sm">1</span>
                         识主体 + 收资料
                     </div>
-                    <p class="mt-2 text-sm leading-6 text-slate-600">读取网页 → 提取正文 → 识别公司/品牌 → AI 全网调研 → 合并官网与调研素材</p>
+                        <p class="mt-2 text-sm leading-6 text-slate-600">读取网页 → 提取正文 →（可选）AI 全网调研 → 合并官网与调研素材</p>
                 </div>
                 <div class="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
                     <div class="flex items-center gap-2 text-sm font-semibold text-slate-800">
                         <span class="flex h-6 w-6 items-center justify-center rounded-lg bg-white text-xs font-bold text-blue-600 shadow-sm">2</span>
-                        AI 加工（串行）
+                        AI 分析
                     </div>
-                    <p class="mt-2 text-sm leading-6 text-slate-600">清洗 → 整理知识库素材 → 主题词 → 标题<br><span class="text-xs text-slate-500">每步输入 = 上一步输出</span></p>
+                    <p class="mt-2 text-sm leading-6 text-slate-600">清洗正文 → 整理知识库 → 主题词 → 标题<br><span class="text-xs text-slate-500">快速模式合并为一次 AI 调用；标准模式分 4 步串行</span></p>
                 </div>
                 <div class="rounded-xl border border-violet-200 bg-violet-50/50 p-4">
                     <div class="flex items-center gap-2 text-sm font-semibold text-violet-900">
@@ -1694,18 +1771,19 @@
                         if (data?.input?.from_node) {
                             setSubtitle('输入来自 ' + data.input.from_node);
                         }
-                        const pending = data?.status === 'pending' || data?.message;
+                        const pending = data?.status === 'pending';
                         if (inputEl) {
                             inputEl.textContent = pending
                                 ? '(尚未执行)'
                                 : (data.input ? JSON.stringify(data.input, null, 2) : '(无输入)');
                         }
                         if (outputEl) {
+                            const intro = data?.message && data.status !== 'pending' ? `${data.message}\n\n` : '';
                             outputEl.textContent = pending
                                 ? (data.message || '该节点尚未执行，暂无调试数据')
-                                : (data.output && Object.keys(data.output).length > 0
+                                : (intro + (data.output && Object.keys(data.output).length > 0
                                     ? JSON.stringify(data.output, null, 2)
-                                    : (data.error ? '✗ ' + data.error : '(无输出)'));
+                                    : (data.error ? '✗ ' + data.error : '(无输出)')));
                         }
                     })
                     .catch(() => {

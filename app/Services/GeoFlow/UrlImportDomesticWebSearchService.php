@@ -51,7 +51,7 @@ final class UrlImportDomesticWebSearchService
             $directParsed ?? [],
         );
 
-        $maxQueries = max(1, min(8, (int) config('geoflow.url_import_web_search.max_queries', 5)));
+        $maxQueries = $this->effectiveMaxSearchQueries();
         $queries = array_slice($hint['search_queries'], 0, $maxQueries);
         if ($queries === []) {
             $queries = [(string) $job->source_domain.' 公司 简介'];
@@ -76,6 +76,19 @@ final class UrlImportDomesticWebSearchService
                 'error' => $exception->getMessage(),
             ];
         }
+    }
+
+    /**
+     * fast 流水线默认 2 条检索词，控制博查 + AI 调研在 ~90s 内。
+     */
+    private function effectiveMaxSearchQueries(): int
+    {
+        $base = max(1, min(8, (int) config('geoflow.url_import_web_search.max_queries', 2)));
+        if (strtolower((string) config('geoflow.url_import_pipeline_mode', 'fast')) !== 'fast') {
+            return $base;
+        }
+
+        return min($base, max(1, (int) config('geoflow.url_import_fast.max_web_search_queries', 2)));
     }
 
     /**

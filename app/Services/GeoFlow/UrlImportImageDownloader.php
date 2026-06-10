@@ -5,6 +5,7 @@ namespace App\Services\GeoFlow;
 use App\Jobs\TagImageWithVisionJob;
 use App\Models\Image;
 use App\Models\SiteSetting;
+use App\Support\GeoFlow\OutboundHttpSsl;
 use App\Support\GeoFlow\UrlImportImageLibrary;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -29,9 +30,13 @@ class UrlImportImageDownloader
 
     public const VALUE_PENDING = 'pending';
 
-    /** 单次采集最多下载图片数（默认 16，UI 4×4 展示） */
+    /** 单次采集最多下载图片数（fast 默认 12，standard 默认 16） */
     private function maxImagesPerJob(): int
     {
+        if (strtolower((string) config('geoflow.url_import_pipeline_mode', 'fast')) === 'fast') {
+            return max(4, (int) config('geoflow.url_import_fast.max_images', 12));
+        }
+
         return max(4, (int) config('geoflow.url_import_max_images', 16));
     }
 
@@ -44,7 +49,7 @@ class UrlImportImageDownloader
     private const MAX_FILE_SIZE = 5 * 1024 * 1024;
 
     /** 最小文件大小，过小视为 tracking pixel */
-    private const MIN_FILE_SIZE = 5 * 1024;
+    private const MIN_FILE_SIZE = 2048;
 
     /** 关键词黑名单（URL 含这些词的图直接淘汰） */
     private const URL_KEYWORD_BLACKLIST = [
@@ -165,8 +170,9 @@ class UrlImportImageDownloader
                 CURLOPT_RETURNTRANSFER => true,
                 CURLOPT_FOLLOWLOCATION => true,
                 CURLOPT_MAXREDIRS => 3,
-                CURLOPT_TIMEOUT => 15,
+                CURLOPT_TIMEOUT => 20,
                 CURLOPT_CONNECTTIMEOUT => 6,
+                CURLOPT_SSL_VERIFYPEER => OutboundHttpSsl::verifyEnabled(),
                 CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
                 CURLOPT_HTTPHEADER => [
                     'Accept: image/avif,image/webp,image/png,image/jpeg,image/gif,image/*;q=0.8',
@@ -184,7 +190,7 @@ class UrlImportImageDownloader
         }
 
         $active = null;
-        $deadline = microtime(true) + 20;
+        $deadline = microtime(true) + max(30, min(90, count($handles) * 8));
         do {
             $status = curl_multi_exec($mh, $active);
             if ($active > 0) {
@@ -493,9 +499,9 @@ class UrlImportImageDownloader
             'Accept' => 'image/avif,image/webp,image/png,image/jpeg,image/gif,image/*;q=0.8,*/*;q=0.5',
             'Referer' => $sourceUrl,
         ])
-            ->timeout(20)
-            ->connectTimeout(8)
-            ->withOptions(['stream' => false])
+            ->timeout(15)
+            ->connectTimeout(6)
+            ->withOptions(array_merge(OutboundHttpSsl::httpOptions(), ['stream' => false]))
             ->get($imageUrl);
 
         if (! $response->successful()) {

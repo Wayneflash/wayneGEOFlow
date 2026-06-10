@@ -43,4 +43,24 @@ class UrlImportJob extends Model
     {
         return $this->hasMany(UrlImportJobLog::class, 'job_id');
     }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function optionsArray(): array
+    {
+        $decoded = json_decode((string) $this->options_json, true);
+
+        return is_array($decoded) ? $decoded : [];
+    }
+
+    public function webResearchEnabled(): bool
+    {
+        $options = $this->optionsArray();
+        if (array_key_exists('web_research_enabled', $options)) {
+            return filter_var($options['web_research_enabled'], FILTER_VALIDATE_BOOLEAN);
+        }
+
+        return (bool) config('geoflow.url_import_web_research_enabled', false);
+    }
 }

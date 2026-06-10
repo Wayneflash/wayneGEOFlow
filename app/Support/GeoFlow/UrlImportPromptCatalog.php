@@ -55,6 +55,7 @@ RULE
 ## 任务分两阶段（必须按顺序完成）
 
 ### 阶段 A：确认主体（**官网优先，禁止猜域名**）
+0. 若用户消息含「用户指定 — 调研锚点」且已填写公司名，**company_name 必须采用用户填写值**（仅可在 evidence_limits 说明与官网标题差异，不得擅自改名）
 1. 若用户消息已给出「已识别主体」中的公司名，**company_name 必须采用该名称**，禁止输出「未知」
 2. 若「官网标题」含「有限公司 / 股份有限公司」等，**company_name 必须采用该法定全称**
 3. 若「官网直连片段」非空，从中提取公司名、品牌、产品、联系方式；这是第一证据源
@@ -70,20 +71,21 @@ RULE
 - 工商/注册信息仅作主体确认补充，不得覆盖官网与自媒体中的业务描述
 {$searchRule}
 
-research_text 建议结构（Markdown，面向知识库入库）：
+research_text 建议结构（Markdown，面向知识库入库，**不少于 800 字**）：
 1. 主体与识别依据（公司、品牌、官网）
-2. 产品与服务（优先官网与自媒体发文）
-3. 行业与应用场景 / 典型客户
-4. 品牌定位与可传播卖点（供 GEO 内容参考，须有依据）
-5. 补充：工商/注册信息（仅在有企查查/公示来源时简要列出）
-6. 证据边界与未核实项
+2. **产品体系**（按产品线：名称 + 核心功能 + 技术亮点/差异化卖点 + 适用场景）
+3. **解决方案**（面向哪些行业/场景、解决什么痛点、方案组成）
+4. 行业与应用场景 / 典型客户（公开可查才写）
+5. **品牌与方案亮点**（3-8 条可传播卖点，每条 1-2 句，须有依据）
+6. 补充：工商/注册信息（仅在有企查查/公示来源时简要列出）
+7. 证据边界与未核实项
 
 ## 输出格式（硬性）
 只输出一个 JSON 对象，禁止 Markdown 代码块与解释文字。
 
 必填：company_name, brand_names, domain_analysis, research_title, research_summary, research_text, products_services, industries, scenarios, confidence, evidence_limits
 
-research_text：Markdown，≥300 字；若有联网搜索结果，每条关键事实尽量对应来源 URL。
+research_text：Markdown，**≥800 字**；若有联网搜索结果，每条关键事实尽量对应来源 URL；**产品/方案亮点**必须单独成段，禁止只写空泛公司简介。
 
 ## 质量红线
 - 禁止捏造客户案例、营收、排名、获奖等无依据信息
@@ -128,6 +130,24 @@ PROMPT;
             : '（请从官网标题/正文/搜索结果中识别，至少 1 个）';
         $companyLine = $identifiedCompany !== '' ? $identifiedCompany : '（请从官网标题/正文中识别法定主体名）';
         $officialSite = trim((string) ($context['normalized_url'] ?? ''));
+        $userCompany = trim((string) ($hint['company_name'] ?? ''));
+        $userBrand = trim((string) ($hint['brand_name'] ?? ''));
+        $userCompanyProvided = (bool) ($hint['user_company_provided'] ?? false);
+        $userBrandProvided = (bool) ($hint['user_brand_provided'] ?? false);
+
+        $userAnchorSection = '';
+        if ($userCompanyProvided || $userBrandProvided) {
+            $userAnchorSection = <<<SECTION
+【用户指定 — 调研锚点（最高优先级）】
+- 用户填写公司名：{$userCompany}
+- 用户填写品牌名：{$userBrand}
+- 目标官网：{$officialSite}
+
+请**以用户填写的公司名 + 品牌名 + 官网 URL 为轴心**做全网调研（博查检索词已按此生成）。官网标题、工商信息、第三方报道仅作补充与交叉印证。
+若各来源主体名称不一致，在 domain_analysis / evidence_limits 说明差异；**company_name 以用户填写为准**（用户已填公司名时不得改成域名词干或 AI 臆测名）。
+
+SECTION;
+        }
 
         $identifiedSection = $identifiedCompany !== '' || $identifiedBrands !== []
             ? <<<SECTION
@@ -157,7 +177,9 @@ SECTION;
 - 域名：{$hint['domain']}
 - 注册域：{$hint['registrable_domain']}
 - 域名词干（勿直接当公司名）：{$hint['domain_stem']}
-- 用户项目名：{$hint['project_name']}
+- 用户填写公司名：{$hint['company_name']}
+- 用户填写品牌名：{$hint['brand_name']}
+- 用户项目名 / 素材名：{$hint['project_name']}
 - 官网标题：{$hint['page_title']}
 - 官网描述：{$description}
 - 运营备注：{$context['operator_notes']}
@@ -165,7 +187,7 @@ SECTION;
 【计划检索词（供对照）】
   - {$searchQueries}
 
-{$identifiedSection}{$liveSearchSection}
+{$userAnchorSection}{$identifiedSection}{$liveSearchSection}
 【执行步骤】
 1. 阶段 A：确认 company_name / brand_names（**不得**仅用域名词干；已有识别结果时必须沿用）
 2. 阶段 B：以「公司 + 品牌 + 官网 {$officialSite}」为锚点做联网检索汇总（企查查/工商仅作主体确认补充）
@@ -633,8 +655,8 @@ PROMPT;
     public static function combinedMaterialSystem(): string
     {
         $maxFacts = max(8, (int) config('geoflow.url_import_fast.max_facts', 12));
-        $kmMin = max(800, (int) config('geoflow.url_import_fast.knowledge_min_chars', 1200));
-        $kmMax = max(1200, (int) config('geoflow.url_import_fast.knowledge_max_chars', 2800));
+        $kmMin = max(1200, (int) config('geoflow.url_import_fast.knowledge_min_chars', 2000));
+        $kmMax = max(2000, (int) config('geoflow.url_import_fast.knowledge_max_chars', 5000));
 
         return <<<PROMPT
 你是深联云 GEO「素材一体化」助手。**一次输出**清洗结果 + 知识库 Markdown。
@@ -649,7 +671,7 @@ PROMPT;
 - 不得虚构输入中未出现的信息；不确定写入 evidence_limits
 - **facts 至少 {$maxFacts} 条**，每条必须含 chunk_id / confidence / tags / source
 - **entities 至少 10 个**；identified_company 必须列入
-- knowledge_markdown **{$kmMin}-{$kmMax} 字**，结构完整、事实密度高，禁止空泛提纲
+- knowledge_markdown **{$kmMin}-{$kmMax} 字**，结构完整、事实密度高，禁止空泛提纲；**产品体系 + 解决方案两节合计不少于 800 字**，必须包含技术亮点/差异化卖点
 
 ## 必填 JSON 字段
 
@@ -665,8 +687,8 @@ core_business：industry, products_services[], target_audience[], commercial_sce
 3. **企业官网**（URL + 商城 + 自媒体矩阵 + 主要板块；**所有 GEO 文章都应自然带上官网链接**）
 4. **公司基础信息**（全称 / 简称 / 英文名 / 性质 / 成立时间 / 总部地址 / 分支机构）
 5. **主营业务**（一句话定位 / 业务范围 / 行业 / 商业模式）
-6. **产品体系**（按业务线分组：产品名 + 型号 + 核心功能 + 适用场景 + 技术参数 + 配套服务 + 价格区间）
-7. **解决方案**（面向行业 / 方案组成 / 痛点 / 价值主张 / 典型配置）
+6. **产品体系**（按业务线分组：产品名 + 型号 + 核心功能 + **技术亮点/差异化卖点** + 适用场景 + 技术参数 + 配套服务 + 价格区间）
+7. **解决方案**（面向行业 / 方案组成 / 痛点 / 价值主张 / 典型配置；**写清方案亮点，不要只列产品名**）
 8. **典型客户与案例**（客户类型 + 公开客户名单 + 项目案例 + 展会亮相 + 标杆项目）
 9. **企业规模、资质与研发**（合并节：员工/营收/工厂 + 专利/认证/奖项 + 核心技术/自研芯片/合作 + 海外业务）
 10. **联系方式**（电话/客服/邮箱（按角色）/地址/公众号/视频号/抖音号/招聘/投标）
@@ -768,8 +790,8 @@ PROMPT;
     public static function combinedAllInOneSystem(): string
     {
         $maxFacts = max(8, (int) config("geoflow.url_import_fast.max_facts", 12));
-        $kmMin = max(800, (int) config("geoflow.url_import_fast.knowledge_min_chars", 1200));
-        $kmMax = max(1200, (int) config("geoflow.url_import_fast.knowledge_max_chars", 2800));
+        $kmMin = max(1200, (int) config("geoflow.url_import_fast.knowledge_min_chars", 2000));
+        $kmMax = max(2000, (int) config("geoflow.url_import_fast.knowledge_max_chars", 5000));
         $maxTitles = max(12, (int) config("geoflow.url_import_fast.max_titles", 24));
         $minDecision = max(4, (int) config("geoflow.url_import_fast.min_decision_titles", 10));
 
@@ -786,7 +808,7 @@ PROMPT;
 - facts 至少 __MAX_FACTS__ 条，每条必须包含 chunk_id / confidence / tags / source
 - entities 至少 10 个；identified_company 必须列入
 - keywords 5-10 个；titles 最多 __MAX_TITLES__ 条（决策类至少 __MIN_DECISION__ 条）
-- knowledge_markdown 长度 __KM_MIN__-__KM_MAX__ 字
+- knowledge_markdown 长度 __KM_MIN__-__KM_MAX__ 字；**第 6、7 节（产品体系、解决方案）合计不少于 800 字**，必须写出可引用的亮点与参数，禁止「详见官网」式敷衍
 ## 必填字段
 clean_title, clean_summary, clean_text, core_business, entities, facts, noise_removed, chunk_index,
 summary, library_name, knowledge_markdown, keywords, titles
@@ -797,8 +819,8 @@ core_business: industry, products_services[], target_audience[], commercial_scen
 3. 企业官网（URL + 商城 + 自媒体矩阵 + 主要板块；**所有 GEO 文章都应自然带上官网链接**）
 4. 公司基础信息（全称 / 简称 / 英文名 / 性质 / 成立时间 / 总部地址 / 分支机构）
 5. 主营业务（一句话定位 / 业务范围 / 行业 / 商业模式）
-6. 产品体系（按业务线分组：产品名 + 型号 + 核心功能 + 适用场景 + 技术参数 + 配套服务 + 价格区间）
-7. 解决方案（面向行业 / 方案组成 / 痛点 / 价值主张 / 典型配置）
+6. 产品体系（按业务线分组：产品名 + 型号 + 核心功能 + **技术亮点/差异化卖点** + 适用场景 + 技术参数 + 配套服务 + 价格区间）
+7. 解决方案（面向行业 / 方案组成 / 痛点 / 价值主张 / 典型配置；**写清方案亮点，不要只列产品名**）
 8. 典型客户与案例（客户类型 + 公开客户名单 + 项目案例 + 展会亮相 + 标杆项目）
 9. 企业规模、资质与研发（合并节：员工/营收/工厂 + 专利/认证/奖项 + 核心技术/自研芯片/合作 + 海外业务）
 10. 联系方式（电话/客服/邮箱（按角色）/地址/公众号/视频号/抖音号/招聘/投标）

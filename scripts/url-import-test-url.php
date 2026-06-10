@@ -49,11 +49,18 @@ $job = UrlImportJob::query()->create([
     'url' => $targetUrl,
     'normalized_url' => $normalized['url'],
     'source_domain' => $normalized['host'],
-    'page_title' => 'URL Test',
+    'page_title' => trim((string) ($argv[3] ?? '')) ?: 'URL Test',
     'status' => 'queued',
     'current_step' => 'queued',
     'progress_percent' => 0,
     'created_by' => (string) $admin->username,
+    'options_json' => json_encode([
+        'company_name' => trim((string) ($argv[3] ?? '')),
+        'brand_name' => trim((string) ($argv[4] ?? '')),
+        'project_name' => trim((string) ($argv[3] ?? '')),
+        'web_research_enabled' => filter_var($argv[2] ?? '0', FILTER_VALIDATE_BOOLEAN),
+        'outputs' => ['knowledge', 'keywords', 'titles'],
+    ], JSON_UNESCAPED_UNICODE),
 ]);
 
 echo "Job #{$job->id} created for {$normalized['url']}\n";

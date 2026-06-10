@@ -77,6 +77,22 @@ class AdminMaterialsPagesTest extends TestCase
         $this->get(route('admin.knowledge-bases.detail', ['knowledgeBaseId' => 1]))->assertRedirect(route('admin.login'));
     }
 
+    public function test_authenticated_admin_visiting_login_redirects_to_dashboard(): void
+    {
+        $admin = Admin::query()->create([
+            'username' => 'login_redirect_admin',
+            'password' => 'secret-123',
+            'email' => 'login-redirect@example.com',
+            'display_name' => 'Login Redirect Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.login'))
+            ->assertRedirect(route('admin.dashboard'));
+    }
+
     public function test_authenticated_admin_can_open_material_pages(): void
     {
         $admin = Admin::query()->create([

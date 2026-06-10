@@ -11,7 +11,8 @@ class UrlImportJobNodeLog extends Model
 
     protected $fillable = [
         'job_id', 'node_key', 'node_label', 'attempt', 'status',
-        'duration_ms', 'input_json', 'output_json', 'error_message',
+        'duration_ms', 'input_json', 'output_json', 'input_artifact_id', 'output_artifact_id',
+        'error_message',
     ];
 
     protected function casts(): array
@@ -21,6 +22,8 @@ class UrlImportJobNodeLog extends Model
             'duration_ms' => 'integer',
             'input_json' => 'array',
             'output_json' => 'array',
+            'input_artifact_id' => 'integer',
+            'output_artifact_id' => 'integer',
         ];
     }
 

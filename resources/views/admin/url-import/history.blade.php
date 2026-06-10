@@ -66,6 +66,7 @@
                     <thead class="bg-slate-50">
                         <tr>
                             <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500">网址</th>
+                            <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500">采集模式</th>
                             <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500">状态</th>
                             <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500">进度</th>
                             <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500">创建时间</th>
@@ -78,6 +79,18 @@
                                     <a href="{{ route('admin.url-import.show', ['jobId' => $job->id]) }}" class="break-all font-medium text-blue-600 hover:text-blue-800">{{ $job->url }}</a>
                                     @if ($job->source_domain)
                                         <div class="mt-1 text-xs text-slate-400">{{ $job->source_domain }}</div>
+                                    @endif
+                                </td>
+                                <td class="px-5 py-4 text-sm">
+                                    @if ($job->webResearchEnabled())
+                                        <span class="inline-flex items-center gap-1 rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-xs font-semibold text-violet-700">
+                                            <i data-lucide="globe" class="h-3 w-3"></i>
+                                            AI 辅助
+                                        </span>
+                                    @else
+                                        <span class="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-600">
+                                            官网直连
+                                        </span>
                                     @endif
                                 </td>
                                 <td class="px-5 py-4 text-sm">
@@ -97,7 +110,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="4" class="px-5 py-10 text-center text-sm text-slate-500">暂无采集记录</td>
+                                <td colspan="5" class="px-5 py-10 text-center text-sm text-slate-500">暂无采集记录</td>
                             </tr>
                         @endforelse
                     </tbody>

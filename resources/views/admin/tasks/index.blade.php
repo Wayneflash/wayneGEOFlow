@@ -57,19 +57,16 @@
 
 @section('content')
     <div class="tasks-page-shell space-y-5">
-        <div class="task-create-hero admin-panel overflow-hidden">
-            <div class="task-create-hero-glow" aria-hidden="true"></div>
-            <div class="relative flex flex-col gap-4 px-5 py-5 sm:flex-row sm:items-center sm:justify-between">
-                <div class="flex min-w-0 items-start gap-3">
-                    <span class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-sm shadow-blue-600/20">
-                        <i data-lucide="workflow" class="h-5 w-5"></i>
-                    </span>
-                    <div class="min-w-0">
-                        <p class="text-xs font-semibold uppercase tracking-[0.14em] text-blue-600">{{ __('admin.tasks.eyebrow') }}</p>
-                        <h1 class="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{{ __('admin.tasks.page_title') }}</h1>
-                        <p class="mt-1 text-sm text-slate-600">管理 AI 生成任务，点击任务名或统计数字可查看对应文章</p>
-                    </div>
+        <div class="admin-panel">
+            <div class="admin-panel-header">
+                <div class="min-w-0">
+                    <h1 class="text-xl font-semibold tracking-tight text-slate-950">{{ __('admin.tasks.page_title') }}</h1>
+                    <p class="mt-1 text-sm text-slate-500">{{ __('admin.tasks.page_subtitle') }}</p>
                 </div>
+                <a href="{{ route('admin.tasks.create') }}" class="admin-btn-primary">
+                    <i data-lucide="plus" class="h-4 w-4"></i>
+                    {{ __('admin.button.new_task') }}
+                </a>
             </div>
         </div>
 
@@ -80,22 +77,31 @@
             </div>
         @endif
 
+        <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div class="admin-panel p-4">
+                <div class="text-xs font-medium text-slate-500">{{ __('admin.tasks.stats.total_tasks') }}</div>
+                <div id="stats-total-tasks" class="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{{ count($tasks ?? []) }}</div>
+            </div>
+            <div class="admin-panel p-4">
+                <div class="text-xs font-medium text-slate-500">{{ __('admin.tasks.stats.enabled') }}</div>
+                <div id="stats-enabled-tasks" class="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{{ count(array_filter($tasks ?? [], static fn (array $row): bool => ($row['status'] ?? '') === 'active')) }}</div>
+            </div>
+            <div class="admin-panel p-4">
+                <div class="text-xs font-medium text-slate-500">{{ __('admin.tasks.stats.total_articles') }}</div>
+                <div id="stats-total-articles" class="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{{ array_sum(array_map(static fn (array $row): int => (int) ($row['total_articles'] ?? 0), $tasks ?? [])) }}</div>
+            </div>
+            <div class="admin-panel p-4">
+                <div class="text-xs font-medium text-slate-500">{{ __('admin.tasks.stats.total_published') }}</div>
+                <div id="stats-total-published" class="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{{ array_sum(array_map(static fn (array $row): int => (int) ($row['published_articles'] ?? 0), $tasks ?? [])) }}</div>
+            </div>
+        </div>
+
         <div class="admin-panel">
             <div class="admin-panel-header">
                 <div>
-                    <h3 class="text-base font-semibold text-slate-950">{{ __('admin.tasks.list_title') }}</h3>
-                    <p class="mt-1 text-xs text-slate-500">点击任务名或产出数可查看对应文章</p>
+                    <h2 class="text-base font-semibold text-slate-950">{{ __('admin.tasks.list_title') }}</h2>
                 </div>
-                <div class="flex flex-wrap items-center gap-2">
-                    <span class="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-600">
-                        <i data-lucide="workflow" class="h-3.5 w-3.5 text-slate-400"></i>
-                        {{ __('admin.tasks.list_count', ['count' => count($tasks ?? [])]) }}
-                    </span>
-                    <a href="{{ route('admin.tasks.create') }}" class="admin-btn-primary">
-                        <i data-lucide="plus" class="h-4 w-4"></i>
-                        {{ __('admin.button.new_task') }}
-                    </a>
-                </div>
+                <span class="text-xs text-slate-500">{{ __('admin.tasks.list_count', ['count' => count($tasks ?? [])]) }}</span>
             </div>
 
             @if (empty($tasks))
@@ -111,24 +117,15 @@
                     </a>
                 </div>
             @else
-                <div class="overflow-x-hidden">
-                    <table class="admin-table w-full table-fixed">
-                        <colgroup>
-                            <col class="w-[5%]">
-                            <col class="w-[20%]">
-                            <col class="w-[11%]">
-                            <col class="w-[12%]">
-                            <col class="w-[28%]">
-                            <col class="w-[24%]">
-                        </colgroup>
+                <div class="overflow-x-auto">
+                    <table class="admin-table w-full">
                         <thead>
                             <tr>
-                                <th class="whitespace-nowrap">序号</th>
-                                <th>{{ __('admin.tasks.column.name') }}</th>
-                                <th>{{ __('admin.tasks.column.created_at') }}</th>
-                                <th>{{ __('admin.tasks.column.model') }}</th>
-                                <th>{{ __('admin.tasks.column.article_stats') }}</th>
-                                <th>{{ __('admin.tasks.column.actions') }}</th>
+                                <th class="w-[30%]">{{ __('admin.tasks.column.name') }}</th>
+                                <th class="w-[16%]">{{ __('admin.tasks.column.status') }}</th>
+                                <th class="w-[22%]">{{ __('admin.tasks.column.article_stats') }}</th>
+                                <th class="w-[12%] whitespace-nowrap">{{ __('admin.tasks.column.created_at') }}</th>
+                                <th class="w-[20%]">{{ __('admin.tasks.column.actions') }}</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100 bg-white">
@@ -137,122 +134,85 @@
                                     $failureInfo = $describeTaskFailure($task['batch_error_message'] ?? '');
                                     $failureClasses = $getFailureToneClasses($failureInfo['tone']);
                                     $hasVisibleFailure = !empty($task['batch_error_message']) && in_array($task['batch_status'], ['failed', 'cancelled'], true);
-                                    $isSmartFailover = (($task['model_selection_mode'] ?? 'fixed') === 'smart_failover');
+                                    $articleLimit = max(1, (int) ($task['article_limit'] ?? $task['draft_limit'] ?? 10));
+                                    $createdForProgress = min($articleLimit, (int) ($task['created_count'] ?? $task['total_articles'] ?? 0));
+                                    $progressPercent = (int) floor(($createdForProgress / $articleLimit) * 100);
+                                    $draftCount = (int) ($task['draft_articles'] ?? 0);
+                                    $batchStatus = (string) ($task['batch_status'] ?? 'idle');
+                                    $taskStatus = (string) ($task['status'] ?? 'paused');
+                                    $isExecuting = in_array($batchStatus, ['running', 'pending'], true);
+                                    $batchAction = $isExecuting ? 'stop' : (($taskStatus === 'paused' || $batchStatus === 'idle') ? 'start' : 'none');
                                 @endphp
                                 <tr class="transition hover:bg-slate-50/70">
-                                    <td class="whitespace-nowrap font-mono text-sm text-slate-500">{{ $loop->iteration }}</td>
-                                    <td class="min-w-0">
-                                        <a href="{{ route('admin.articles.index', ['task_id' => (int) $task['id']]) }}" class="text-sm font-medium leading-6 text-slate-900 transition hover:text-blue-700 break-words">
+                                    <td class="min-w-0 py-4">
+                                        <a href="{{ route('admin.articles.index', ['task_id' => (int) $task['id']]) }}" class="text-sm font-medium text-slate-900 transition hover:text-blue-700">
                                             {{ $task['name'] ?? '' }}
                                         </a>
-                                        <div class="mt-1 text-sm text-slate-500 break-words">{{ __('admin.tasks.label.title_library') }}: {{ $task['title_library_name'] ?? '' }}</div>
-                                        @if ($hasVisibleFailure)
-                                            <div class="mt-2 rounded-md border px-3 py-2 text-xs {{ $failureClasses['card'] }}">
-                                                <span class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-semibold {{ $failureClasses['chip'] }}">{{ $failureInfo['label'] }}</span>
-                                                @if (!empty($failureInfo['detail']))
-                                                    <div class="mt-1 {{ $failureClasses['detail'] }}">{{ $failureInfo['detail'] }}</div>
-                                                @endif
-                                            </div>
+                                        @if (!empty($task['title_library_name']))
+                                            <div class="mt-0.5 truncate text-xs text-slate-400" title="{{ $task['title_library_name'] }}">{{ $task['title_library_name'] }}</div>
+                                        @endif
+                                        @if ($hasVisibleFailure && !empty($failureInfo['detail']))
+                                            <div class="mt-1 truncate text-xs {{ $failureClasses['detail'] }}" title="{{ $failureInfo['detail'] }}">{{ $failureInfo['detail'] }}</div>
                                         @endif
                                     </td>
-                                    <td class="text-sm text-slate-500">
+                                    <td class="align-top py-4">
+                                        <div class="text-xs leading-5" id="batch-status-{{ (int) $task['id'] }}"></div>
+                                    </td>
+                                    <td class="min-w-0 py-4">
+                                        <div class="space-y-1.5">
+                                            <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm">
+                                                <a href="{{ route('admin.articles.index', ['task_id' => (int) $task['id']]) }}" id="task-created-{{ (int) $task['id'] }}" class="font-medium text-blue-700 transition hover:text-blue-900">
+                                                    {{ __('admin.tasks.label.created_of_limit', ['created' => (int) ($task['created_count'] ?? $task['total_articles'] ?? 0), 'limit' => $articleLimit]) }}
+                                                </a>
+                                                <span class="text-slate-300">·</span>
+                                                <span id="task-published-{{ (int) $task['id'] }}" class="text-slate-600">{{ __('admin.tasks.label.published_articles', ['count' => (int) ($task['published_articles'] ?? 0)]) }}</span>
+                                            </div>
+                                            @if ($draftCount > 0)
+                                                <div id="task-drafts-{{ (int) $task['id'] }}" class="text-xs text-slate-500">{{ __('admin.tasks.label.draft_articles', ['count' => $draftCount]) }}</div>
+                                            @else
+                                                <div id="task-drafts-{{ (int) $task['id'] }}" class="hidden"></div>
+                                            @endif
+                                            <div class="h-1 w-full max-w-[180px] overflow-hidden rounded-full bg-slate-100">
+                                                <div id="task-progress-{{ (int) $task['id'] }}" class="h-full rounded-full bg-blue-500 transition-all duration-300" style="width: {{ $progressPercent }}%"></div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td class="whitespace-nowrap py-4 text-sm text-slate-500">
                                         @if (!empty($task['created_at']))
-                                            @php $taskCreatedAt = \Illuminate\Support\Carbon::parse($task['created_at']); @endphp
-                                            <div class="whitespace-nowrap">{{ $taskCreatedAt->format('Y-m-d') }}</div>
-                                            <div class="whitespace-nowrap text-xs text-slate-400">{{ $taskCreatedAt->format('H:i') }}</div>
+                                            {{ \Illuminate\Support\Carbon::parse($task['created_at'])->format('Y-m-d H:i') }}
+                                        @else
+                                            —
                                         @endif
                                     </td>
-                                    <td class="min-w-0 text-sm text-slate-500">
-                                        <div class="break-words leading-6">{{ $task['ai_model_name'] ?? '' }}</div>
-                                        <div class="mt-1">
-                                            <span class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold {{ $isSmartFailover ? 'border-violet-200 bg-violet-50 text-violet-700' : 'border-slate-200 bg-slate-50 text-slate-700' }}">
-                                                <i data-lucide="{{ $isSmartFailover ? 'shuffle' : 'pin' }}" class="h-3 w-3"></i>
-                                                {{ $isSmartFailover ? __('admin.tasks.mode.smart_failover') : __('admin.tasks.mode.fixed') }}
-                                            </span>
-                                        </div>
-                                    </td>
-                                    <td class="min-w-0 text-sm text-slate-500">
-                                        @php
-                                            $articleLimit = max(1, (int) ($task['article_limit'] ?? $task['draft_limit'] ?? 10));
-                                            $createdForProgress = min($articleLimit, (int) ($task['created_count'] ?? $task['total_articles'] ?? 0));
-                                            $progressPercent = (int) floor(($createdForProgress / $articleLimit) * 100);
-                                            $distributionTotal = (int) ($task['distribution_total_count'] ?? 0);
-                                            $distributionSynced = (int) ($task['distribution_synced_count'] ?? 0);
-                                            $distributionFailed = (int) ($task['distribution_failed_count'] ?? 0);
-                                            $distributionPending = max(0, $distributionTotal - $distributionSynced - $distributionFailed);
-                                            $taskDistributionBadge = null;
-                                            if ($distributionTotal > 0) {
-                                                if ($distributionFailed > 0) {
-                                                    $taskDistributionBadge = [
-                                                        'label' => __('admin.distribution.task_status.failed', ['count' => $distributionFailed]),
-                                                        'class' => 'border-rose-200 bg-rose-50 text-rose-700',
-                                                    ];
-                                                } elseif ($distributionSynced >= $distributionTotal) {
-                                                    $taskDistributionBadge = [
-                                                        'label' => __('admin.distribution.task_status.synced', ['count' => $distributionTotal]),
-                                                        'class' => 'border-emerald-200 bg-emerald-50 text-emerald-700',
-                                                    ];
-                                                } else {
-                                                    $taskDistributionBadge = [
-                                                        'label' => __('admin.distribution.task_status.queued', ['count' => $distributionPending]),
-                                                        'class' => 'border-sky-200 bg-sky-50 text-sky-700',
-                                                    ];
-                                                }
-                                            }
-                                        @endphp
-                                        <a href="{{ route('admin.articles.index', ['task_id' => (int) $task['id']]) }}" id="task-created-{{ (int) $task['id'] }}" class="font-medium text-blue-700 transition hover:text-blue-900">
-                                            {{ __('admin.tasks.label.created_of_limit', ['created' => (int) ($task['created_count'] ?? $task['total_articles'] ?? 0), 'limit' => $articleLimit]) }}
-                                        </a>
-                                        <div id="task-published-{{ (int) $task['id'] }}">{{ __('admin.tasks.label.published_articles', ['count' => (int) ($task['published_articles'] ?? 0)]) }}</div>
-                                        <div id="task-drafts-{{ (int) $task['id'] }}">{{ __('admin.tasks.label.draft_articles', ['count' => (int) ($task['draft_articles'] ?? 0)]) }}</div>
-                                        <div class="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-400">
-                                            <span id="task-loop-{{ (int) $task['id'] }}">{{ __('admin.tasks.label.loop_times', ['count' => (int) ($task['loop_count'] ?? 0)]) }}</span>
-                                            <span id="task-publish-interval-{{ (int) $task['id'] }}">
-                                                {{ __('admin.tasks.label.publish_interval_minutes', ['count' => max(1, (int) ceil(((int) ($task['publish_interval'] ?? 3600)) / 60))]) }}
-                                            </span>
-                                        </div>
-                                        <div class="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
-                                            <div id="task-progress-{{ (int) $task['id'] }}" class="h-full rounded-full bg-blue-600" style="width: {{ $progressPercent }}%"></div>
-                                        </div>
-                                        @if($taskDistributionBadge !== null)
-                                            <div class="mt-2">
-                                                <span class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold {{ $taskDistributionBadge['class'] }}">
-                                                    <i data-lucide="send" class="h-3 w-3"></i>
-                                                    {{ $taskDistributionBadge['label'] }}
-                                                </span>
-                                            </div>
-                                        @endif
-                                    </td>
-                                    <td class="min-w-0">
-                                        <div class="flex flex-wrap items-center gap-1.5">
-                                            @if (($task['status'] ?? '') === 'active')
-                                                <button onclick="stopBatchExecution({{ (int) $task['id'] }}, '{{ addslashes((string) ($task['name'] ?? '')) }}')" data-batch-action="stop" class="inline-flex h-8 items-center justify-center rounded-md border border-rose-200 px-2.5 text-xs font-semibold text-rose-600 transition-colors hover:bg-rose-50 hover:text-rose-800" title="{{ __('admin.tasks.action.stop_batch') }}" aria-label="{{ __('admin.tasks.action.stop_batch') }}" id="batch-btn-{{ (int) $task['id'] }}">
-                                                    <i data-lucide="circle-stop" class="mr-1 h-3.5 w-3.5"></i>
-                                                    停止
+                                    <td class="py-4">
+                                        <div class="flex flex-wrap items-center gap-1">
+                                            @if ($batchAction === 'stop')
+                                                <button onclick="stopBatchExecution({{ (int) $task['id'] }}, '{{ addslashes((string) ($task['name'] ?? '')) }}')" data-batch-action="stop" class="inline-flex h-8 items-center justify-center rounded-md border border-rose-200 px-2.5 text-xs font-semibold text-rose-600 transition-colors hover:bg-rose-50" title="{{ __('admin.tasks.action.stop_batch') }}" aria-label="{{ __('admin.tasks.action.stop_batch') }}" id="batch-btn-{{ (int) $task['id'] }}">
+                                                    <i data-lucide="circle-stop" class="h-3.5 w-3.5"></i>
+                                                </button>
+                                            @elseif ($batchAction === 'start')
+                                                <button onclick="startBatchExecution({{ (int) $task['id'] }}, '{{ addslashes((string) ($task['name'] ?? '')) }}')" data-batch-action="start" class="inline-flex h-8 items-center justify-center rounded-md border border-emerald-200 px-2.5 text-xs font-semibold text-emerald-600 transition-colors hover:bg-emerald-50" title="{{ __('admin.tasks.action.start_batch') }}" aria-label="{{ __('admin.tasks.action.start_batch') }}" id="batch-btn-{{ (int) $task['id'] }}">
+                                                    <i data-lucide="circle-play" class="h-3.5 w-3.5"></i>
                                                 </button>
                                             @else
-                                                <button onclick="startBatchExecution({{ (int) $task['id'] }}, '{{ addslashes((string) ($task['name'] ?? '')) }}')" data-batch-action="start" class="inline-flex h-8 items-center justify-center rounded-md border border-emerald-200 px-2.5 text-xs font-semibold text-emerald-600 transition-colors hover:bg-emerald-50 hover:text-emerald-800" title="{{ __('admin.tasks.action.start_batch') }}" aria-label="{{ __('admin.tasks.action.start_batch') }}" id="batch-btn-{{ (int) $task['id'] }}">
-                                                    <i data-lucide="circle-play" class="mr-1 h-3.5 w-3.5"></i>
-                                                    运行
-                                                </button>
+                                                <button type="button" data-batch-action="none" class="hidden h-8 w-8" aria-hidden="true" tabindex="-1" id="batch-btn-{{ (int) $task['id'] }}"></button>
                                             @endif
 
-                                            <a href="{{ route('admin.tasks.edit', ['taskId' => (int) $task['id']]) }}" class="admin-icon-btn h-8 w-8 text-blue-600 hover:bg-blue-50 hover:text-blue-700" title="{{ __('admin.tasks.action.settings') }}" aria-label="{{ __('admin.tasks.action.settings') }}">
+                                            <a href="{{ route('admin.tasks.edit', ['taskId' => (int) $task['id']]) }}" class="admin-icon-btn h-8 w-8 text-slate-500 hover:bg-slate-100 hover:text-slate-700" title="{{ __('admin.tasks.action.settings') }}" aria-label="{{ __('admin.tasks.action.settings') }}">
                                                 <i data-lucide="settings" class="h-4 w-4"></i>
                                             </a>
 
-                                            <a href="{{ route('admin.articles.index', ['task_id' => (int) $task['id']]) }}" class="admin-icon-btn h-8 w-8 text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700" title="{{ __('admin.tasks.action.articles') }}" aria-label="{{ __('admin.tasks.action.articles') }}">
+                                            <a href="{{ route('admin.articles.index', ['task_id' => (int) $task['id']]) }}" class="admin-icon-btn h-8 w-8 text-slate-500 hover:bg-slate-100 hover:text-slate-700" title="{{ __('admin.tasks.action.articles') }}" aria-label="{{ __('admin.tasks.action.articles') }}">
                                                 <i data-lucide="file-text" class="h-4 w-4"></i>
                                             </a>
 
-                                            <form method="POST" action="{{ route('admin.tasks.delete', ['taskId' => (int) $task['id']]) }}" class="inline" onsubmit="return confirm(@js(__('admin.tasks.confirm.delete')))">
+                                            <form method="POST" action="{{ route('admin.tasks.delete', ['taskId' => (int) $task['id']]) }}" class="inline" data-no-auto-loading="true" onsubmit="return confirmDeleteTask(event, @js(__('admin.tasks.confirm.delete')))">
                                                 @csrf
                                                 <button type="submit" class="admin-icon-btn h-8 w-8 text-rose-600 hover:bg-rose-50 hover:text-rose-700" title="{{ __('admin.tasks.action.delete') }}" aria-label="{{ __('admin.tasks.action.delete') }}">
                                                     <i data-lucide="trash-2" class="h-4 w-4"></i>
                                                 </button>
                                             </form>
                                         </div>
-                                        <div class="mt-2 max-w-full text-xs leading-5" id="batch-status-{{ (int) $task['id'] }}"></div>
                                     </td>
                                 </tr>
                             @endforeach
@@ -262,59 +222,17 @@
             @endif
         </div>
 
-        <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div class="admin-panel p-5">
-                <div class="flex items-center gap-4">
-                    <span class="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
-                        <i data-lucide="zap" class="h-5 w-5"></i>
-                    </span>
-                    <div class="min-w-0">
-                        <div class="text-xs font-medium text-slate-500">{{ __('admin.tasks.stats.total_tasks') }}</div>
-                        <div id="stats-total-tasks" class="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{{ count($tasks) }}</div>
-                    </div>
+        <details class="admin-panel group" open>
+            <summary class="flex cursor-pointer list-none items-center justify-between gap-3 border-b border-transparent px-5 py-4 marker:content-none [&::-webkit-details-marker]:hidden">
+                <div>
+                    <h2 class="text-base font-semibold text-slate-950">{{ __('admin.tasks.monitoring_title') }}</h2>
+                    <p class="mt-0.5 text-xs text-slate-500">{{ __('admin.tasks.monitoring_hint') }}</p>
                 </div>
-            </div>
-            <div class="admin-panel p-5">
-                <div class="flex items-center gap-4">
-                    <span class="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
-                        <i data-lucide="play" class="h-5 w-5"></i>
-                    </span>
-                    <div class="min-w-0">
-                        <div class="text-xs font-medium text-slate-500">{{ __('admin.tasks.stats.enabled') }}</div>
-                        <div id="stats-enabled-tasks" class="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{{ count(array_filter($tasks, static fn (array $row): bool => ($row['status'] ?? '') === 'active')) }}</div>
-                    </div>
-                </div>
-            </div>
-            <div class="admin-panel p-5">
-                <div class="flex items-center gap-4">
-                    <span class="flex h-12 w-12 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
-                        <i data-lucide="file-text" class="h-5 w-5"></i>
-                    </span>
-                    <div class="min-w-0">
-                        <div class="text-xs font-medium text-slate-500">{{ __('admin.tasks.stats.total_articles') }}</div>
-                        <div id="stats-total-articles" class="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{{ array_sum(array_map(static fn (array $row): int => (int) ($row['total_articles'] ?? 0), $tasks)) }}</div>
-                    </div>
-                </div>
-            </div>
-            <div class="admin-panel p-5">
-                <div class="flex items-center gap-4">
-                    <span class="flex h-12 w-12 items-center justify-center rounded-xl bg-orange-50 text-orange-600">
-                        <i data-lucide="globe" class="h-5 w-5"></i>
-                    </span>
-                    <div class="min-w-0">
-                        <div class="text-xs font-medium text-slate-500">{{ __('admin.tasks.stats.total_published') }}</div>
-                        <div id="stats-total-published" class="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{{ array_sum(array_map(static fn (array $row): int => (int) ($row['published_articles'] ?? 0), $tasks)) }}</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="grid gap-4 xl:grid-cols-3">
-            <div class="admin-panel">
-                <div class="admin-panel-header">
-                    <h3 class="text-base font-semibold text-slate-950">{{ __('admin.tasks.worker.title') }}</h3>
-                </div>
-                <div class="px-5 py-4">
+                <i data-lucide="chevron-down" class="h-4 w-4 shrink-0 text-slate-400 transition group-open:rotate-180"></i>
+            </summary>
+            <div class="grid gap-4 border-t border-slate-100 p-5 xl:grid-cols-3">
+                <div>
+                    <h3 class="mb-3 text-sm font-semibold text-slate-900">{{ __('admin.tasks.worker.title') }}</h3>
                     <div id="worker-overview-container">
                         @if (empty($workers))
                             <p class="text-sm text-slate-500">{{ __('admin.tasks.worker.none') }}</p>
@@ -340,39 +258,31 @@
                         @endif
                     </div>
                 </div>
-            </div>
 
-            <div class="admin-panel">
-                <div class="admin-panel-header">
-                    <h3 class="text-base font-semibold text-slate-950">{{ __('admin.tasks.queue.title') }}</h3>
-                </div>
-                <div class="px-5 py-4">
+                <div>
+                    <h3 class="mb-3 text-sm font-semibold text-slate-900">{{ __('admin.tasks.queue.title') }}</h3>
                     <div class="grid grid-cols-2 gap-3">
-                        <div class="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3">
-                            <div class="text-xs font-semibold text-blue-700">{{ __('admin.tasks.queue.pending') }}</div>
-                            <div class="mt-1 text-2xl font-semibold tracking-tight text-blue-900" id="queue-pending">{{ (int) ($queueStats['pending'] ?? 0) }}</div>
+                        <div class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
+                            <div class="text-xs text-slate-500">{{ __('admin.tasks.queue.pending') }}</div>
+                            <div class="mt-0.5 text-xl font-semibold text-slate-900" id="queue-pending">{{ (int) ($queueStats['pending'] ?? 0) }}</div>
                         </div>
-                        <div class="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3">
-                            <div class="text-xs font-semibold text-emerald-700">{{ __('admin.tasks.queue.running') }}</div>
-                            <div class="mt-1 text-2xl font-semibold tracking-tight text-emerald-900" id="queue-running">{{ (int) ($queueStats['running'] ?? 0) }}</div>
+                        <div class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
+                            <div class="text-xs text-slate-500">{{ __('admin.tasks.queue.running') }}</div>
+                            <div class="mt-0.5 text-xl font-semibold text-slate-900" id="queue-running">{{ (int) ($queueStats['running'] ?? 0) }}</div>
                         </div>
-                        <div class="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3">
-                            <div class="text-xs font-semibold text-rose-700">{{ __('admin.tasks.queue.failed') }}</div>
-                            <div class="mt-1 text-2xl font-semibold tracking-tight text-rose-900" id="queue-failed">{{ (int) ($queueStats['failed'] ?? 0) }}</div>
+                        <div class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
+                            <div class="text-xs text-slate-500">{{ __('admin.tasks.queue.failed') }}</div>
+                            <div class="mt-0.5 text-xl font-semibold text-slate-900" id="queue-failed">{{ (int) ($queueStats['failed'] ?? 0) }}</div>
                         </div>
-                        <div class="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-                            <div class="text-xs font-semibold text-slate-700">{{ __('admin.tasks.queue.completed') }}</div>
-                            <div class="mt-1 text-2xl font-semibold tracking-tight text-slate-900" id="queue-completed">{{ (int) ($queueStats['completed'] ?? 0) }}</div>
+                        <div class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
+                            <div class="text-xs text-slate-500">{{ __('admin.tasks.queue.completed') }}</div>
+                            <div class="mt-0.5 text-xl font-semibold text-slate-900" id="queue-completed">{{ (int) ($queueStats['completed'] ?? 0) }}</div>
                         </div>
                     </div>
                 </div>
-            </div>
 
-            <div class="admin-panel">
-                <div class="admin-panel-header">
-                    <h3 class="text-base font-semibold text-slate-950">{{ __('admin.tasks.jobs.recent') }}</h3>
-                </div>
-                <div class="px-5 py-4">
+                <div>
+                    <h3 class="mb-3 text-sm font-semibold text-slate-900">{{ __('admin.tasks.jobs.recent') }}</h3>
                     <div id="recent-runs-container">
                         @if (empty($recentJobs))
                             <p class="text-sm text-slate-500">{{ __('admin.tasks.jobs.none') }}</p>
@@ -391,16 +301,12 @@
                                     <div class="rounded-lg border border-slate-200 px-3 py-3">
                                         <div class="flex items-center justify-between gap-3">
                                             <div class="min-w-0">
-                                                <div class="text-sm font-semibold text-slate-900 truncate">{{ $job['task_name'] ?: __('admin.tasks.jobs.unknown_task') }}</div>
-                                                <div class="text-xs text-slate-500">Job #{{ (int) $job['id'] }} · {{ __('admin.tasks.jobs.task_prefix') }} #{{ (int) $job['task_id'] }}</div>
+                                                <div class="truncate text-sm font-medium text-slate-900">{{ $job['task_name'] ?: __('admin.tasks.jobs.unknown_task') }}</div>
+                                                <div class="text-xs text-slate-500">Job #{{ (int) $job['id'] }}</div>
                                             </div>
-                                            <span class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold {{ $jobBadge }}">
-                                                <span class="h-1.5 w-1.5 rounded-full bg-current opacity-70"></span>
+                                            <span class="inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-xs font-medium {{ $jobBadge }}">
                                                 {{ $job['status'] ?? 'idle' }}
                                             </span>
-                                        </div>
-                                        <div class="mt-2 text-xs text-slate-500">
-                                            <div>{{ __('admin.tasks.jobs.updated_at') }}: {{ (string) ($job['updated_at'] ?? '') }}</div>
                                         </div>
                                     </div>
                                 @endforeach
@@ -409,7 +315,7 @@
                     </div>
                 </div>
             </div>
-        </div>
+        </details>
     </div>
 @endsection
 
@@ -444,14 +350,53 @@ function renderIcons() { if (typeof lucide !== 'undefined') { lucide.createIcons
 
 function showNotification(type, message) { if (window.AdminUtils && typeof window.AdminUtils.showToast === 'function') { window.AdminUtils.showToast(message, type); return; } alert(message); }
 
+function confirmAction(options) {
+    if (window.AdminUtils && typeof window.AdminUtils.showConfirm === 'function') {
+        return window.AdminUtils.showConfirm(options);
+    }
+    const text = [options.title, options.message].filter(Boolean).join('\n\n');
+    return Promise.resolve(window.confirm(text));
+}
+
+async function confirmDeleteTask(event, message) {
+    event.preventDefault();
+    const ok = await confirmAction({
+        title: TASK_I18N.confirmDeleteTitle,
+        message,
+        confirmLabel: TASK_I18N.confirmDeleteButton,
+        danger: true,
+    });
+    if (ok) event.target.submit();
+    return false;
+}
+
+function resolveBatchAction(task) {
+    const batchStatus = String(task.batch_status || '');
+    const isExecuting = batchStatus === 'running' || batchStatus === 'pending';
+    if (isExecuting) return 'stop';
+    if (task.status === 'paused' || batchStatus === 'idle') return 'start';
+    return 'none';
+}
+
 function setButtonLoading(btn, text, classes) { btn.disabled = true; btn.className = classes; btn.innerHTML = `<i data-lucide="loader-2" class="mr-1 h-3.5 w-3.5 animate-spin"></i>${text}`; renderIcons(); }
 
-function updateBatchButton(btn, taskId, taskName, isActive) {
+function updateBatchButton(btn, taskId, taskName, action) {
     if (!btn) return;
+    if (action === 'none') {
+        btn.classList.add('hidden');
+        btn.disabled = true;
+        btn.dataset.batchAction = 'none';
+        btn.innerHTML = '';
+        btn.removeAttribute('title');
+        btn.onclick = null;
+        return;
+    }
+    btn.classList.remove('hidden');
     btn.disabled = false;
-    btn.dataset.batchAction = isActive ? 'stop' : 'start';
-    btn.className = isActive ? 'inline-flex h-8 items-center justify-center rounded-md border border-rose-200 px-2.5 text-xs font-semibold text-rose-600 transition-colors hover:bg-rose-50 hover:text-rose-800' : 'inline-flex h-8 items-center justify-center rounded-md border border-emerald-200 px-2.5 text-xs font-semibold text-emerald-600 transition-colors hover:bg-emerald-50 hover:text-emerald-800';
-    btn.innerHTML = isActive ? '<i data-lucide="circle-stop" class="mr-1 h-3.5 w-3.5"></i>停止' : '<i data-lucide="circle-play" class="mr-1 h-3.5 w-3.5"></i>运行';
+    btn.dataset.batchAction = action;
+    const isActive = action === 'stop';
+    btn.className = isActive ? 'inline-flex h-8 items-center justify-center rounded-md border border-rose-200 px-2.5 text-xs font-semibold text-rose-600 transition-colors hover:bg-rose-50' : 'inline-flex h-8 items-center justify-center rounded-md border border-emerald-200 px-2.5 text-xs font-semibold text-emerald-600 transition-colors hover:bg-emerald-50';
+    btn.innerHTML = isActive ? '<i data-lucide="circle-stop" class="h-3.5 w-3.5"></i>' : '<i data-lucide="circle-play" class="h-3.5 w-3.5"></i>';
     btn.title = isActive ? TASK_I18N.stopBatch : TASK_I18N.startBatch;
     btn.setAttribute('aria-label', btn.title);
     btn.onclick = isActive ? () => stopBatchExecution(taskId, taskName) : () => startBatchExecution(taskId, taskName);
@@ -481,36 +426,37 @@ function updateBatchStatus(task) {
     const runningJobs = Number(task.running_jobs || 0);
     const isRunning = task.batch_status === 'running' || task.batch_status === 'pending';
     const errorMessage = normalizeRuntimeError(task.batch_error_message || '');
+    const badge = (label, classes, detail = '') => `<span class="inline-flex max-w-full flex-col gap-0.5"><span class="inline-flex w-fit items-center rounded-full border px-2 py-0.5 text-xs font-medium ${classes}">${escapeHtml(label)}</span>${detail ? `<span class="text-[11px] leading-4 text-slate-500">${escapeHtml(detail)}</span>` : ''}</span>`;
     if (!isRunning) {
         if (task.batch_status === 'failed') {
             const failureMeta = getFailureMeta(errorMessage);
-            statusDiv.innerHTML = `<div class="flex flex-col gap-1 text-xs"><span class="inline-flex items-center justify-center rounded-full border px-2 py-1 ${failureMeta.chipClasses}">${escapeHtml(failureMeta.label)}</span>${errorMessage ? `<div class="mx-auto max-w-[220px] break-words leading-5 ${failureMeta.detailClasses}">${escapeHtml(truncateText(errorMessage, 60))}</div>` : ''}</div>`;
+            statusDiv.innerHTML = badge(failureMeta.label, failureMeta.chipClasses, errorMessage ? truncateText(errorMessage, 48) : '');
         } else if (task.batch_status === 'completed') {
-            statusDiv.innerHTML = `<span class="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700"><span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>${escapeHtml(TASK_I18N.completed)}</span>`;
+            statusDiv.innerHTML = badge(TASK_I18N.completed, 'border-emerald-200 bg-emerald-50 text-emerald-700');
         } else if (task.batch_status === 'waiting') {
             const nextRunAt = formatTaskDateTime(task.next_run_at || '');
-            statusDiv.innerHTML = `<div class="flex flex-col gap-1 text-xs"><span class="inline-flex w-fit items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700">${escapeHtml(TASK_I18N.waiting)}</span>${nextRunAt ? `<div class="text-slate-500">${escapeHtml(TASK_I18N.nextRunAt.replace('__TIME__', nextRunAt))}</div>` : ''}</div>`;
+            statusDiv.innerHTML = badge(TASK_I18N.waiting, 'border-slate-200 bg-slate-50 text-slate-700', nextRunAt ? TASK_I18N.nextRunAt.replace('__TIME__', nextRunAt) : '');
         } else if (task.batch_status === 'waiting_publish') {
             const nextPublishAt = formatTaskDateTime(task.next_publish_at || task.next_run_at || '');
-            statusDiv.innerHTML = `<div class="flex flex-col gap-1 text-xs"><span class="inline-flex w-fit items-center rounded-full border border-cyan-200 bg-cyan-50 px-2 py-1 text-xs font-semibold text-cyan-700">${escapeHtml(TASK_I18N.waitingPublish)}</span>${nextPublishAt ? `<div class="text-slate-500">${escapeHtml(TASK_I18N.nextRunAt.replace('__TIME__', nextPublishAt))}</div>` : ''}</div>`;
+            statusDiv.innerHTML = badge(TASK_I18N.waitingPublish, 'border-cyan-200 bg-cyan-50 text-cyan-700', nextPublishAt ? TASK_I18N.nextRunAt.replace('__TIME__', nextPublishAt) : '');
         } else if (task.batch_status === 'draft_pool_full') {
-            statusDiv.innerHTML = `<span class="inline-flex max-w-full items-center gap-1 rounded-full border border-orange-200 bg-orange-50 px-2 py-1 text-xs font-semibold text-orange-700">${escapeHtml(TASK_I18N.draftPoolFull)}</span>`;
+            statusDiv.innerHTML = badge(TASK_I18N.draftPoolFull, 'border-orange-200 bg-orange-50 text-orange-700');
         } else if (task.batch_status === 'limit_reached') {
-            statusDiv.innerHTML = `<span class="inline-flex max-w-full items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700">${escapeHtml(TASK_I18N.limitReached)}</span>`;
+            statusDiv.innerHTML = badge(TASK_I18N.limitReached, 'border-amber-200 bg-amber-50 text-amber-700');
         } else { statusDiv.innerHTML = ''; }
         return;
     }
     const stateLabel = task.batch_status === 'pending' ? TASK_I18N.queued : TASK_I18N.running;
     const remainingArticles = Math.max(0, articleLimit - createdCount);
     const estimatedTime = formatEstimatedTime(remainingArticles * Number(task.publish_interval || 3600));
-    statusDiv.innerHTML = `<div class="flex flex-col gap-1 text-xs"><div class="flex items-center gap-2"><span class="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700"><i data-lucide="activity" class="h-3 w-3"></i>${stateLabel}</span><span class="text-slate-600">${createdCount}/${articleLimit}</span></div><div class="text-slate-500">${TASK_I18N.pendingRunning.replace('__PENDING__', pendingJobs).replace('__RUNNING__', runningJobs)}${remainingArticles > 0 ? ` · ${TASK_I18N.estimated.replace('__TIME__', estimatedTime)}` : ''}</div></div>`;
+    const detail = `${TASK_I18N.pendingRunning.replace('__PENDING__', pendingJobs).replace('__RUNNING__', runningJobs)}${remainingArticles > 0 ? ` · ${TASK_I18N.estimated.replace('__TIME__', estimatedTime)}` : ''}`;
+    statusDiv.innerHTML = badge(`${stateLabel} ${createdCount}/${articleLimit}`, 'border-blue-200 bg-blue-50 text-blue-700', detail);
     renderIcons();
 }
 
 function updateTaskUI(task) {
     const btn = document.getElementById(`batch-btn-${task.id}`);
-    const isActive = task.status === 'active';
-    updateBatchButton(btn, task.id, task.name, isActive);
+    updateBatchButton(btn, task.id, task.name, resolveBatchAction(task));
     updateBatchStatus(task);
 }
 
@@ -519,10 +465,9 @@ function updateTaskCounters(task) {
     const publishedEl = document.getElementById(`task-published-${task.id}`);
     const draftsEl = document.getElementById(`task-drafts-${task.id}`);
     const progressEl = document.getElementById(`task-progress-${task.id}`);
-    const loopEl = document.getElementById(`task-loop-${task.id}`);
-    const publishIntervalEl = document.getElementById(`task-publish-interval-${task.id}`);
     const createdCount = Number(task.created_count || task.total_articles || 0);
     const articleLimit = Math.max(1, Number(task.article_limit || task.draft_limit || 10));
+    const draftCount = Number(task.draft_articles || 0);
     if (createdEl) {
         createdEl.textContent = TASK_I18N.createdOfLimitLabel.replace('__CREATED__', String(createdCount)).replace('__LIMIT__', String(articleLimit));
     }
@@ -530,18 +475,18 @@ function updateTaskCounters(task) {
         publishedEl.textContent = TASK_I18N.publishedArticlesLabel.replace('__COUNT__', String(Number(task.published_articles || 0)));
     }
     if (draftsEl) {
-        draftsEl.textContent = TASK_I18N.draftArticlesLabel.replace('__COUNT__', String(Number(task.draft_articles || 0)));
+        if (draftCount > 0) {
+            draftsEl.textContent = TASK_I18N.draftArticlesLabel.replace('__COUNT__', String(draftCount));
+            draftsEl.classList.remove('hidden');
+            draftsEl.classList.add('text-xs', 'text-slate-500');
+        } else {
+            draftsEl.textContent = '';
+            draftsEl.classList.add('hidden');
+        }
     }
     if (progressEl) {
         const percent = Math.max(0, Math.min(100, Math.floor((createdCount / articleLimit) * 100)));
         progressEl.style.width = `${percent}%`;
-    }
-    if (loopEl) {
-        loopEl.textContent = TASK_I18N.loopTimesLabel.replace('__COUNT__', String(Number(task.loop_count || 0)));
-    }
-    if (publishIntervalEl) {
-        const minutes = Math.max(1, Math.ceil(Number(task.publish_interval || 3600) / 60));
-        publishIntervalEl.textContent = TASK_I18N.publishIntervalMinutes.replace('__COUNT__', String(minutes));
     }
 }
 
@@ -611,13 +556,10 @@ function renderRecentRuns(recentRuns) {
         return `<div class="rounded-lg border border-slate-200 px-3 py-3">
             <div class="flex items-center justify-between gap-3">
                 <div class="min-w-0">
-                    <div class="text-sm font-semibold text-slate-900 truncate">${escapeHtml(taskName)}</div>
-                    <div class="text-xs text-slate-500">Job #${Number(job.id || 0)} · ${escapeHtml(TASK_TEXT.jobsTaskPrefix)} #${Number(job.task_id || 0)}</div>
+                    <div class="truncate text-sm font-medium text-slate-900">${escapeHtml(taskName)}</div>
+                    <div class="text-xs text-slate-500">Job #${Number(job.id || 0)}</div>
                 </div>
-                <span class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold ${badgeClass}"><span class="h-1.5 w-1.5 rounded-full bg-current opacity-70"></span>${escapeHtml(status)}</span>
-            </div>
-            <div class="mt-2 text-xs text-slate-500">
-                <div>${escapeHtml(TASK_TEXT.jobsUpdatedAt)}: ${escapeHtml(String(job.updated_at || ''))}</div>
+                <span class="inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-xs font-medium ${badgeClass}">${escapeHtml(status)}</span>
             </div>
         </div>`;
     }).join('');
@@ -674,24 +616,38 @@ function initTaskRealtime() {
     });
 }
 
-function startBatchExecution(taskId, taskName) {
-    if (!confirm(TASK_I18N.confirmStart.replace('__NAME__', taskName))) return;
+async function startBatchExecution(taskId, taskName) {
+    const ok = await confirmAction({
+        title: TASK_I18N.confirmStartTitle,
+        message: TASK_I18N.confirmStart.replace('__NAME__', taskName),
+    });
+    if (!ok) return;
     const btn = document.getElementById(`batch-btn-${taskId}`);
     setButtonLoading(btn, TASK_I18N.starting, 'inline-flex h-8 items-center justify-center rounded-md border border-emerald-200 bg-emerald-50 px-2.5 text-xs font-semibold text-emerald-600 cursor-wait');
-    fetch(TASK_BATCH_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': @js(csrf_token()) }, body: JSON.stringify({ task_id: taskId, action: 'start' }) }).then(response => response.json()).then(data => { if (!data.success) { showNotification('error', TASK_I18N.startFailed.replace('__MESSAGE__', data.message)); updateBatchButton(btn, taskId, taskName, false); return; } showNotification('success', TASK_I18N.taskQueued.replace('__NAME__', taskName)); updateBatchButton(btn, taskId, taskName, true); requestTaskSnapshot(); }).catch(error => { showNotification('error', TASK_I18N.requestFailed.replace('__MESSAGE__', error.message)); updateBatchButton(btn, taskId, taskName, false); });
+    fetch(TASK_BATCH_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': @js(csrf_token()) }, body: JSON.stringify({ task_id: taskId, action: 'start' }) }).then(response => response.json()).then(data => { if (!data.success) { showNotification('error', TASK_I18N.startFailed.replace('__MESSAGE__', data.message)); updateBatchButton(btn, taskId, taskName, 'start'); return; } showNotification('success', TASK_I18N.taskQueued.replace('__NAME__', taskName)); requestTaskSnapshot(); }).catch(error => { showNotification('error', TASK_I18N.requestFailed.replace('__MESSAGE__', error.message)); updateBatchButton(btn, taskId, taskName, 'start'); });
 }
 
-function stopBatchExecution(taskId, taskName) {
-    if (!confirm(TASK_I18N.confirmStop.replace('__NAME__', taskName))) return;
+async function stopBatchExecution(taskId, taskName) {
+    const ok = await confirmAction({
+        title: TASK_I18N.confirmStopTitle,
+        message: TASK_I18N.confirmStop.replace('__NAME__', taskName),
+        confirmLabel: TASK_I18N.confirmStopButton,
+        danger: true,
+    });
+    if (!ok) return;
     const btn = document.getElementById(`batch-btn-${taskId}`);
     setButtonLoading(btn, TASK_I18N.stopping, 'inline-flex h-8 items-center justify-center rounded-md border border-orange-200 bg-orange-50 px-2.5 text-xs font-semibold text-orange-600 cursor-wait');
-    fetch(TASK_BATCH_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': @js(csrf_token()) }, body: JSON.stringify({ task_id: taskId, action: 'stop' }) }).then(response => response.json()).then(data => { if (!data.success) { showNotification('error', TASK_I18N.stopFailed.replace('__MESSAGE__', data.message)); updateBatchButton(btn, taskId, taskName, true); return; } showNotification('success', TASK_I18N.taskStopped.replace('__NAME__', taskName)); updateBatchButton(btn, taskId, taskName, false); requestTaskSnapshot(); }).catch(error => { showNotification('error', TASK_I18N.requestFailed.replace('__MESSAGE__', error.message)); updateBatchButton(btn, taskId, taskName, true); });
+    fetch(TASK_BATCH_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': @js(csrf_token()) }, body: JSON.stringify({ task_id: taskId, action: 'stop' }) }).then(response => response.json()).then(data => { if (!data.success) { showNotification('error', TASK_I18N.stopFailed.replace('__MESSAGE__', data.message)); updateBatchButton(btn, taskId, taskName, 'stop'); return; } showNotification('success', TASK_I18N.taskStopped.replace('__NAME__', taskName)); requestTaskSnapshot(); }).catch(error => { showNotification('error', TASK_I18N.requestFailed.replace('__MESSAGE__', error.message)); updateBatchButton(btn, taskId, taskName, 'stop'); });
 }
 
-function executeAllActiveTasks() {
+async function executeAllActiveTasks() {
     const buttons = Array.from(document.querySelectorAll('[id^="batch-btn-"]')).filter(btn => btn.dataset.batchAction === 'start');
     if (buttons.length === 0) { showNotification('info', TASK_I18N.noRunnable); return; }
-    if (!confirm(TASK_I18N.confirmRunAll)) return;
+    const ok = await confirmAction({
+        title: TASK_I18N.confirmRunAllTitle,
+        message: TASK_I18N.confirmRunAll,
+    });
+    if (!ok) return;
     let completed = 0; let success = 0;
     buttons.forEach((btn, index) => {
         const taskId = Number(btn.id.replace('batch-btn-', ''));

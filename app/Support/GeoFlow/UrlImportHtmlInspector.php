@@ -198,20 +198,52 @@ final class UrlImportHtmlInspector
     private static function flattenJsonLd(array $payload): string
     {
         $parts = [];
-        $items = array_is_list($payload) ? $payload : [$payload];
-        foreach ($items as $item) {
-            if (! is_array($item)) {
-                continue;
-            }
-            foreach (['headline', 'name', 'description', 'articleBody', 'text'] as $key) {
-                $value = trim((string) ($item[$key] ?? ''));
-                if ($value !== '') {
-                    $parts[] = $value;
-                }
+        self::collectJsonLdParts($payload, $parts);
+
+        return implode("\n", array_values(array_unique(array_filter($parts))));
+    }
+
+    /**
+     * @param  array<string, mixed>|list<mixed>|mixed  $payload
+     * @param  list<string>  $parts
+     */
+    private static function collectJsonLdParts(mixed $payload, array &$parts): void
+    {
+        if (! is_array($payload)) {
+            return;
+        }
+
+        if (isset($payload['@graph']) && is_array($payload['@graph'])) {
+            foreach ($payload['@graph'] as $item) {
+                self::collectJsonLdParts($item, $parts);
             }
         }
 
-        return implode("\n", $parts);
+        if (array_is_list($payload)) {
+            foreach ($payload as $item) {
+                self::collectJsonLdParts($item, $parts);
+            }
+
+            return;
+        }
+
+        foreach (['headline', 'name', 'description', 'articleBody', 'text', 'alternateName', 'slogan', 'about'] as $key) {
+            $value = $payload[$key] ?? null;
+            if (is_string($value)) {
+                $text = trim($value);
+                if ($text !== '') {
+                    $parts[] = $text;
+                }
+            } elseif (is_array($value)) {
+                self::collectJsonLdParts($value, $parts);
+            }
+        }
+
+        foreach (['mainEntity', 'publisher', 'provider', 'isPartOf'] as $nestedKey) {
+            if (isset($payload[$nestedKey]) && is_array($payload[$nestedKey])) {
+                self::collectJsonLdParts($payload[$nestedKey], $parts);
+            }
+        }
     }
 
     public static function normalizeText(string $text): string
@@ -553,6 +585,137 @@ final class UrlImportHtmlInspector
         }
 
         return Str::limit($primary."\n\n".$supplemental, 20000, '');
+    }
+
+    public static function pruneExtraNoiseNodes(DOMXPath $xpath, DOMDocument $dom): void
+    {
+        $queries = [
+            '//*[contains(concat(" ", normalize-space(@class), " "), " cookie ")]',
+            '//*[contains(concat(" ", normalize-space(@class), " "), " popup ")]',
+            '//*[contains(concat(" ", normalize-space(@class), " "), " modal ")]',
+            '//*[contains(concat(" ", normalize-space(@class), " "), " overlay ")]',
+            '//*[contains(concat(" ", normalize-space(@class), " "), " gdpr ")]',
+            '//*[contains(concat(" ", normalize-space(@id), " "), " cookie ")]',
+            '//*[contains(translate(@aria-label,"COOKIE","cookie"), "cookie")]',
+        ];
+
+        $removed = [];
+        foreach ($queries as $query) {
+            foreach ($xpath->query($query) ?: [] as $node) {
+                if (! $node instanceof \DOMNode || ! $node->parentNode) {
+                    continue;
+                }
+                $path = spl_object_id($node);
+                if (isset($removed[$path])) {
+                    continue;
+                }
+                $removed[$path] = true;
+                $node->parentNode->removeChild($node);
+            }
+        }
+    }
+
+    public static function findMainContentRoot(DOMXPath $xpath): ?\DOMNode
+    {
+        $queries = [
+            '//main',
+            '//article',
+            '//*[@role="main"]',
+            '//*[contains(concat(" ", normalize-space(@class), " "), " main ")]',
+            '//*[contains(concat(" ", normalize-space(@class), " "), " content ")]',
+            '//*[contains(concat(" ", normalize-space(@id), " "), " content ")]',
+            '//*[@id="app"]',
+            '//*[@id="root"]',
+            '//body',
+        ];
+
+        foreach ($queries as $query) {
+            $node = $xpath->query($query)->item(0);
+            if ($node instanceof \DOMNode) {
+                return $node;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public static function extractJsonLdStructured(DOMXPath $xpath, DOMDocument $dom): array
+    {
+        unset($dom);
+        $items = [];
+        foreach ($xpath->query('//script[@type="application/ld+json"]') ?: [] as $node) {
+            if (! $node instanceof \DOMElement) {
+                continue;
+            }
+            $decoded = json_decode((string) $node->textContent, true);
+            if (! is_array($decoded)) {
+                continue;
+            }
+            self::collectJsonLdItems($decoded, $items);
+        }
+
+        return ['items' => $items];
+    }
+
+    /**
+     * @param  array<string, mixed>|list<mixed>  $payload
+     * @param  list<array<string, mixed>>  $items
+     */
+    private static function collectJsonLdItems(array $payload, array &$items): void
+    {
+        if (isset($payload['@graph']) && is_array($payload['@graph'])) {
+            foreach ($payload['@graph'] as $entry) {
+                if (is_array($entry)) {
+                    self::collectJsonLdItems($entry, $items);
+                }
+            }
+        }
+
+        if (array_is_list($payload)) {
+            foreach ($payload as $entry) {
+                if (is_array($entry)) {
+                    self::collectJsonLdItems($entry, $items);
+                }
+            }
+
+            return;
+        }
+
+        $type = (string) ($payload['@type'] ?? '');
+        $record = array_filter([
+            '@type' => $type,
+            'name' => trim((string) ($payload['name'] ?? $payload['headline'] ?? '')),
+            'description' => trim((string) ($payload['description'] ?? '')),
+            'url' => trim((string) ($payload['url'] ?? '')),
+        ], static fn (string $v): bool => $v !== '');
+
+        if ($record !== []) {
+            $items[] = $record;
+        }
+    }
+
+    /**
+     * @return array{phones:list<string>,emails:list<string>,addresses:list<string>}
+     */
+    public static function extractContactInfo(DOMXPath $xpath, DOMDocument $dom): array
+    {
+        unset($dom);
+        $text = self::normalizeText((string) ($xpath->query('//body')->item(0)?->textContent ?? ''));
+
+        preg_match_all('/1[3-9]\d{9}|0\d{2,3}-?\d{7,8}/u', $text, $phoneMatches);
+        preg_match_all('/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/u', $text, $emailMatches);
+
+        $phones = array_values(array_unique(array_filter(array_map('trim', $phoneMatches[0] ?? []))));
+        $emails = array_values(array_unique(array_filter(array_map('trim', $emailMatches[0] ?? []))));
+
+        return [
+            'phones' => array_slice($phones, 0, 8),
+            'emails' => array_slice($emails, 0, 8),
+            'addresses' => [],
+        ];
     }
 
     private static function looksLikeGzip(string $body): bool

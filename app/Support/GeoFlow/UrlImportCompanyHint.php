@@ -16,8 +16,12 @@ final class UrlImportCompanyHint
      *     registrable_domain:string,
      *     domain_stem:string,
      *     project_name:string,
+     *     company_name:string,
+     *     brand_name:string,
      *     page_title:string,
      *     page_description:string,
+     *     user_company_provided:bool,
+     *     user_brand_provided:bool,
      *     search_queries:list<string>
      * }
      */
@@ -32,6 +36,13 @@ final class UrlImportCompanyHint
         $registrableDomain = self::registrableDomain($domain);
         $domainStem = self::domainStem($registrableDomain);
         $projectName = trim((string) ($options['project_name'] ?? ''));
+        $userCompanyRaw = trim((string) ($options['company_name'] ?? ''));
+        $userBrandRaw = trim((string) ($options['brand_name'] ?? ''));
+        $companyName = $userCompanyRaw;
+        $brandName = $userBrandRaw;
+        if ($companyName === '' && $projectName !== '') {
+            $companyName = $projectName;
+        }
         $pageTitle = trim((string) ($directParsed['title'] ?? ''));
         $pageDescription = trim((string) ($directParsed['description'] ?? ''));
 
@@ -39,14 +50,19 @@ final class UrlImportCompanyHint
             'domain' => $domain,
             'registrable_domain' => $registrableDomain,
             'domain_stem' => $domainStem,
-            'project_name' => $projectName,
+            'project_name' => $projectName !== '' ? $projectName : $companyName,
+            'company_name' => $companyName,
+            'brand_name' => $brandName,
+            'user_company_provided' => $userCompanyRaw !== '',
+            'user_brand_provided' => $userBrandRaw !== '',
             'page_title' => $pageTitle,
             'page_description' => $pageDescription,
             'search_queries' => self::searchQueries(
                 $normalizedUrl,
                 $registrableDomain,
                 $domainStem,
-                $projectName,
+                $companyName,
+                $brandName,
                 $pageTitle,
             ),
         ];
@@ -99,10 +115,11 @@ final class UrlImportCompanyHint
         string $normalizedUrl,
         string $registrableDomain,
         string $domainStem,
-        string $projectName,
+        string $companyName,
+        string $brandName,
         string $pageTitle,
     ): array {
-        $labels = self::searchLabels($projectName, $domainStem, $pageTitle, $registrableDomain);
+        $labels = self::searchLabels($companyName, $brandName, $domainStem, $pageTitle, $registrableDomain);
         $primary = $labels[0] ?? ($domainStem !== '' ? $domainStem : $registrableDomain);
 
         $queries = [
@@ -116,6 +133,14 @@ final class UrlImportCompanyHint
             $queries[] = $primary.' 公众号';
             $queries[] = $primary.' 知乎';
             $queries[] = $primary.' 新闻 报道 产品';
+        }
+
+        $brandQuery = trim($brandName);
+        if ($brandQuery !== '' && $brandQuery !== $primary) {
+            array_splice($queries, 1, 0, [
+                $brandQuery.' 产品 解决方案',
+                $brandQuery.' 官网 '.$registrableDomain,
+            ]);
         }
 
         $brandHints = self::extractBrandHints($pageTitle, '', '');
@@ -147,15 +172,23 @@ final class UrlImportCompanyHint
      * @return list<string>
      */
     private static function searchLabels(
-        string $projectName,
+        string $companyName,
+        string $brandName,
         string $domainStem,
         string $pageTitle,
         string $registrableDomain,
     ): array {
         $labels = [];
 
-        if ($projectName !== '') {
-            $labels[] = self::normalizeSearchLabel($projectName);
+        if ($companyName !== '') {
+            $labels[] = self::normalizeSearchLabel($companyName);
+        }
+
+        if ($brandName !== '') {
+            $normalizedBrand = self::normalizeSearchLabel($brandName);
+            if ($normalizedBrand !== '' && ! in_array($normalizedBrand, $labels, true)) {
+                $labels[] = $normalizedBrand;
+            }
         }
 
         $companyFromTitle = self::extractCompanyNameFromTitle($pageTitle);
@@ -256,9 +289,18 @@ final class UrlImportCompanyHint
      */
     public static function inferCompanyName(array $hint, string $aiCompanyName = ''): string
     {
+        if (($hint['user_company_provided'] ?? false) && trim((string) ($hint['company_name'] ?? '')) !== '') {
+            return self::normalizeSearchLabel((string) $hint['company_name']);
+        }
+
         $aiCompanyName = trim($aiCompanyName);
-        if ($aiCompanyName !== '') {
+        if ($aiCompanyName !== '' && preg_match('/未知|暂定|待核实|未能/u', $aiCompanyName) !== 1) {
             return $aiCompanyName;
+        }
+
+        $companyName = trim((string) ($hint['company_name'] ?? ''));
+        if ($companyName !== '') {
+            return self::normalizeSearchLabel($companyName);
         }
 
         $projectName = trim((string) ($hint['project_name'] ?? ''));

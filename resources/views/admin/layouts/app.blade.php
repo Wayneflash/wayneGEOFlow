@@ -49,6 +49,21 @@
     </main>
 @include('admin.partials.footer')
 @yield('modals')
+<div id="admin-confirm-modal" class="admin-modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="admin-confirm-title">
+    <div class="admin-modal-backdrop absolute inset-0" data-admin-confirm-cancel></div>
+    <div class="admin-modal-panel admin-modal-panel--sm" onclick="event.stopPropagation()">
+        <div class="admin-modal-panel-head">
+            <h3 id="admin-confirm-title" class="text-base font-semibold text-slate-950">{{ __('admin.common.confirm_title') }}</h3>
+        </div>
+        <div class="admin-modal-panel-body">
+            <div id="admin-confirm-message" class="space-y-2 text-sm leading-6 text-slate-600"></div>
+        </div>
+        <div class="admin-modal-panel-foot flex justify-end gap-2">
+            <button type="button" class="admin-btn-secondary" data-admin-confirm-cancel>{{ __('admin.button.cancel') }}</button>
+            <button type="button" class="admin-btn-primary" data-admin-confirm-ok>{{ __('admin.button.execute') }}</button>
+        </div>
+    </div>
+</div>
 <div id="admin-toast-region" class="fixed right-4 top-4 z-[70] flex w-[min(24rem,calc(100vw-2rem))] flex-col gap-3" aria-live="polite" aria-atomic="true"></div>
 <script>
     (() => {
@@ -147,6 +162,57 @@
             renderIcons();
             if (timeout > 0) window.setTimeout(close, timeout);
         };
+
+        window.AdminUtils.showConfirm = ({
+            title = @js(__('admin.common.confirm_title')),
+            message = '',
+            confirmLabel = @js(__('admin.button.execute')),
+            cancelLabel = @js(__('admin.button.cancel')),
+            danger = false,
+        } = {}) => new Promise((resolve) => {
+            const modal = document.getElementById('admin-confirm-modal');
+            const titleEl = document.getElementById('admin-confirm-title');
+            const messageEl = document.getElementById('admin-confirm-message');
+            const okBtn = modal?.querySelector('[data-admin-confirm-ok]');
+            const cancelBtns = modal ? modal.querySelectorAll('[data-admin-confirm-cancel]') : [];
+            if (!modal || !titleEl || !messageEl || !okBtn) {
+                resolve(window.confirm(String(message || title || '')));
+                return;
+            }
+
+            titleEl.textContent = title || @js(__('admin.common.confirm_title'));
+            const lines = String(message || '').split(/\n+/).map((line) => line.trim()).filter(Boolean);
+            messageEl.innerHTML = lines.length > 0
+                ? lines.map((line) => `<p>${escapeHtml(line)}</p>`).join('')
+                : `<p class="text-slate-500">${escapeHtml(@js(__('admin.common.confirm_title')))}</p>`;
+            okBtn.textContent = confirmLabel || @js(__('admin.button.execute'));
+            okBtn.className = danger
+                ? 'admin-btn-primary border border-rose-200 bg-rose-600 hover:bg-rose-700 focus:ring-rose-500'
+                : 'admin-btn-primary';
+            cancelBtns.forEach((btn) => { btn.textContent = cancelLabel || @js(__('admin.button.cancel')); });
+
+            const finish = (result) => {
+                modal.classList.add('hidden');
+                document.documentElement.classList.remove('admin-modal-open');
+                okBtn.removeEventListener('click', onOk);
+                cancelBtns.forEach((btn) => btn.removeEventListener('click', onCancel));
+                document.removeEventListener('keydown', onKeydown);
+                resolve(result);
+            };
+            const onOk = () => finish(true);
+            const onCancel = () => finish(false);
+            const onKeydown = (event) => {
+                if (event.key === 'Escape') onCancel();
+            };
+
+            okBtn.addEventListener('click', onOk);
+            cancelBtns.forEach((btn) => btn.addEventListener('click', onCancel));
+            document.addEventListener('keydown', onKeydown);
+            modal.classList.remove('hidden');
+            document.documentElement.classList.add('admin-modal-open');
+            okBtn.focus();
+            renderIcons();
+        });
 
         const loadingHtml = (label) => `
             <i data-lucide="loader-2" class="h-4 w-4 animate-spin"></i>

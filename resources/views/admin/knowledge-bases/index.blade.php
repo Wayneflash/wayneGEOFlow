@@ -111,7 +111,7 @@
                                     </div>
                                 </div>
 
-                                <div class="flex flex-wrap items-start justify-start gap-2 lg:shrink-0 lg:justify-end lg:pl-8" style="width: 440px;">
+                                <div class="flex flex-wrap items-start justify-start gap-2 lg:shrink-0 lg:justify-end lg:pl-8" style="width: 360px;">
                                     @if ($hasDefaultEmbeddingModel)
                                         <div style="width: 148px;" data-refresh-chunks-action>
                                             <form
@@ -148,10 +148,6 @@
                                             {{ __('admin.knowledge_bases.refresh_chunks') }}
                                         </button>
                                     @endif
-                                    <a href="{{ route('admin.knowledge-bases.detail', ['knowledgeBaseId' => (int) $item['id']]) }}#chunk-preview" class="admin-btn-secondary h-8 px-3 text-xs">
-                                        <i data-lucide="rows-3" class="h-3.5 w-3.5"></i>
-                                        {{ __('admin.button.chunks') }}
-                                    </a>
                                     <a href="{{ route('admin.knowledge-bases.detail', ['knowledgeBaseId' => (int) $item['id']]) }}" class="admin-btn-secondary h-8 px-3 text-xs">
                                         <i data-lucide="eye" class="h-3.5 w-3.5"></i>
                                         {{ __('admin.button.view') }}
