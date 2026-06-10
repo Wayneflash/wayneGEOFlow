@@ -801,6 +801,7 @@ final class UrlImportProcessingService
 
         $directOutcome = null;
         $aiOutcome = null;
+        $searchPayload = null;
 
         if (! $webResearchEnabled) {
             $this->log($job, 'info', __('admin.url_import.log.web_research_skipped_disabled'));
@@ -904,6 +905,87 @@ final class UrlImportProcessingService
                 'message' => (string) ($aiOutcome['error'] ?? ''),
             ]));
         }
+
+        // ===== 节点记录：bocha_search =====
+        $searchQueries = (array) ($searchPayload['queries'] ?? []);
+        $searchResults = (array) ($searchPayload['results'] ?? []);
+        $searchDuration = (int) ($searchPayload['duration_ms'] ?? 0);
+        UrlImportNodeRecorder::record(
+            (int) $job->id,
+            'bocha_search',
+            '博查搜索',
+            $searchResults !== [] ? 'success' : 'skipped',
+            [
+                'from_node' => 'parse',
+                'company_hint' => (string) ($searchPayload['company_name'] ?? ''),
+                'domain' => (string) $job->source_domain,
+                'search_provider' => (string) ($searchPayload['provider'] ?? 'bocha'),
+                'search_queries' => $searchQueries,
+                'feeds_into' => 'web_research',
+                'chain_note' => '博查全网搜索：拉取联网素材',
+            ],
+            [
+                'ok' => $searchResults !== [],
+                'result_count' => count($searchResults),
+                'queries' => $searchQueries,
+                'results' => array_slice(array_map(static function (array $r): array {
+                    return [
+                        'title' => (string) ($r['title'] ?? ''),
+                        'url' => (string) ($r['url'] ?? ''),
+                        'snippet' => mb_substr((string) ($r['snippet'] ?? ''), 0, 240, 'UTF-8'),
+                    ];
+                }, $searchResults), 0, 6),
+                'feeds_into' => 'web_research',
+                'chain_note' => '博查结果，供下一阶段 AI 全网调研汇总',
+            ],
+            $searchDuration,
+            1
+        );
+
+        // ===== 节点记录：web_research_ai =====
+        $aiOk = (bool) ($aiOutcome['ok'] ?? false);
+        $aiSkipped = (bool) ($aiOutcome['skipped'] ?? false);
+        $aiBochaFallback = (bool) ($aiOutcome['bocha_fallback'] ?? false);
+        $aiStatus = $aiOk ? 'success' : ($aiSkipped ? 'skipped' : 'failed');
+        $aiError = (string) ($aiOutcome['error'] ?? '');
+        $aiResearch = is_array($aiOutcome['research'] ?? null) ? $aiOutcome['research'] : [];
+        $aiResearchText = (string) ($aiResearch['research_text'] ?? '');
+        $aiSysPrompt = '';
+        $aiUserPrompt = '';
+        if (! $aiSkipped) {
+            $aiSysPrompt = UrlImportPromptCatalog::webResearchSystem(is_array($searchPayload) ? $searchPayload : []);
+            $aiUserPrompt = $this->buildWebResearchUserPrompt($job, is_array($directOutcome['parsed'] ?? null) ? $directOutcome['parsed'] : null, is_array($searchPayload) ? $searchPayload : null);
+        }
+        $aiOutputNote = $aiOk ? 'AI 调研完成：供下一步 AI 知识库整合' : ($aiBochaFallback ? 'AI 调研失败：使用博查结果兜底合并' : 'AI 调研失败/跳过');
+        UrlImportNodeRecorder::record(
+            (int) $job->id,
+            'web_research_ai',
+            'AI 全网调研',
+            $aiStatus,
+            [
+                'from_node' => 'bocha_search',
+                'upstream_queries' => $searchQueries,
+                'upstream_results' => count($searchResults),
+                'system_prompt' => $aiSysPrompt,
+                'user_prompt_preview' => Str::limit($aiUserPrompt, 6000, '…'),
+                'feeds_into' => 'ai_analysis',
+                'chain_note' => 'AI 全网调研：基于博查结果 + 官网直连正文汇总',
+            ],
+            [
+                'ok' => $aiOk,
+                'bocha_fallback' => $aiBochaFallback,
+                'company_name' => (string) ($aiResearch['company_name'] ?? ''),
+                'research_text_chars' => mb_strlen($aiResearchText, 'UTF-8'),
+                'research_text_preview' => Str::limit($aiResearchText, 4000, '…'),
+                'facts' => array_slice((array) ($aiResearch['facts'] ?? []), 0, 12),
+                'evidence_limits' => (string) ($aiResearch['evidence_limits'] ?? ''),
+                'feeds_into' => 'ai_analysis',
+                'chain_note' => $aiOutputNote,
+            ],
+            (int) ($aiOutcome['duration_ms'] ?? 0),
+            1,
+            $aiError !== '' ? $aiError : null
+        );
 
         $pageJson = $this->buildPageJson($parsed, $job);
         $parseOutput = $this->summarizeParseForNode($parsed, $pageJson);

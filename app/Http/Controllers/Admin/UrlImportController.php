@@ -554,12 +554,23 @@ class UrlImportController extends Controller
         $webResearch = $this->resolveWebResearchStepStatus($byKey, $job);
 
         $pipeline = [
-            ['key' => 'fetch', 'label' => '读取网页', 'sequential' => true],
-            ['key' => 'parse', 'label' => '提取正文', 'sequential' => true],
-            ['key' => 'web_research', 'label' => (string) $webResearch['label'], 'sequential' => true],
-            ['key' => 'ai_analysis', 'label' => (string) $aiAggregate['label'], 'sequential' => true],
-            ['key' => 'images_import', 'label' => '图片下载', 'sequential' => false],
+            ['key' => 'fetch', 'label' => '读取网页', 'sequential' => true, 'icon' => 'globe'],
+            ['key' => 'parse', 'label' => '提取正文', 'sequential' => true, 'icon' => 'file-text'],
         ];
+        if ($webResearch['enabled'] ?? $job->webResearchEnabled()) {
+            $pipeline[] = ['key' => 'bocha_search', 'label' => '博查搜索', 'sequential' => true, 'icon' => 'search'];
+            $pipeline[] = ['key' => 'web_research', 'label' => (string) $webResearch['label'], 'sequential' => true, 'icon' => 'sparkles'];
+        }
+        // AI �����ڵ㣺fast һվʽģʽֻ�� 1 ����ڵ㣻�ֲ�ģʽ�� 5 ���ӽڵ�
+        if (! empty($aiAggregate['fast_one_shot'])) {
+            $pipeline[] = ['key' => 'ai_analysis', 'label' => (string) $aiAggregate['label'], 'sequential' => true, 'icon' => 'brain'];
+        } else {
+            $pipeline[] = ['key' => 'ai_clean', 'label' => 'AI 清理正文', 'sequential' => true, 'icon' => 'eraser'];
+            $pipeline[] = ['key' => 'ai_knowledge', 'label' => 'AI 生成知识库', 'sequential' => true, 'icon' => 'book-open'];
+            $pipeline[] = ['key' => 'ai_keywords', 'label' => 'AI 提取关键词', 'sequential' => true, 'icon' => 'tag'];
+            $pipeline[] = ['key' => 'ai_titles', 'label' => 'AI 生成 GEO 标题', 'sequential' => true, 'icon' => 'type'];
+        }
+        $pipeline[] = ['key' => 'images_import', 'label' => '图片下载', 'sequential' => false, 'icon' => 'image'];
 
         $steps = [];
         $webResearchEnabled = $job->webResearchEnabled();
@@ -573,7 +584,14 @@ class UrlImportController extends Controller
             $error = null;
             $createdAt = null;
 
-            if ($entry['key'] === 'web_research') {
+            if ($entry['key'] === 'bocha_search') {
+                $log = $byKey['bocha_search'] ?? null;
+                $status = $log ? (string) $log->status : 'skipped';
+                $durationMs = $log ? (int) $log->duration_ms : 0;
+                $attempt = $log ? (int) $log->attempt : 0;
+                $error = $log ? ((string) $log->error_message ?: null) : null;
+                $createdAt = $log?->created_at?->toIso8601String();
+            } elseif ($entry['key'] === 'web_research') {
                 $status = (string) $webResearch['status'];
                 $durationMs = (int) $webResearch['duration_ms'];
                 $attempt = (int) $webResearch['attempt'];

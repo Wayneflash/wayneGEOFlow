@@ -1240,7 +1240,153 @@
         50% { box-shadow: 0 0 0 6px rgb(59 130 246 / 0); }
     }
 
-    @media (prefers-reduced-motion: reduce) {
+    
+/* ====== Dify-style 节点流图 ====== */
+.url-import-flow {
+    @apply relative w-full py-5 px-3;
+    background:
+        radial-gradient(circle at 12% 0%, rgba(59, 130, 246, 0.06), transparent 40%),
+        radial-gradient(circle at 88% 100%, rgba(139, 92, 246, 0.05), transparent 40%);
+}
+
+.url-import-flow-track {
+    @apply flex flex-wrap items-stretch justify-center gap-3;
+}
+
+.url-import-flow-node {
+    @apply relative flex w-[170px] cursor-pointer flex-col gap-1.5 rounded-xl border bg-white p-3 shadow-sm transition;
+    border-color: #e2e8f0;
+    transition: transform .15s ease, box-shadow .2s ease, border-color .2s ease;
+}
+.url-import-flow-node:hover {
+    @apply -translate-y-0.5 border-blue-300 shadow-md shadow-blue-500/10;
+}
+
+.url-import-flow-node.is-done {
+    @apply border-emerald-200 bg-gradient-to-br from-emerald-50/70 to-white;
+}
+.url-import-flow-node.is-current {
+    @apply border-blue-400 bg-gradient-to-br from-blue-50 to-white shadow-lg shadow-blue-500/20;
+    animation: url-import-node-pulse 1.6s ease-in-out infinite;
+}
+.url-import-flow-node.is-failed {
+    @apply border-red-200 bg-gradient-to-br from-red-50/60 to-white;
+}
+
+.url-import-flow-node::after {
+    content: "";
+    position: absolute;
+    right: -10px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 20px;
+    height: 14px;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 14\" fill=\"none\" stroke=\"%23cbd5e1\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M0 7 L20 7\"/><path d=\"M14 2 L20 7 L14 12\"/></svg>");
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: contain;
+    pointer-events: none;
+}
+/* 并行节点的紫色角标 */
+.url-import-flow-node.is-parallel::before {
+    content: "";
+    position: absolute;
+    right: -10px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 20px;
+    height: 14px;
+    z-index: 1;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 14\" fill=\"none\" stroke=\"%23a78bfa\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M0 7 L20 7\"/><path d=\"M14 2 L20 7 L14 12\"/></svg>");
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: contain;
+    pointer-events: none;
+}
+/* 隐藏 SVG 节点上的 .is-parallel::after（紫色角标点） */
+.url-import-flow-node.is-parallel::after {
+    width: 8px !important;
+    height: 8px !important;
+    right: -14px !important;
+    top: -6px !important;
+    transform: none !important;
+    border-radius: 9999px;
+    background: #8b5cf6;
+    box-shadow: 0 0 0 2px #fff;
+    z-index: 2;
+}
+
+.url-import-flow-node:last-child::after,
+.url-import-flow-node:last-child::before {
+    display: none;
+}
+
+.url-import-flow-node.is-current::after {
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 14\" fill=\"none\" stroke=\"%2360a5fa\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M0 7 L20 7\"/><path d=\"M14 2 L20 7 L14 12\"/></svg>") !important;
+}
+.url-import-flow-node.is-done::after {
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 14\" fill=\"none\" stroke=\"%2334d399\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M0 7 L20 7\"/><path d=\"M14 2 L20 7 L14 12\"/></svg>") !important;
+}
+.url-import-flow-node.is-failed::after {
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 14\" fill=\"none\" stroke=\"%23f87171\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M0 7 L20 7\"/><path d=\"M14 2 L20 7 L14 12\"/></svg>") !important;
+}
+
+.url-import-flow-node-head {
+    @apply flex items-center justify-between;
+}
+.url-import-flow-node-icon {
+    @apply flex h-7 w-7 items-center justify-center rounded-lg bg-slate-100 text-slate-500;
+}
+.url-import-flow-node.is-done .url-import-flow-node-icon {
+    @apply bg-emerald-100 text-emerald-700;
+}
+.url-import-flow-node.is-current .url-import-flow-node-icon {
+    @apply bg-blue-100 text-blue-700;
+}
+.url-import-flow-node.is-failed .url-import-flow-node-icon {
+    @apply bg-red-100 text-red-700;
+}
+
+.url-import-flow-node-status {
+    @apply flex h-5 w-5 items-center justify-center rounded-full;
+}
+.url-import-flow-node.is-done .url-import-flow-node-status {
+    @apply bg-emerald-500 text-white;
+}
+.url-import-flow-node.is-failed .url-import-flow-node-status {
+    @apply bg-red-500 text-white;
+}
+.url-import-flow-node.is-current .url-import-flow-node-status {
+    @apply text-blue-600;
+}
+
+.url-import-flow-node-title {
+    @apply text-[13px] font-semibold leading-tight text-slate-800;
+    word-break: break-all;
+}
+.url-import-flow-node-sub {
+    @apply text-[11px] leading-snug text-slate-500;
+    word-break: break-all;
+}
+.url-import-flow-node-badge {
+    @apply absolute right-2 top-2 rounded bg-violet-100 px-1.5 py-0.5 text-[9px] font-semibold text-violet-700;
+}
+
+/* 老式横向箭头节点保留兼容，但默认隐藏（新方案用卡片内 ::after） */
+.url-import-flow-arrow {
+    display: none !important;
+}
+@keyframes url-import-node-pulse {
+    0%, 100% { box-shadow: 0 10px 25px -5px rgba(59, 130, 246, 0.18); }
+    50% { box-shadow: 0 10px 35px -5px rgba(59, 130, 246, 0.32); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .url-import-flow-node.is-current {
+        animation: none;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
         .admin-page-ready #admin-main-content {
             animation: none;
         }

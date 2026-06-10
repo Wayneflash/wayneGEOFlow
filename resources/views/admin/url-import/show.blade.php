@@ -255,9 +255,8 @@
                         </div>
                     </div>
                 </div>
-
-                <div class="url-import-pipeline" data-url-import-pipeline>
-                    <div class="col-span-full mb-2 flex items-center justify-between gap-2 px-1">
+﻿                <div class="url-import-pipeline" data-url-import-pipeline>
+                    <div class="col-span-full mb-3 flex items-center justify-between gap-2 px-1">
                         <p class="text-xs text-slate-400">点击节点查看调试数据 · 输入 upstream = 上一步输出</p>
                         <button
                             type="button"
@@ -269,59 +268,63 @@
                             <i data-lucide="circle-help" class="h-4 w-4"></i>
                         </button>
                     </div>
-                    @foreach ($nodeSteps as $node)
-                        @php
-                            $nodeStatus = (string) $node['status'];
-                            $done = in_array($nodeStatus, ['success', 'skipped'], true);
-                            $failed = $nodeStatus === 'failed';
-                            $queued = in_array($nodeStatus, ['queued', 'running'], true);
-                            $isJobRunning = in_array($job->status, ['queued', 'running'], true);
-                            $isCurrentRunning = ($isJobRunning && $node['key'] === $currentNodeKey)
-                                || ($job->status === 'completed' && $queued && $node['key'] === 'images_import');
-                            $statusText = match ($nodeStatus) {
-                                'success' => number_format((int) $node['duration_ms']).' ms · 已完成',
-                                'skipped' => match ($node['key'] ?? '') {
-                                    'images_import' => '无图片或已跳过',
-                                    'web_research' => match (true) {
-                                        ! ($node['web_research_enabled'] ?? $webResearchEnabled) => '未勾选 · 已跳过',
-                                        ($node['skip_reason'] ?? '') === 'not_needed_or_budget' => '正文已够 · 已跳过',
-                                        default => '已跳过',
-                                    },
-                                    default => '已跳过',
-                                },
-                                'failed' => '失败'.($node['error'] ? '：'.\Illuminate\Support\Str::limit($node['error'], 40) : ''),
-                                'queued' => ($node['key'] ?? '') === 'images_import' ? '等待采集' : '队列处理中…',
-                                'running' => '执行中…',
-                                default => ($node['key'] ?? '') === 'images_import'
-                                    ? '等待采集'
-                                    : (($node['sequential'] ?? true) ? '待执行' : '等待正文完成'),
-                            };
-                        @endphp
-                        <button
-                            type="button"
-                            class="url-import-pipeline-step w-full text-left transition hover:bg-blue-50/40 {{ $done ? 'is-done' : '' }} {{ $isCurrentRunning ? 'is-current' : '' }} {{ $failed ? 'is-failed' : '' }} {{ !($node['sequential'] ?? true) ? 'is-parallel' : '' }}"
-                            data-node-step-row="{{ $node['key'] }}"
-                            data-node-label="{{ $node['label'] }}"
-                            data-node-sequential="{{ ($node['sequential'] ?? true) ? '1' : '0' }}"
-                            onclick="openNodeDebug('{{ $node['key'] }}', '{{ $node['label'] }}', {{ (int) $node['attempt'] }})"
-                        >
-                            <div class="flex items-center gap-3">
-                                <span class="url-import-step-dot {{ $done ? 'is-done' : '' }} {{ $isCurrentRunning ? 'is-current' : '' }} {{ $failed ? 'is-failed' : '' }}">
-                                    <i data-lucide="{{ $done ? 'check' : ($isCurrentRunning ? 'loader-circle' : ($failed ? 'x' : 'circle')) }}" class="h-4 w-4 {{ $isCurrentRunning ? 'animate-spin' : '' }}"></i>
-                                </span>
-                                <div class="min-w-0 flex-1">
-                                    <div class="flex flex-wrap items-center gap-2">
-                                        <span class="text-sm font-semibold text-slate-800">{{ $node['label'] }}</span>
-                                        @if (! ($node['sequential'] ?? true))
-                                            <span class="rounded bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium text-violet-700">并行</span>
-                                        @endif
+                    <div class="url-import-flow" data-url-import-flow>
+                        <div class="url-import-flow-track" data-url-import-flow-track>
+                            @foreach ($nodeSteps as $nodeIndex => $node)
+                                @php
+                                    $nodeKey = (string) $node['key'];
+                                    $nodeLabel = (string) $node['label'];
+                                    $nodeStatus = (string) $node['status'];
+                                    $isDone = in_array($nodeStatus, ['success', 'skipped'], true);
+                                    $isFailed = $nodeStatus === 'failed';
+                                    $isCurrent = (string) ($currentNodeKey ?? '') === $nodeKey && in_array($job->status, ['queued', 'running'], true);
+                                    $nodeIcon = (string) ($node['icon'] ?? 'circle');
+                                    $statusText = match ($nodeStatus) {
+                                        'success' => number_format((int) $node['duration_ms']).' ms · 已完成',
+                                        'skipped' => '已跳过',
+                                        'failed' => '失败'.($node['error'] ? '：'.\Illuminate\Support\Str::limit($node['error'], 40) : ''),
+                                        'queued' => '等待执行',
+                                        'running' => '执行中…',
+                                        default => '待执行',
+                                    };
+                                    $isParallel = ! ($node['sequential'] ?? true);
+                                @endphp
+                                <div class="url-import-flow-node {{ $isDone ? 'is-done' : '' }} {{ $isFailed ? 'is-failed' : '' }} {{ $isCurrent ? 'is-current' : '' }} {{ $isParallel ? 'is-parallel' : '' }}"
+                                     data-node-step-row="{{ $nodeKey }}"
+                                     data-node-label="{{ $nodeLabel }}"
+                                     onclick="openNodeDebug('{{ $nodeKey }}', '{{ $nodeLabel }}', {{ (int) ($node['attempt'] ?? 0) }})">
+                                    <div class="url-import-flow-node-head">
+                                        <div class="url-import-flow-node-icon">
+                                            <i data-lucide="{{ $nodeIcon }}" class="h-4 w-4"></i>
+                                        </div>
+                                        <div class="url-import-flow-node-status">
+                                            @if ($isDone)
+                                                <i data-lucide="check" class="h-3.5 w-3.5"></i>
+                                            @elseif ($isFailed)
+                                                <i data-lucide="x" class="h-3.5 w-3.5"></i>
+                                            @elseif ($isCurrent)
+                                                <i data-lucide="loader-circle" class="h-3.5 w-3.5 animate-spin"></i>
+                                            @else
+                                                <i data-lucide="circle" class="h-3.5 w-3.5"></i>
+                                            @endif
+                                        </div>
                                     </div>
-                                    <div class="mt-0.5 truncate text-xs text-slate-500" data-node-subtitle>{{ $statusText }}</div>
+                                    <div class="url-import-flow-node-title">{{ $nodeLabel }}</div>
+                                    <div class="url-import-flow-node-sub" data-node-subtitle>{{ $statusText }}</div>
+                                    @if ($isParallel)
+                                        <span class="url-import-flow-node-badge">并行</span>
+                                    @endif
                                 </div>
-                                <i data-lucide="chevron-right" class="h-4 w-4 shrink-0 text-slate-300"></i>
-                            </div>
-                        </button>
-                    @endforeach
+                                @if (! $loop->last)
+                                    <div class="url-import-flow-arrow" data-flow-arrow aria-hidden="true">
+                                        <svg viewBox="0 0 24 12" width="24" height="12">
+                                            <path d="M0 6 L18 6 M14 2 L18 6 L14 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
+                                        </svg>
+                                    </div>
+                                @endif
+                            @endforeach
+                        </div>
+                    </div>
                 </div>
             </section>
 

@@ -78,7 +78,7 @@ return [
         'knowledge_max_chars' => max(2000, (int) env('GEOFLOW_URL_IMPORT_FAST_KM_MAX_CHARS', 5000)),
         'max_chunks_in_prompt' => max(8, min(24, (int) env('GEOFLOW_URL_IMPORT_FAST_MAX_CHUNKS', 12))),
         'max_analysis_attempts' => max(1, min(3, (int) env('GEOFLOW_URL_IMPORT_FAST_MAX_ATTEMPTS', 2))),
-        'max_web_search_queries' => max(1, min(5, (int) env('GEOFLOW_URL_IMPORT_FAST_MAX_SEARCH_QUERIES', 2))),
+        'max_web_search_queries' => max(1, min(5, (int) env('GEOFLOW_URL_IMPORT_FAST_MAX_SEARCH_QUERIES', 4))),
         'max_images' => max(4, min(16, (int) env('GEOFLOW_URL_IMPORT_FAST_MAX_IMAGES', 12))),
     ],
     // sequential=先抓官网再调研（推荐：官网+调研合并，内容更全）；parallel=并行；fallback=仅直连不足时再调研
@@ -96,9 +96,11 @@ return [
         'provider' => strtolower(trim((string) env('GEOFLOW_URL_IMPORT_WEB_SEARCH_PROVIDER', 'bocha'))),
         'bocha_api_key' => trim((string) env('GEOFLOW_URL_IMPORT_BOCHA_API_KEY', '')),
         'bocha_api_url' => trim((string) env('GEOFLOW_URL_IMPORT_BOCHA_API_URL', 'https://api.bochaai.com/v1/web-search')),
-        'max_queries' => max(1, min(8, (int) env('GEOFLOW_URL_IMPORT_WEB_SEARCH_MAX_QUERIES', 2))),
-        'max_results_per_query' => max(1, min(10, (int) env('GEOFLOW_URL_IMPORT_WEB_SEARCH_MAX_RESULTS', 3))),
+        'max_queries' => max(1, min(8, (int) env('GEOFLOW_URL_IMPORT_WEB_SEARCH_MAX_QUERIES', 6))),
+        'max_results_per_query' => max(1, min(10, (int) env('GEOFLOW_URL_IMPORT_WEB_SEARCH_MAX_RESULTS', 5))),
         'timeout_seconds' => max(5, min(30, (int) env('GEOFLOW_URL_IMPORT_WEB_SEARCH_TIMEOUT', 10))),
+        'exclude_domains' => array_values(array_filter(array_map(static fn (string $d): string => trim($d), explode(',', (string) env('GEOFLOW_URL_IMPORT_WEB_SEARCH_EXCLUDE_DOMAINS', ''))))),
+
     ],
     // 全网调研 AI 调用超时（秒）；须小于 MarkdownContentWriterAgent 默认 240s，避免单步占满 5 分钟预算
     'url_import_web_research_ai_timeout' => max(30, min(180, (int) env('GEOFLOW_URL_IMPORT_WEB_RESEARCH_AI_TIMEOUT', 45))),

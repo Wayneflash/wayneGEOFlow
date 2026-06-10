@@ -79,6 +79,38 @@ final class UrlImportDomesticWebSearchService
     }
 
     /**
+     * 按配置的黑名单域名过滤掉同行业同名干扰、AI 拦截页等
+     * @param  list<array{query:string,title:string,url:string,snippet:string}>  
+     * @return list<array{query:string,title:string,url:string,snippet:string}>
+     */
+    private function filterExcludedDomains(array $results): array
+    {
+        $exclude = array_map('strtolower', array_filter(array_map('trim', (array) config('geoflow.url_import_web_search.exclude_domains', []))));
+        if ($exclude === []) {
+            return $results;
+        }
+        $filtered = [];
+        foreach ($results as $r) {
+            $host = strtolower((string) parse_url((string) ($r['url'] ?? ''), PHP_URL_HOST));
+            if ($host === '') {
+                $filtered[] = $r;
+                continue;
+            }
+            $drop = false;
+            foreach ($exclude as $bad) {
+                if ($host === $bad || str_ends_with($host, '.'.$bad)) {
+                    $drop = true;
+                    break;
+                }
+            }
+            if (! $drop) {
+                $filtered[] = $r;
+            }
+        }
+        return $filtered;
+    }
+
+    /**
      * fast 流水线默认 2 条检索词，控制博查 + AI 调研在 ~90s 内。
      */
     private function effectiveMaxSearchQueries(): int
@@ -170,6 +202,7 @@ final class UrlImportDomesticWebSearchService
             }
         }
 
+        $merged = $this->filterExcludedDomains($merged);
         return $this->dedupeResults($merged);
     }
 

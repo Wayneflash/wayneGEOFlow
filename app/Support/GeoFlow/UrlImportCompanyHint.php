@@ -111,7 +111,7 @@ final class UrlImportCompanyHint
      *
      * @return list<string>
      */
-    private static function searchQueries(
+        private static function searchQueries(
         string $normalizedUrl,
         string $registrableDomain,
         string $domainStem,
@@ -121,51 +121,102 @@ final class UrlImportCompanyHint
     ): array {
         $labels = self::searchLabels($companyName, $brandName, $domainStem, $pageTitle, $registrableDomain);
         $primary = $labels[0] ?? ($domainStem !== '' ? $domainStem : $registrableDomain);
-
-        $queries = [
-            'site:'.$registrableDomain,
-        ];
-
-        if ($primary !== '') {
-            $queries[] = $primary.' 产品 服务 解决方案';
-            $queries[] = $primary.' 公司简介';
-            $queries[] = $primary.' 品牌';
-            $queries[] = $primary.' 公众号';
-            $queries[] = $primary.' 知乎';
-            $queries[] = $primary.' 新闻 报道 产品';
-        }
-
         $brandQuery = trim($brandName);
-        if ($brandQuery !== '' && $brandQuery !== $primary) {
-            array_splice($queries, 1, 0, [
-                $brandQuery.' 产品 解决方案',
-                $brandQuery.' 官网 '.$registrableDomain,
-            ]);
+        $isBrandDifferent = $brandQuery !== '' && $brandQuery !== $primary;
+
+        // 企业 GEO 信息维度分组：基础 → 主营方案 → 案例 → 资质 → 媒体 → 工商补充
+        // max_queries 会从前向后切；分组之间也做去重
+        $groups = [];
+
+        // G1. 官网 site: 限定
+        $groups[] = ['site:'.$registrableDomain];
+
+        // G2. 主营业务 + 产品 + 解决方案（最高优先级）
+        if ($primary !== '') {
+            $groups[] = [$primary.' __MAIN__'];
+        }
+        if ($isBrandDifferent) {
+            $groups[] = [$brandQuery.' __MAIN__ '.$registrableDomain];
         }
 
-        $brandHints = self::extractBrandHints($pageTitle, '', '');
-        if ($brandHints !== [] && $primary !== '' && $brandHints[0] !== $primary) {
-            $queries[] = $primary.' '.$brandHints[0].' 产品';
+        // G3. 公司基础信息
+        if ($primary !== '') {
+            $groups[] = [$primary.' __BASE__'];
         }
 
-        $queries[] = $registrableDomain.' 官网';
+        // G4. 成功案例 / 客户
+        if ($primary !== '') {
+            $groups[] = [$primary.' __CASE__'];
+        }
+
+        // G5. 资质 / 认证 / 专利
+        if ($primary !== '') {
+            $groups[] = [$primary.' __QUAL__'];
+        }
+
+        // G6. 公众号 / 新闻 / 品牌
+        if ($primary !== '') {
+            $groups[] = [$primary.' __MEDIA__'];
+        }
+
+        // G7. 知乎
+        if ($primary !== '') {
+            $groups[] = [$primary.' __ZHIHU__'];
+        }
+
+        // G8. 官网直连
+        $groups[] = [$registrableDomain.' __OFFICIAL__'];
 
         if ($pageTitle !== '' && mb_strlen($pageTitle, 'UTF-8') <= 48) {
-            $queries[] = $pageTitle;
+            $groups[] = [$pageTitle];
         }
 
-        // 工商信息仅作补充，排在检索队列末尾
+        // G9. 工商补充（多被 Cloudflare 拦，排后面）
         if ($primary !== '') {
-            $queries[] = $primary.' 企查查';
+            $groups[] = [$primary.' __BIZ__'];
         }
-        $queries[] = $registrableDomain.' 工商信息';
 
-        $queries[] = $normalizedUrl;
+        // 品牌扩展
+        $brandHints = self::extractBrandHints($pageTitle, '', '');
+        if ($brandHints !== [] && $primary !== '' && $brandHints[0] !== $primary) {
+            $groups[] = [$primary.' '.$brandHints[0].' __MAIN__'];
+        }
 
-        return array_values(array_unique(array_filter(array_map(
-            static fn (string $query): string => trim($query),
-            $queries,
-        ), static fn (string $query): bool => $query !== '')));
+        $groups[] = [$normalizedUrl];
+
+        $cn = array (
+  'main' => '5Li76JCl5Lia5YqhIOS6p+WTgSDmnI3liqEg6Kej5Yaz5pa55qGI',
+  'base' => '5YWs5Y+4566A5LuLIOaIkOeri+aXtumXtCDmgLvpg6jlnLDlnYA=',
+  'case' => '5oiQ5Yqf5qGI5L6LIOWuouaItyDmoIfmnYbpobnnm64=',
+  'qual' => '6LWE6LSoIOiupOivgSDkuJPliKkg6auY5paw5oqA5pyv5LyB5Lia',
+  'media' => '5YWs5LyX5Y+3IOaWsOmXuyDmiqXpgZMg5ZOB54mM',
+  'zhihu' => '55+l5LmOIOS7i+e7jQ==',
+  'biz' => '5bel5ZWG5L+h5oGvIOazqOWGjOi1hOacrCDms5Xkuro=',
+  'official' => '5a6Y572R',
+);
+        $replacements = [
+            '__MAIN__' => base64_decode($cn['main']),
+            '__BASE__' => base64_decode($cn['base']),
+            '__CASE__' => base64_decode($cn['case']),
+            '__QUAL__' => base64_decode($cn['qual']),
+            '__MEDIA__' => base64_decode($cn['media']),
+            '__ZHIHU__' => base64_decode($cn['zhihu']),
+            '__OFFICIAL__' => base64_decode($cn['official']),
+            '__BIZ__' => base64_decode($cn['biz']),
+        ];
+
+        $queries = [];
+        foreach ($groups as $group) {
+            foreach ($group as $q) {
+                $q = strtr($q, $replacements);
+                $q = trim((string) $q);
+                if ($q !== '' && ! in_array($q, $queries, true)) {
+                    $queries[] = $q;
+                }
+            }
+        }
+
+        return $queries;
     }
 
     /**

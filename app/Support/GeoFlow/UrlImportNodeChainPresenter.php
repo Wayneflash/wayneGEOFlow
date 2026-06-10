@@ -27,7 +27,7 @@ final class UrlImportNodeChainPresenter
             'fetch' => $this->fetchPayload($job, $byKey, $jobId, $attempt),
             'parse' => $this->parsePayload($job, $byKey, $jobId, $attempt),
             'web_research' => $this->webResearchPayload($job, $byKey, $jobId, $attempt),
-            'ai_analysis' => $this->aiAnalysisPayload($job, $byKey),
+            'ai_analysis' => $this->aiAnalysisPayload($job, $byKey, $jobId, $attempt),
             'images_import' => $this->imagesImportPayload($job, $byKey, $jobId, $attempt),
             default => $this->genericPayload($jobId, $nodeKey, $byKey, $attempt),
         };
@@ -135,9 +135,9 @@ final class UrlImportNodeChainPresenter
      * @param  array<string, UrlImportJobNodeLog>  $byKey
      * @return array<string, mixed>
      */
-    private function aiAnalysisPayload(UrlImportJob $job, array $byKey): array
+    private function aiAnalysisPayload(UrlImportJob $job, array $byKey, int $jobId, int $attempt): array
     {
-        $summaryLog = $this->pickLog($byKey, 'ai_analysis', 0);
+        $summaryLog = $this->pickLog($byKey, 'ai_analysis', $jobId, $attempt);
         $result = $this->loadResult($job);
         $analysis = is_array($result['analysis'] ?? null) ? $result['analysis'] : [];
 

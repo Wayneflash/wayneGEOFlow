@@ -73,7 +73,7 @@
                                 type="text"
                                 value="{{ old('company_name') }}"
                                 maxlength="120"
-                                placeholder="{{ __('admin.url_import.placeholder.company_name') }}"
+                                placeholder=""
                                 class="admin-input"
                             >
                         </div>
@@ -85,7 +85,7 @@
                                 type="text"
                                 value="{{ old('brand_name') }}"
                                 maxlength="120"
-                                placeholder="{{ __('admin.url_import.placeholder.brand_name') }}"
+                                placeholder=""
                                 class="admin-input"
                             >
                         </div>
