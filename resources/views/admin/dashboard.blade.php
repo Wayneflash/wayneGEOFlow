@@ -140,7 +140,111 @@
                     </div>
                 </div>
                 <div class="p-3">
-                    <div data-dashboard-trend-chart data-series='@json($articleTrendRows)' class="h-64 w-full" role="img" aria-label="content production trend"></div>
+                    @php
+                        $chartWidth = 800;
+                        $chartHeight = 240;
+                        $paddingTop = 18;
+                        $paddingBottom = 36;
+                        $paddingLeft = 44;
+                        $paddingRight = 16;
+                        $plotW = $chartWidth - $paddingLeft - $paddingRight;
+                        $plotH = $chartHeight - $paddingTop - $paddingBottom;
+
+                        $trendCounts = array_column($articleTrendRows, 'count') ?: [0];
+                        $trendMaxValue = max(1, max($trendCounts));
+                        $trendCount = count($articleTrendRows);
+                        $trendStep = $trendCount > 1 ? $plotW / ($trendCount - 1) : $plotW;
+
+                        $trendPoints = [];
+                        foreach ($articleTrendRows as $idx => $row) {
+                            $val = (int) ($row['count'] ?? 0);
+                            $x = $paddingLeft + $idx * $trendStep;
+                            $y = $paddingTop + ($plotH - ($val / $trendMaxValue) * $plotH);
+                            $trendPoints[] = [
+                                'x' => round($x, 2),
+                                'y' => round($y, 2),
+                                'count' => $val,
+                                'date' => (string) ($row['date'] ?? ''),
+                            ];
+                        }
+
+                        // Catmull-Rom 转 Cubic Bezier 形成平滑曲线
+                        $trendLinePath = '';
+                        $trendAreaPath = '';
+                        if (! empty($trendPoints)) {
+                            $totalPts = count($trendPoints);
+                            $trendLinePath = 'M'.$trendPoints[0]['x'].','.$trendPoints[0]['y'];
+                            for ($i = 0; $i < $totalPts - 1; $i++) {
+                                $p0 = $trendPoints[max($i - 1, 0)];
+                                $p1 = $trendPoints[$i];
+                                $p2 = $trendPoints[$i + 1];
+                                $p3 = $trendPoints[min($i + 2, $totalPts - 1)];
+                                $cp1x = round($p1['x'] + ($p2['x'] - $p0['x']) / 6, 2);
+                                $cp1y = round($p1['y'] + ($p2['y'] - $p0['y']) / 6, 2);
+                                $cp2x = round($p2['x'] - ($p3['x'] - $p1['x']) / 6, 2);
+                                $cp2y = round($p2['y'] - ($p3['y'] - $p1['y']) / 6, 2);
+                                $trendLinePath .= ' C'.$cp1x.','.$cp1y.' '.$cp2x.','.$cp2y.' '.$p2['x'].','.$p2['y'];
+                            }
+                            $baseY = $paddingTop + $plotH;
+                            $trendAreaPath = $trendLinePath
+                                .' L'.$trendPoints[$totalPts - 1]['x'].','.$baseY
+                                .' L'.$trendPoints[0]['x'].','.$baseY.' Z';
+                        }
+
+                        $trendYTicks = [0, 0.25, 0.5, 0.75, 1.0];
+                    @endphp
+
+                    <div class="relative">
+                        <svg viewBox="0 0 {{ $chartWidth }} {{ $chartHeight }}" class="h-64 w-full" preserveAspectRatio="none" role="img" aria-label="content production trend">
+                            <defs>
+                                <linearGradient id="trendAreaGradient" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="0%" stop-color="#6366f1" stop-opacity="0.32"/>
+                                    <stop offset="100%" stop-color="#6366f1" stop-opacity="0.02"/>
+                                </linearGradient>
+                            </defs>
+
+                            {{-- Y 轴网格线 + 刻度 --}}
+                            @foreach ($trendYTicks as $tick)
+                                @php
+                                    $ty = $paddingTop + $plotH * (1 - $tick);
+                                    $tickVal = (int) round($trendMaxValue * $tick);
+                                @endphp
+                                <line x1="{{ $paddingLeft }}" y1="{{ $ty }}" x2="{{ $chartWidth - $paddingRight }}" y2="{{ $ty }}"
+                                      stroke="#f1f5f9" stroke-width="1" stroke-dasharray="3,3"/>
+                                <text x="{{ $paddingLeft - 8 }}" y="{{ $ty + 4 }}" text-anchor="end"
+                                      font-size="11" fill="#94a3b8" font-family="ui-sans-serif,system-ui,sans-serif">{{ $tickVal }}</text>
+                            @endforeach
+
+                            {{-- 区域填充 --}}
+                            @if ($trendAreaPath !== '')
+                                <path d="{{ $trendAreaPath }}" fill="url(#trendAreaGradient)"/>
+                            @endif
+
+                            {{-- 折线 --}}
+                            @if ($trendLinePath !== '')
+                                <path d="{{ $trendLinePath }}" fill="none" stroke="#4f46e5" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                            @endif
+
+                            {{-- 数据点 + 原生 SVG tooltip --}}
+                            @foreach ($trendPoints as $pt)
+                                <g class="trend-point">
+                                    <circle cx="{{ $pt['x'] }}" cy="{{ $pt['y'] }}" r="6" fill="#ffffff" stroke="#4f46e5" stroke-width="2.5"/>
+                                    <circle cx="{{ $pt['x'] }}" cy="{{ $pt['y'] }}" r="14" fill="transparent" class="trend-hit">
+                                        <title>{{ $pt['date'] }}  新增 {{ $pt['count'] }} 篇</title>
+                                    </circle>
+                                </g>
+                            @endforeach
+
+                            {{-- X 轴日期标签 --}}
+                            @foreach ($trendPoints as $idx => $pt)
+                                @php
+                                    $label = $pt['date'] !== '' ? substr($pt['date'], 5) : '-';
+                                @endphp
+                                <text x="{{ $pt['x'] }}" y="{{ $chartHeight - 12 }}" text-anchor="middle"
+                                      font-size="11" fill="#94a3b8" font-family="ui-sans-serif,system-ui,sans-serif">{{ $label }}</text>
+                            @endforeach
+                        </svg>
+                    </div>
                 </div>
             </div>
 
@@ -371,82 +475,4 @@
 @endpush
 
 @push('scripts')
-    @vite('resources/js/dashboard-charts.js')
-    <script>
-        (() => {
-            const boot = () => {
-                const echarts = window.echarts;
-                if (!echarts) return;
-
-                document.querySelectorAll('[data-dashboard-trend-chart]').forEach((element) => {
-                    const rows = JSON.parse(element.dataset.series || '[]');
-                    const labels = rows.map((row) => row.date || '-');
-                    const counts = rows.map((row) => Number(row.count || 0));
-                    const chart = echarts.init(element, null, { renderer: 'canvas' });
-
-                    chart.setOption({
-                        animationDuration: 700,
-                        grid: { top: 16, right: 16, bottom: 24, left: 40 },
-                        tooltip: {
-                            trigger: 'axis',
-                            backgroundColor: 'rgba(255,255,255,0.98)',
-                            borderColor: '#c7d2fe',
-                            borderWidth: 1,
-                            textStyle: { color: '#1e1b4b', fontSize: 12 },
-                            padding: [8, 12],
-                            extraCssText: 'box-shadow: 0 10px 25px rgba(67, 56, 202, 0.18); border-radius: 10px; backdrop-filter: blur(8px);',
-                            formatter: (params) => {
-                                const item = Array.isArray(params) ? params[0] : params;
-                                return `<div style="font-weight:600">${item.axisValue}</div><div style="margin-top:4px">新增 <b style="color:#4f46e5">${Number(item.value || 0)}</b> 篇</div>`;
-                            },
-                        },
-                        xAxis: {
-                            type: 'category',
-                            boundaryGap: false,
-                            data: labels,
-                            axisLine: { lineStyle: { color: '#e2e8f0' } },
-                            axisTick: { show: false },
-                            axisLabel: { color: '#94a3b8', fontSize: 10 },
-                        },
-                        yAxis: {
-                            type: 'value',
-                            minInterval: 1,
-                            splitLine: { lineStyle: { color: '#f1f5f9', type: 'dashed' } },
-                            axisLabel: { color: '#94a3b8', fontSize: 10 },
-                        },
-                        series: [{
-                            name: '新增文章',
-                            type: 'line',
-                            data: counts,
-                            smooth: 0.4,
-                            symbol: 'circle',
-                            symbolSize: 8,
-                            lineStyle: { width: 3, color: '#4f46e5' },
-                            itemStyle: {
-                                color: '#ffffff',
-                                borderColor: '#4f46e5',
-                                borderWidth: 2.5,
-                                shadowColor: 'rgba(79, 70, 229, 0.4)',
-                                shadowBlur: 8,
-                            },
-                            areaStyle: {
-                                color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                                    { offset: 0, color: 'rgba(99, 102, 241, 0.32)' },
-                                    { offset: 1, color: 'rgba(99, 102, 241, 0.02)' },
-                                ]),
-                            },
-                        }],
-                    });
-
-                    window.addEventListener('resize', () => chart.resize(), { passive: true });
-                });
-            };
-
-            if (window.echarts) {
-                boot();
-            } else {
-                window.addEventListener('dashboard:charts-ready', boot, { once: true });
-            }
-        })();
-    </script>
 @endpush
