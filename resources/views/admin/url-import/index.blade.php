@@ -99,8 +99,8 @@
                             @checked(old('enable_web_research'))
                         >
                         <span class="min-w-0">
-                            <span class="block text-sm font-medium text-slate-800">{{ __('admin.url_import.field.enable_web_research') }}</span>
-                            <span class="mt-0.5 block text-xs leading-5 text-slate-500">{{ __('admin.url_import.help.enable_web_research') }}</span>
+                            <span class="block text-sm font-medium text-slate-800">额外联网调研（可选）</span>
+                            <span class="mt-0.5 block text-xs leading-5 text-slate-500">默认只抓官网；官网内容太少时可让 AI 基于官网线索补充整理资料，不调用博查。</span>
                         </span>
                     </label>
                     <div class="admin-field">
@@ -117,7 +117,7 @@
                         <p class="mt-1.5 text-xs text-slate-500">可选；不填则使用公司名作为素材库名称。</p>
                         <p class="mt-2 text-xs leading-5 text-slate-500">
                             当前为<strong class="font-medium text-slate-700">单页采集</strong>：只抓取你粘贴的这一条 URL。
-                            流程：<strong class="font-medium text-slate-700">读官网 →（可选）AI 全网补充 → AI 整理 → 预览入库</strong>。
+                            流程：<strong class="font-medium text-slate-700">读官网 → AI 整理 → 图片下载 → 预览入库</strong>。
                             URL 建议用官网首页或方案详情页。
                         </p>
                     </div>
@@ -137,7 +137,7 @@
                         <p class="text-sm text-red-600">{{ $message }}</p>
                     @enderror
                     <div class="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between">
-                        <p class="text-xs text-slate-400">默认仅抓官网；勾选 AI 辅助后额外联网补资料，整体约 4–6 分钟</p>
+                        <p class="text-xs text-slate-400">默认仅抓官网，速度更稳；需要补充资料时再手动勾选 AI 辅助。</p>
                         <button type="submit" class="url-import-launch" @disabled(! $aiModelReady)>
                             <i data-lucide="zap" class="h-4 w-4"></i>
                             开始采集
@@ -159,7 +159,7 @@
                         <div class="flex items-center gap-2"><i data-lucide="image" class="h-4 w-4 text-violet-500"></i>页面图片 → 下载本地，勾选入库</div>
                     </div>
                     <p class="mt-4 text-xs leading-5 text-slate-500">
-                        ① 读官网识主体 → ② AI 全网调研 → ③ 清洗/素材/词/标题 → ④ 你确认后入库
+                        ① 读官网识主体 → ② AI 清洗整理 → ③ 主题词/标题 → ④ 你确认后入库
                     </p>
                 </aside>
             </div>

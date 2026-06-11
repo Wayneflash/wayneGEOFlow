@@ -4,7 +4,7 @@
     <div class="ai-config-shell">
         @include('admin.partials.ai-config-header', [
             'title' => __('admin.ai_models.page_title'),
-            'subtitle' => '管理 Chat / Embedding 模型接入',
+            'subtitle' => '管理 Chat / Embedding / Vision 模型接入',
             'actionButton' => '<button type="button" onclick="showCreateModelModal()" class="admin-btn-primary h-9 px-3 text-[13px]"><i data-lucide="plus" class="h-3.5 w-3.5"></i>'.e(__('admin.ai_models.create')).'</button>',
         ])
 
@@ -17,9 +17,9 @@
                 <i data-lucide="sliders-horizontal" class="h-3.5 w-3.5"></i>
                 向量与切片
             </button>
-            <button type="button" class="admin-tab-button" data-ai-model-tab="web-search" aria-pressed="false">
-                <i data-lucide="globe" class="h-3.5 w-3.5"></i>
-                {{ __('admin.ai_models.web_search_tab') }}
+            <button type="button" class="admin-tab-button" data-ai-model-tab="vision" aria-pressed="false">
+                <i data-lucide="eye" class="h-3.5 w-3.5"></i>
+                {{ __('admin.ai_models.vision_tab') }}
             </button>
         </nav>
 
@@ -38,11 +38,21 @@
                                 <div class="min-w-0">
                                     <div class="flex flex-wrap items-center gap-1.5">
                                         <h3 class="truncate text-sm font-semibold text-slate-900">{{ $model['name'] }}</h3>
-                                        <span class="rounded-md px-1.5 py-0.5 text-[10px] font-medium {{ $model['model_type'] === 'embedding' ? 'bg-amber-50 text-amber-700' : 'bg-blue-50 text-blue-700' }}">
-                                            {{ $model['model_type'] === 'embedding' ? 'Embedding' : 'Chat' }}
+                                        @php
+                                            $typeBadgeClass = match ($model['model_type']) {
+                                                'embedding' => 'bg-amber-50 text-amber-700',
+                                                'vision' => 'bg-purple-50 text-purple-700',
+                                                default => 'bg-blue-50 text-blue-700',
+                                            };
+                                        @endphp
+                                        <span class="rounded-md px-1.5 py-0.5 text-[10px] font-medium {{ $typeBadgeClass }}">
+                                            {{ $model['model_type'] === 'embedding' ? 'Embedding' : ($model['model_type'] === 'vision' ? 'Vision' : 'Chat') }}
                                         </span>
                                         @if ($model['is_default_embedding'])
                                             <span class="rounded-md bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">默认向量</span>
+                                        @endif
+                                        @if ($model['is_default_vision'] ?? false)
+                                            <span class="rounded-md bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">默认视觉</span>
                                         @endif
                                         <span class="rounded-md px-1.5 py-0.5 text-[10px] font-medium {{ $model['status'] === 'active' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500' }}">
                                             {{ $model['status'] === 'active' ? '启用' : '停用' }}
@@ -135,42 +145,29 @@
             </div>
         </div>
 
-        <div class="hidden space-y-4" data-ai-model-panel="web-search" aria-hidden="true">
+        <div class="hidden space-y-4" data-ai-model-panel="vision" aria-hidden="true">
             <div class="ai-config-card p-4">
                 <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
                     <div class="min-w-0">
-                        <h3 class="text-sm font-semibold text-slate-900">{{ __('admin.ai_models.web_search_title') }}</h3>
-                        <p class="mt-1 text-[12px] leading-5 text-slate-500">{{ __('admin.ai_models.web_search_desc') }}</p>
+                        <h3 class="text-sm font-semibold text-slate-900">{{ __('admin.ai_models.vision_title') }}</h3>
+                        <p class="mt-1 text-[12px] leading-5 text-slate-500">{{ __('admin.ai_models.vision_desc') }}</p>
                     </div>
-                    <span class="rounded-full px-2 py-0.5 text-[10px] font-medium {{ ($webSearchSettings['configured'] ?? false) ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700' }}">
-                        {{ ($webSearchSettings['configured'] ?? false) ? __('admin.ai_models.web_search_status_configured') : __('admin.ai_models.web_search_status_missing') }}
-                    </span>
                 </div>
-
-                <form method="POST" action="{{ route('admin.ai-models.web-search-config') }}" class="space-y-4 max-w-xl">
+                <form method="POST" action="{{ route('admin.ai-models.default-vision') }}" class="flex flex-col gap-3 sm:flex-row sm:items-end">
                     @csrf
-                    <div>
-                        <label for="bocha_api_key" class="admin-label">{{ __('admin.ai_models.web_search_field_key') }}</label>
-                        <input type="password" name="bocha_api_key" id="bocha_api_key" autocomplete="off" class="admin-input mt-1" placeholder="{{ __('admin.ai_models.web_search_placeholder_key') }}">
-                        @if (($webSearchSettings['masked_key'] ?? '') !== '')
-                            <p class="mt-1 font-mono text-[11px] text-slate-500">{{ __('admin.ai_models.web_search_current_key', ['mask' => $webSearchSettings['masked_key']]) }}</p>
-                        @endif
-                        <p class="mt-1 text-[11px] text-slate-400">{{ __('admin.ai_models.web_search_key_help') }}</p>
+                    <div class="min-w-0 flex-1">
+                        <label for="default_vision_model_id" class="admin-label">{{ __('admin.ai_models.default_vision') }}</label>
+                        <select name="default_vision_model_id" id="default_vision_model_id" class="admin-input mt-1">
+                            <option value="0">{{ __('admin.ai_models.vision_auto') }}</option>
+                            @foreach ($visionModels ?? [] as $visionModel)
+                                <option value="{{ (int) $visionModel['id'] }}" @selected($defaultVisionModelId === (int) $visionModel['id'])>
+                                    {{ $visionModel['name'] }}（{{ $visionModel['model_id'] }}）
+                                </option>
+                            @endforeach
+                        </select>
+                        <p class="mt-1 text-[11px] text-slate-400">{{ __('admin.ai_models.vision_help') }}</p>
                     </div>
-
-                    @if ($webSearchSettings['uses_env_fallback'] ?? false)
-                        <div class="rounded-xl border border-blue-100 bg-blue-50/60 px-3 py-2 text-[11px] leading-5 text-blue-800">
-                            {{ __('admin.ai_models.web_search_env_fallback_notice') }}
-                        </div>
-                    @endif
-
-                    <div class="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3">
-                        <label class="inline-flex items-center gap-2 text-[12px] text-slate-600">
-                            <input type="checkbox" name="clear_bocha_api_key" value="1" class="rounded border-slate-300 text-blue-600">
-                            {{ __('admin.ai_models.web_search_clear_key') }}
-                        </label>
-                        <button type="submit" class="admin-btn-primary">{{ __('admin.ai_models.web_search_save') }}</button>
-                    </div>
+                    <button type="submit" class="admin-btn-primary shrink-0">{{ __('admin.ai_models.save_vision') }}</button>
                 </form>
             </div>
         </div>
@@ -193,15 +190,6 @@
                 <input type="hidden" name="id" id="modelId" value="">
 
                 <div class="admin-modal-panel-body space-y-4">
-                    <details class="rounded-xl border border-slate-100 bg-slate-50/60 px-3 py-2">
-                        <summary class="cursor-pointer text-[13px] font-medium text-slate-700">快速填充厂商预设</summary>
-                        <div class="mt-3 flex flex-wrap gap-1.5">
-                            @foreach (['deepseek' => 'DeepSeek', 'openai' => 'OpenAI', 'gemini' => 'Gemini', 'zhipu' => '智谱', 'openai_embedding' => 'OpenAI Embed', 'gemini_embedding' => 'Gemini Embed'] as $key => $label)
-                                <button type="button" onclick="fillPreset('{{ $key }}')" class="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600 hover:border-blue-200 hover:text-blue-700">{{ $label }}</button>
-                            @endforeach
-                        </div>
-                    </details>
-
                     <div class="grid gap-3 sm:grid-cols-2">
                         <div class="sm:col-span-2">
                             <label for="name" class="admin-label">{{ __('admin.ai_models.field_name') }}</label>
@@ -212,6 +200,7 @@
                             <select name="model_type" id="model_type" class="admin-input mt-1">
                                 <option value="chat">Chat 生成</option>
                                 <option value="embedding">Embedding 向量</option>
+                                <option value="vision">Vision 视觉</option>
                             </select>
                         </div>
                         <div>
@@ -312,19 +301,8 @@
             activateAiModelTab(initialTab);
         }
 
-        const PROVIDER_PRESETS = {
-            minimax: {name: 'MiniMax M2.7', version: 'M2.7', model_id: 'MiniMax-M2.7', api_url: 'https://api.minimax.io', model_type: 'chat'},
-            minimax_highspeed: {name: 'MiniMax M2.7 Highspeed', version: 'M2.7', model_id: 'MiniMax-M2.7-highspeed', api_url: 'https://api.minimax.io', model_type: 'chat'},
-            minimax_m3: {name: 'MiniMax M3', version: 'M3', model_id: 'MiniMax-M3', api_url: 'https://api.minimax.io', model_type: 'chat'},
-            openai: {name: 'GPT-4o', version: '', model_id: 'gpt-4o', api_url: 'https://api.openai.com', model_type: 'chat'},
-            gemini: {name: 'Gemini 3 Flash Preview', version: 'v1beta', model_id: 'gemini-3-flash-preview', api_url: 'https://generativelanguage.googleapis.com/v1beta', model_type: 'chat'},
-            deepseek: {name: 'DeepSeek Chat', version: '', model_id: 'deepseek-chat', api_url: 'https://api.deepseek.com', model_type: 'chat'},
-            zhipu: {name: '智谱 GLM-4.6', version: 'v4', model_id: 'glm-4.6', api_url: 'https://open.bigmodel.cn/api/paas/v4', model_type: 'chat'},
-            volcengine_ark: {name: '火山方舟 Chat', version: 'v3', model_id: '', api_url: 'https://ark.cn-beijing.volces.com/api/v3', model_type: 'chat'},
-            openai_embedding: {name: 'OpenAI Embedding 3 Small', version: '', model_id: 'text-embedding-3-small', api_url: 'https://api.openai.com', model_type: 'embedding'},
-            gemini_embedding: {name: 'Gemini Embedding 2', version: 'v1beta', model_id: 'gemini-embedding-2', api_url: 'https://generativelanguage.googleapis.com/v1beta', model_type: 'embedding'},
-            zhipu_embedding: {name: '智谱 Embedding-3', version: 'v4', model_id: 'embedding-3', api_url: 'https://open.bigmodel.cn/api/paas/v4', model_type: 'embedding'},
-        };
+        // 模型参数全部手动填写：不再提供厂商预设按钮
+        const PROVIDER_PRESETS = {};
 
         function showCreateModelModal() {
             document.getElementById('modalTitle').textContent = AI_MODELS_I18N.modalCreate;

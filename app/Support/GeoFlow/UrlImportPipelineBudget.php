@@ -18,7 +18,7 @@ final class UrlImportPipelineBudget
 
     public function totalSeconds(): int
     {
-        return max(120, (int) config('geoflow.url_import_budget_seconds', 300));
+        return max(120, (int) config('geoflow.url_import_budget_seconds', 480));
     }
 
     public function elapsedSeconds(): float
@@ -40,7 +40,7 @@ final class UrlImportPipelineBudget
     {
         $reserves = (array) config('geoflow.url_import_budget_reserves', []);
         $reserve = max(15, (int) ($reserves[$phase] ?? match ($phase) {
-            'web_research' => 100,
+            'web_research' => 200,
             'web_research_retry' => 90,
             'ai_analysis' => 120,
             'images' => 25,

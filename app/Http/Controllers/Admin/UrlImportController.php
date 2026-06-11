@@ -162,7 +162,7 @@ class UrlImportController extends Controller
                 ]);
 
                 ProcessUrlImportJob::dispatch((int) $job->id)
-                    ->onQueue('geoflow')
+                    ->onQueue('url-import')
                     ->afterCommit();
 
                 UrlImportJobLog::query()->create([
@@ -483,19 +483,22 @@ class UrlImportController extends Controller
      */
     private function resolveWebResearchStepStatus(array $byKey, UrlImportJob $job): array
     {
-        $enabled = $job->webResearchEnabled();
+        // AI 补充调研节点固定开启（不再依赖外部联网搜索）
+        $enabled = true;
         $log = $byKey['web_research'] ?? null;
 
         if ($log !== null) {
             $output = is_array($log->output_json) ? $log->output_json : [];
             $skipReason = (string) ($output['skip_reason'] ?? '');
             $status = (string) $log->status;
-            if ($status === 'failed' && (bool) ($output['bocha_fallback'] ?? false)) {
+            $bochaFallback = (bool) ($output['bocha_fallback'] ?? false);
+            $directFallback = (bool) ($output['direct_fallback'] ?? false);
+            if ($status === 'failed' && ($bochaFallback || $directFallback)) {
                 $status = 'success';
             }
 
             return [
-                'label' => 'AI 全网调研',
+                'label' => 'AI 补充调研',
                 'status' => $status,
                 'duration_ms' => (int) ($log->duration_ms ?? 0),
                 'attempt' => (int) $log->attempt,
@@ -503,6 +506,8 @@ class UrlImportController extends Controller
                 'created_at' => $log->created_at?->toIso8601String(),
                 'web_research_enabled' => $enabled,
                 'skip_reason' => $skipReason,
+                'degraded' => $directFallback || $bochaFallback,
+                'degraded_reason' => $directFallback ? 'direct_page_fallback' : ($bochaFallback ? 'search_fallback' : ''),
                 'output' => $output,
             ];
         }
@@ -512,7 +517,7 @@ class UrlImportController extends Controller
 
         if (! $enabled) {
             return [
-                'label' => 'AI 全网调研',
+                'label' => 'AI 补充调研',
                 'status' => 'skipped',
                 'duration_ms' => 0,
                 'attempt' => 0,
@@ -524,7 +529,7 @@ class UrlImportController extends Controller
         }
 
         return [
-            'label' => 'AI 全网调研',
+            'label' => 'AI 补充调研',
             'status' => $pending ? 'pending' : 'skipped',
             'duration_ms' => 0,
             'attempt' => 0,
@@ -557,21 +562,12 @@ class UrlImportController extends Controller
         $pipeline = [
             ['key' => 'fetch', 'label' => '读取网页', 'sequential' => true, 'icon' => 'globe'],
             ['key' => 'parse', 'label' => '提取正文', 'sequential' => true, 'icon' => 'file-text'],
+            // AI 补充调研：固定节点，默认开启，纯靠 AI 知识库 + 官网线索做调研，不再依赖外部搜索服务。
+            ['key' => 'web_research', 'label' => 'AI 补充调研', 'sequential' => true, 'icon' => 'sparkles'],
+            // 页面主流程保持精简：AI 内部的清理/知识库/关键词/标题在调试弹窗中展示。
+            ['key' => 'ai_analysis', 'label' => (string) $aiAggregate['label'], 'sequential' => true, 'icon' => 'brain'],
+            ['key' => 'images_import', 'label' => '图片下载', 'sequential' => false, 'icon' => 'image'],
         ];
-        if ($webResearch['enabled'] ?? $job->webResearchEnabled()) {
-            $pipeline[] = ['key' => 'bocha_search', 'label' => '博查搜索', 'sequential' => true, 'icon' => 'search'];
-            $pipeline[] = ['key' => 'web_research', 'label' => (string) $webResearch['label'], 'sequential' => true, 'icon' => 'sparkles'];
-        }
-        // AI �����ڵ㣺fast һվʽģʽֻ�� 1 ����ڵ㣻�ֲ�ģʽ�� 5 ���ӽڵ�
-        if (! empty($aiAggregate['fast_one_shot'])) {
-            $pipeline[] = ['key' => 'ai_analysis', 'label' => (string) $aiAggregate['label'], 'sequential' => true, 'icon' => 'brain'];
-        } else {
-            $pipeline[] = ['key' => 'ai_clean', 'label' => 'AI 清理正文', 'sequential' => true, 'icon' => 'eraser'];
-            $pipeline[] = ['key' => 'ai_knowledge', 'label' => 'AI 生成知识库', 'sequential' => true, 'icon' => 'book-open'];
-            $pipeline[] = ['key' => 'ai_keywords', 'label' => 'AI 提取关键词', 'sequential' => true, 'icon' => 'tag'];
-            $pipeline[] = ['key' => 'ai_titles', 'label' => 'AI 生成 GEO 标题', 'sequential' => true, 'icon' => 'type'];
-        }
-        $pipeline[] = ['key' => 'images_import', 'label' => '图片下载', 'sequential' => false, 'icon' => 'image'];
 
         $steps = [];
         $webResearchEnabled = $job->webResearchEnabled();
@@ -585,14 +581,7 @@ class UrlImportController extends Controller
             $error = null;
             $createdAt = null;
 
-            if ($entry['key'] === 'bocha_search') {
-                $log = $byKey['bocha_search'] ?? null;
-                $status = $log ? (string) $log->status : 'skipped';
-                $durationMs = $log ? (int) $log->duration_ms : 0;
-                $attempt = $log ? (int) $log->attempt : 0;
-                $error = $log ? ((string) $log->error_message ?: null) : null;
-                $createdAt = $log?->created_at?->toIso8601String();
-            } elseif ($entry['key'] === 'web_research') {
+            if ($entry['key'] === 'web_research') {
                 $status = (string) $webResearch['status'];
                 $durationMs = (int) $webResearch['duration_ms'];
                 $attempt = (int) $webResearch['attempt'];
@@ -633,6 +622,51 @@ class UrlImportController extends Controller
                 'skip_reason' => ($entry['key'] === 'web_research') ? ($skipReason ?? '') : null,
                 'output' => ($entry['key'] === 'web_research') ? ($webResearch['output'] ?? null) : null,
             ];
+        }
+
+        return $this->normalizeRunningNodeSteps($job, $steps);
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $steps
+     * @return list<array<string, mixed>>
+     */
+    private function normalizeRunningNodeSteps(UrlImportJob $job, array $steps): array
+    {
+        if (! in_array((string) $job->status, ['queued', 'running'], true)) {
+            return $steps;
+        }
+
+        $currentKey = $this->mapJobStepToNodeKey((string) $job->current_step);
+        if ($currentKey === null) {
+            return $steps;
+        }
+
+        $currentIndex = null;
+        foreach ($steps as $index => $step) {
+            if ((string) ($step['key'] ?? '') === $currentKey) {
+                $currentIndex = $index;
+                break;
+            }
+        }
+
+        if ($currentIndex === null) {
+            return $steps;
+        }
+
+        foreach ($steps as $index => $step) {
+            if (! ($step['sequential'] ?? true)) {
+                continue;
+            }
+
+            $status = (string) ($step['status'] ?? 'pending');
+            if ($index < $currentIndex && $status === 'pending') {
+                $steps[$index]['status'] = 'success';
+            }
+
+            if ($index === $currentIndex && $status === 'pending') {
+                $steps[$index]['status'] = 'running';
+            }
         }
 
         return $steps;
@@ -687,10 +721,12 @@ class UrlImportController extends Controller
 
     public function history(): View
     {
+        $jobs = UrlImportJob::query()->visibleToAdmin()->latest()->paginate(20);
+
         return view('admin.url-import.history', [
             'pageTitle' => __('admin.url_import_history.page_title'),
             'activeMenu' => 'materials',
-            'jobs' => UrlImportJob::query()->visibleToAdmin()->latest()->paginate(20),
+            'jobs' => $jobs,
             'stats' => [
                 'total' => UrlImportJob::query()->visibleToAdmin()->count(),
                 'completed' => UrlImportJob::query()->visibleToAdmin()->where('status', 'completed')->count(),

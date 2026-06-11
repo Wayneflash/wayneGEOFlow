@@ -97,7 +97,9 @@ return [
     */
 
     'waits' => [
+        'redis:url-import' => 60,
         'redis:geoflow' => 60,
+        'redis:distribution' => 60,
     ],
 
     /*
@@ -197,15 +199,41 @@ return [
     */
 
     'defaults' => [
-        'supervisor-1' => [
+        'supervisor-url-import' => [
             'connection' => 'redis',
-            'queue' => ['geoflow', 'distribution'],
+            'queue' => ['url-import'],
             'balance' => 'auto',
             'autoScalingStrategy' => 'time',
             'maxProcesses' => 1,
             'maxTime' => 0,
             'maxJobs' => 0,
-            'memory' => 128,
+            'memory' => 256,
+            'tries' => 1,
+            'timeout' => 600,
+            'nice' => 0,
+        ],
+        'supervisor-geoflow' => [
+            'connection' => 'redis',
+            'queue' => ['geoflow'],
+            'balance' => 'auto',
+            'autoScalingStrategy' => 'time',
+            'maxProcesses' => 1,
+            'maxTime' => 0,
+            'maxJobs' => 0,
+            'memory' => 256,
+            'tries' => 1,
+            'timeout' => 600,
+            'nice' => 0,
+        ],
+        'supervisor-distribution' => [
+            'connection' => 'redis',
+            'queue' => ['distribution'],
+            'balance' => 'auto',
+            'autoScalingStrategy' => 'time',
+            'maxProcesses' => 1,
+            'maxTime' => 0,
+            'maxJobs' => 0,
+            'memory' => 192,
             'tries' => 1,
             'timeout' => 300,
             'nice' => 0,
@@ -214,21 +242,43 @@ return [
 
     'environments' => [
         'production' => [
-            'supervisor-1' => [
-                'maxProcesses' => 10,
+            'supervisor-url-import' => [
+                'maxProcesses' => (int) env('HORIZON_URL_IMPORT_MAX_PROCESSES', 50),
+                'balanceMaxShift' => 1,
+                'balanceCooldown' => 3,
+            ],
+            'supervisor-geoflow' => [
+                'maxProcesses' => (int) env('HORIZON_GEOFLOW_MAX_PROCESSES', 30),
+                'balanceMaxShift' => 1,
+                'balanceCooldown' => 3,
+            ],
+            'supervisor-distribution' => [
+                'maxProcesses' => (int) env('HORIZON_DISTRIBUTION_MAX_PROCESSES', 20),
                 'balanceMaxShift' => 1,
                 'balanceCooldown' => 3,
             ],
         ],
 
         'local' => [
-            'supervisor-1' => [
+            'supervisor-url-import' => [
                 'maxProcesses' => 3,
+            ],
+            'supervisor-geoflow' => [
+                'maxProcesses' => 3,
+            ],
+            'supervisor-distribution' => [
+                'maxProcesses' => 2,
             ],
         ],
         '*' => [
-            'supervisor-1' => [
+            'supervisor-url-import' => [
                 'maxProcesses' => 3,
+            ],
+            'supervisor-geoflow' => [
+                'maxProcesses' => 3,
+            ],
+            'supervisor-distribution' => [
+                'maxProcesses' => 2,
             ],
         ],
     ],

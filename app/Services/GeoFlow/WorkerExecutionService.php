@@ -478,6 +478,7 @@ class WorkerExecutionService
             }
         }
 
+        $tenantId = (int) ($this->tenantIdForTask($task) ?? 0);
         $author = Author::query()
             ->where(function (Builder $query) use ($task): void {
                 $this->scopeToTaskTenant($query, $task);
@@ -488,12 +489,33 @@ class WorkerExecutionService
             return $author;
         }
 
-        return Author::query()->create([
-            'tenant_id' => $this->tenantIdForTask($task),
-            'name' => '深联云GEO',
-            'bio' => '深联云GEO自动内容生产默认作者。',
-        ]);
-
+        // 没有作者时按 (tenant_id, name) 创建默认作者；
+        // 并发场景下多 worker 同时创建会被 (tenant_id, name) 唯一索引拦截，
+        // 拦截后重新查询拿回那一条唯一记录。
+        try {
+            return Author::query()->create([
+                'tenant_id' => $tenantId > 0 ? $tenantId : null,
+                'name' => '深联云GEO',
+                'bio' => '深联云GEO自动内容生产默认作者。',
+            ]);
+        } catch (\Illuminate\Database\QueryException $exception) {
+            // 唯一冲突 → 已经被别的 worker 抢先创建，重新查一次
+            $existing = Author::query()
+                ->where('name', '深联云GEO')
+                ->where(function ($query) use ($tenantId): void {
+                    if ($tenantId > 0) {
+                        $query->where('tenant_id', $tenantId);
+                    } else {
+                        $query->whereNull('tenant_id');
+                    }
+                })
+                ->orderBy('id')
+                ->first();
+            if ($existing) {
+                return $existing;
+            }
+            throw $exception;
+        }
     }
 
     private function pickCategory(Task $task): ?Category

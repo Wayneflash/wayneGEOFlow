@@ -3,6 +3,7 @@
 namespace App\Support\GeoFlow;
 
 use App\Models\AiModel;
+use App\Support\Site\SiteSettingsBag;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
@@ -26,6 +27,8 @@ final class AiVisionModelResolver
         'glm-4v',
         'moonshot-v1-vision',
         'deepseek-vl',
+        'minimax-m3',
+        'minimax m3',
         'llava',
         'vision',
         'multimodal',
@@ -42,6 +45,26 @@ final class AiVisionModelResolver
             }
         }
 
+        $defaultId = (int) SiteSettingsBag::get('default_vision_model_id', '0');
+        if ($defaultId > 0) {
+            $default = $this->baseQuery()
+                ->whereKey($defaultId)
+                ->first();
+            if ($default instanceof AiModel) {
+                return $default;
+            }
+        }
+
+        // 退到 model_type='vision' 的活跃模型
+        $visionModels = $this->baseQuery()
+            ->whereRaw("COALESCE(NULLIF(model_type, ''), 'chat') = 'vision'")
+            ->get();
+        $first = $visionModels->first();
+        if ($first instanceof AiModel) {
+            return $first;
+        }
+
+        // 兜底：关键字匹配历史数据（防止有人之前已经创建过 chat 类型但 model_id 命中关键字）
         $models = $this->baseQuery()->get();
         foreach ($models as $model) {
             if ($this->looksVisionCapable((string) ($model->model_id ?? ''))) {
@@ -49,7 +72,7 @@ final class AiVisionModelResolver
             }
         }
 
-        return $models->first();
+        return null;
     }
 
     /**

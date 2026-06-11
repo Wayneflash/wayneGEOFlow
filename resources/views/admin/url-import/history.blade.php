@@ -82,16 +82,10 @@
                                     @endif
                                 </td>
                                 <td class="px-5 py-4 text-sm">
-                                    @if ($job->webResearchEnabled())
-                                        <span class="inline-flex items-center gap-1 rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-xs font-semibold text-violet-700">
-                                            <i data-lucide="globe" class="h-3 w-3"></i>
-                                            AI 辅助
-                                        </span>
-                                    @else
-                                        <span class="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-600">
-                                            官网直连
-                                        </span>
-                                    @endif
+                                    <span class="inline-flex items-center gap-1 rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-xs font-semibold text-violet-700">
+                                        <i data-lucide="globe" class="h-3 w-3"></i>
+                                        AI 辅助
+                                    </span>
                                 </td>
                                 <td class="px-5 py-4 text-sm">
                                     <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold {{ $statusClasses[$job->status] ?? 'bg-slate-100 text-slate-600' }}">

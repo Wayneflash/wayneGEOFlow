@@ -117,7 +117,7 @@ final class UrlImportNodeChainPresenter
         } else {
             $parseOut = $this->hydrate($parseLog?->output_json, $parseLog?->output_artifact_id) ?? [];
             $input = $this->chainInput('parse', $parseOut);
-            $output = ['skipped' => true, 'skip_reason' => 'not_run', 'note' => '未记录全网调研节点'];
+            $output = ['skipped' => true, 'skip_reason' => 'not_run', 'note' => '未记录 AI 补充调研节点'];
             $status = 'skipped';
         }
 
@@ -125,10 +125,10 @@ final class UrlImportNodeChainPresenter
             $output['chain_note'] = '已跳过：输出与「提取正文」相同，下一步 AI 分析直接使用官网正文';
             $output['feeds_into'] = 'ai_analysis';
         } else {
-            $output = $this->withChainMeta($output, 'ai_analysis', '调研结果与官网正文合并后供 AI 分析');
+            $output = $this->withChainMeta($output, 'ai_analysis', 'AI 补充资料与官网正文合并后供 AI 分析');
         }
 
-        return $this->wrap($job, 'web_research', 'AI 全网调研', $log, $input, $output, $status);
+        return $this->wrap($job, 'web_research', 'AI 补充调研', $log, $input, $output, $status);
     }
 
     /**
@@ -177,7 +177,7 @@ final class UrlImportNodeChainPresenter
             'prompt' => $this->extractAiPromptBundle($byKey),
             'error' => '',
             'created_at' => $summaryLog?->created_at?->toIso8601String() ?? '',
-            'message' => '输入 = 上一步（提取正文 / 全网调研）产出；输出 = 清洗后的知识库 Markdown、关键词与标题，即预览入库内容来源。',
+                'message' => '输入 = 上一步（提取正文 / AI 补充调研）产出；输出 = 清洗后的知识库 Markdown、关键词与标题，即预览入库内容来源。',
         ];
     }
 

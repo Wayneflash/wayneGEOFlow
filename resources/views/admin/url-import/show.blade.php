@@ -56,7 +56,7 @@
     $aiResearchTextChars = (int) data_get($page, 'ai_research_text_chars', 0);
     $collectionModeLabel = match ($collectionMode) {
         'hybrid' => '官网 + AI 汇总',
-        'ai_research' => 'AI 全网调研',
+        'ai_research' => 'AI 补充调研',
         default => '官网直连',
     };
     $identifiedCompany = trim((string) data_get($page, 'identified_company', ''));
@@ -76,7 +76,7 @@
         (string) ($webResearch['search_error'] ?? ''),
         (string) ($webResearch['error'] ?? ''),
     ]));
-    $webResearchEnabled = (bool) ($webResearchEnabled ?? $job->webResearchEnabled());
+    $webResearchEnabled = (bool) ($webResearchEnabled ?? true);
     $webResearchStep = collect($nodeSteps ?? [])->firstWhere('key', 'web_research');
     $webResearchStepStatus = (string) ($webResearchStep['status'] ?? 'pending');
     $webResearchAiFailed = $webResearchEnabled
@@ -145,7 +145,7 @@
                         <p class="mt-2 break-all text-sm text-slate-500">{{ $sourceUrl }}</p>
                         @if ($webResearchEnabled)
                             <p class="mt-1 text-xs text-slate-500">
-                                已勾选全网调研：先博查搜索，再由 AI 汇总；若调研失败会自动降级为官网正文继续。
+                                已勾选 AI 辅助：基于官网线索直接询问 AI 补充资料；若失败会自动降级为官网正文继续。
                             </p>
                         @endif
                     </div>
@@ -190,12 +190,12 @@
                     <div class="flex items-start gap-3">
                         <i data-lucide="triangle-alert" class="mt-0.5 h-4 w-4 shrink-0 text-amber-600"></i>
                         <div class="min-w-0">
-                            <p class="font-semibold">AI 全网调研未成功</p>
+                            <p class="font-semibold">AI 补充调研未成功</p>
                             <p class="mt-1 leading-6 text-amber-900">
                                 @if (! empty($webResearch['search_provider']) && ($webResearch['search_provider'] ?? '') !== 'none')
-                                    博查搜索已执行（{{ count($webResearchQueries) }} 条检索词，{{ (int) ($webResearch['search_result_count'] ?? 0) }} 条结果），但 AI 模型调用失败。
+                                    AI 补充调研调用失败。
                                 @else
-                                    联网搜索或 AI 汇总未完成。
+                                    AI 补充资料未完成。
                                 @endif
                                 任务已改用<strong class="font-semibold">官网直连正文</strong>继续后续步骤。
                             </p>
@@ -348,6 +348,9 @@
                                     @if ($analysisSourceLabel !== '')
                                         <span class="url-import-flow-node-analysis-badge {{ $analysisSource === 'heuristic' ? 'is-heuristic' : 'is-ai' }}" data-node-analysis-source>{{ $analysisSourceLabel }}</span>
                                     @endif
+                                    @if (($node['degraded'] ?? false) || (! empty($node['degraded_reason'])))
+                                        <span class="url-import-flow-node-analysis-badge is-degraded" data-node-degraded-badge title="AI 调研失败，已自动降级使用兜底素材">降级</span>
+                                    @endif
                                 </div>
                                 @if (! $loop->last)
                                     <div class="url-import-flow-arrow" data-flow-arrow aria-hidden="true">
@@ -480,7 +483,7 @@
                         @elseif ($scrapedWeak)
                             <div class="rounded-xl border border-amber-200 bg-amber-50/90 px-4 py-3 text-sm leading-6 text-amber-950">
                                 <b class="font-semibold">页面原文几乎没抓到</b>（{{ $scrapedTextLen }} 字 / {{ $detectedImageCount }} 张图）。
-                                若已开启 AI 全网调研仍失败，请检查模型配置或换<b class="font-semibold">具体文章/方案详情页</b> URL。
+                                若已开启 AI 补充调研仍失败，请检查模型配置或换<b class="font-semibold">具体文章/方案详情页</b> URL。
                                 常见原因：企业站 WAF 反爬、纯前端渲染、或当前 URL 只是导航入口。
                             </div>
                         @endif
@@ -998,6 +1001,21 @@
                         }
                     } else if (analysisBadge) {
                         analysisBadge.remove();
+                    }
+
+                    const degraded = Boolean(step.degraded) || (step.degraded_reason ? true : false);
+                    let degradedBadge = row.querySelector('[data-node-degraded-badge]');
+                    if (degraded) {
+                        if (!degradedBadge) {
+                            degradedBadge = document.createElement('span');
+                            degradedBadge.setAttribute('data-node-degraded-badge', '');
+                            degradedBadge.className = 'url-import-flow-node-analysis-badge is-degraded';
+                            degradedBadge.textContent = '降级';
+                            degradedBadge.title = 'AI 调研失败，已自动降级使用兜底素材';
+                            row.appendChild(degradedBadge);
+                        }
+                    } else if (degradedBadge) {
+                        degradedBadge.remove();
                     }
                 });
             };
@@ -1681,7 +1699,7 @@
                         <span class="flex h-6 w-6 items-center justify-center rounded-lg bg-white text-xs font-bold text-blue-600 shadow-sm">1</span>
                         识主体 + 收资料
                     </div>
-                        <p class="mt-2 text-sm leading-6 text-slate-600">读取网页 → 提取正文 →（可选）AI 全网调研 → 合并官网与调研素材</p>
+                        <p class="mt-2 text-sm leading-6 text-slate-600">读取网页 → 提取正文 →（可选）AI 补充调研 → 合并官网与补充素材</p>
                 </div>
                 <div class="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
                     <div class="flex items-center gap-2 text-sm font-semibold text-slate-800">

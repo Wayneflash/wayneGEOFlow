@@ -255,8 +255,8 @@ Route::prefix($adminPrefix)->name('admin.')->middleware(['surface.port:admin', '
                 Route::post('{modelId}/test', [AiModelController::class, 'testConnection'])->name('test');
                 Route::post('{modelId}/delete', [AiModelController::class, 'destroy'])->name('delete');
                 Route::post('default-embedding', [AiModelController::class, 'updateDefaultEmbedding'])->name('default-embedding');
+                Route::post('default-vision', [AiModelController::class, 'updateDefaultVision'])->name('default-vision');
                 Route::post('chunking-config', [AiModelController::class, 'updateChunkingConfig'])->name('chunking-config');
-                Route::post('web-search-config', [AiModelController::class, 'updateWebSearchSettings'])->name('web-search-config');
             });
             Route::get('ai-prompts', [AiPromptController::class, 'index'])->name('ai-prompts');
             Route::post('ai-prompts/create', [AiPromptController::class, 'store'])->name('ai-prompts.store');

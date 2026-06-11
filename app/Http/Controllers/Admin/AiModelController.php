@@ -9,7 +9,6 @@ use App\Models\SiteSetting;
 use App\Support\AdminWeb;
 use App\Support\GeoFlow\ApiKeyCrypto;
 use App\Support\GeoFlow\OpenAiRuntimeProvider;
-use App\Support\GeoFlow\UrlImportWebSearchSettings;
 use App\Support\Site\SiteSettingsBag;
 use App\Support\Tenancy\AdminTenant;
 use Illuminate\Http\JsonResponse;
@@ -37,7 +36,6 @@ class AiModelController extends Controller
      */
     public function __construct(
         private readonly ApiKeyCrypto $apiKeyCrypto,
-        private readonly UrlImportWebSearchSettings $webSearchSettings,
     ) {}
 
     /**
@@ -55,10 +53,11 @@ class AiModelController extends Controller
             'models' => $this->loadModels(),
             'embeddingModels' => $this->loadActiveEmbeddingModels(),
             'chatModels' => $this->loadActiveChatModels(),
+            'visionModels' => $this->loadActiveVisionModels(),
             'defaultEmbeddingModelId' => $this->getDefaultEmbeddingModelId(),
+            'defaultVisionModelId' => $this->getDefaultVisionModelId(),
             'chunkingConfig' => $this->getChunkingConfig(),
             'pgvectorEnabled' => $this->isPgvectorEnabled(),
-            'webSearchSettings' => $this->getWebSearchSettingsForView(),
         ]);
     }
 
@@ -242,7 +241,7 @@ class AiModelController extends Controller
 
             return $this->modelTestResponse(
                 true,
-                __('admin.ai_models.test_success', ['type' => $modelType === 'embedding' ? 'Embedding' : 'Chat']),
+                __('admin.ai_models.test_success', ['type' => $this->modelTypeDisplayLabel($modelType)]),
                 $startedAt,
                 $modelType,
                 $endpoint,
@@ -334,48 +333,34 @@ class AiModelController extends Controller
     }
 
     /**
-     * 保存网址采集联网搜索（博查）密钥。
+     * 更新默认视觉模型（图片入库识图专用）。
+     *
+     * 约束：
+     * - 只允许选择 active + model_type='vision' 的模型；
+     * - 允许传 0，表示恢复自动选择策略。
      */
-    public function updateWebSearchSettings(Request $request): RedirectResponse
+    public function updateDefaultVision(Request $request): RedirectResponse
     {
-        $payload = $request->validate([
-            'bocha_api_key' => ['nullable', 'string', 'max:4096'],
-            'clear_bocha_api_key' => ['nullable', 'boolean'],
-        ]);
+        $modelId = max(0, (int) $request->input('default_vision_model_id', 0));
 
-        if ($request->boolean('clear_bocha_api_key')) {
-            $this->webSearchSettings->clear();
-        } else {
-            $apiKey = trim((string) ($payload['bocha_api_key'] ?? ''));
-            if ($apiKey !== '') {
-                try {
-                    $this->webSearchSettings->store($apiKey);
-                } catch (\RuntimeException) {
-                    return redirect()
-                        ->route('admin.ai-models.index', ['tab' => 'web-search'])
-                        ->withErrors(__('admin.ai_models.error.crypto_key_missing'));
-                }
+        if ($modelId > 0) {
+            $available = AiModel::query()
+                ->whereKey($modelId)
+                ->where('status', 'active')
+                ->whereRaw("COALESCE(NULLIF(model_type, ''), 'chat') = 'vision'")
+                ->visibleToAdmin()
+                ->exists();
+
+            if (! $available) {
+                return back()->withErrors(__('admin.ai_models.error.vision_unavailable'));
             }
         }
 
+        $this->setDefaultVisionModelId($modelId);
+
         return redirect()
-            ->route('admin.ai-models.index', ['tab' => 'web-search'])
-            ->with('message', __('admin.ai_models.message.web_search_updated'));
-    }
-
-    /**
-     * @return array{provider:string,masked_key:string,configured:bool,uses_env_fallback:bool}
-     */
-    private function getWebSearchSettingsForView(): array
-    {
-        $provider = strtolower(trim((string) config('geoflow.url_import_web_search.provider', 'bocha')));
-
-        return [
-            'provider' => $provider !== '' ? $provider : 'bocha',
-            'masked_key' => $this->webSearchSettings->maskedKey(),
-            'configured' => $this->webSearchSettings->hasKey(),
-            'uses_env_fallback' => $this->webSearchSettings->usesEnvFallback(),
-        ];
+            ->route('admin.ai-models.index', ['tab' => 'vision'])
+            ->with('message', __('admin.ai_models.message.vision_default_updated'));
     }
 
     /**
@@ -412,8 +397,9 @@ class AiModelController extends Controller
             ->get();
 
         $defaultEmbeddingModelId = $this->getDefaultEmbeddingModelId();
+        $defaultVisionModelId = $this->getDefaultVisionModelId();
 
-        return $models->map(function (AiModel $model) use ($defaultEmbeddingModelId): array {
+        return $models->map(function (AiModel $model) use ($defaultEmbeddingModelId, $defaultVisionModelId): array {
             $modelType = $this->normalizeModelType((string) ($model->model_type ?? 'chat'));
 
             return [
@@ -432,6 +418,7 @@ class AiModelController extends Controller
                 'article_count' => (int) ($model->article_count ?? 0),
                 'masked_api_key' => $this->maskApiKey((string) ($model->getRawOriginal('api_key') ?? '')),
                 'is_default_embedding' => $modelType === 'embedding' && $defaultEmbeddingModelId === (int) $model->id,
+                'is_default_vision' => $modelType === 'vision' && $defaultVisionModelId === (int) $model->id,
             ];
         })->all();
     }
@@ -487,6 +474,29 @@ class AiModelController extends Controller
     }
 
     /**
+     * 可用于默认视觉模型下拉框的模型列表。
+     *
+     * @return array<int, array{id:int,name:string,model_id:string}>
+     */
+    private function loadActiveVisionModels(): array
+    {
+        return AiModel::query()
+            ->select(['id', 'name', 'model_id'])
+            ->where('status', 'active')
+            ->whereRaw("COALESCE(NULLIF(model_type, ''), 'chat') = 'vision'")
+            ->visibleToAdmin()
+            ->orderBy('name')
+            ->orderByDesc('id')
+            ->get()
+            ->map(static fn (AiModel $model): array => [
+                'id' => (int) $model->id,
+                'name' => (string) $model->name,
+                'model_id' => (string) ($model->model_id ?? ''),
+            ])
+            ->all();
+    }
+
+    /**
      * 校验模型表单字段。
      *
      * @param  bool  $isUpdate  true 表示编辑模式（允许 api_key 为空）
@@ -506,7 +516,7 @@ class AiModelController extends Controller
             'version' => ['nullable', 'string', 'max:50'],
             'api_key' => [$isUpdate ? 'nullable' : 'required', 'string', 'max:4096'],
             'model_id' => ['required', 'string', 'max:100'],
-            'model_type' => ['required', 'in:chat,embedding'],
+            'model_type' => ['required', 'in:chat,embedding,vision'],
             'api_url' => ['nullable', 'string', 'max:500'],
             'failover_priority' => ['nullable', 'integer', 'min:1'],
             'daily_limit' => ['nullable', 'integer', 'min:0'],
@@ -539,7 +549,19 @@ class AiModelController extends Controller
     {
         $normalized = trim(strtolower($modelType));
 
-        return in_array($normalized, ['chat', 'embedding'], true) ? $normalized : 'chat';
+        return in_array($normalized, ['chat', 'embedding', 'vision'], true) ? $normalized : 'chat';
+    }
+
+    /**
+     * 模型类型在 UI 文案里的展示标签。
+     */
+    private function modelTypeDisplayLabel(string $modelType): string
+    {
+        return match ($modelType) {
+            'embedding' => 'Embedding',
+            'vision' => 'Vision',
+            default => 'Chat',
+        };
     }
 
     /**
@@ -548,6 +570,14 @@ class AiModelController extends Controller
     private function getDefaultEmbeddingModelId(): int
     {
         return (int) SiteSettingsBag::get('default_embedding_model_id', '0');
+    }
+
+    /**
+     * 读取默认视觉模型 ID。
+     */
+    private function getDefaultVisionModelId(): int
+    {
+        return (int) SiteSettingsBag::get('default_vision_model_id', '0');
     }
 
     /**
@@ -574,6 +604,17 @@ class AiModelController extends Controller
     {
         SiteSetting::query()->updateOrCreate(
             ['setting_key' => SiteSettingsBag::storageKey('default_embedding_model_id')],
+            ['setting_value' => (string) max(0, $modelId)]
+        );
+    }
+
+    /**
+     * 更新默认视觉模型 ID。
+     */
+    private function setDefaultVisionModelId(int $modelId): void
+    {
+        SiteSetting::query()->updateOrCreate(
+            ['setting_key' => SiteSettingsBag::storageKey('default_vision_model_id')],
             ['setting_value' => (string) max(0, $modelId)]
         );
     }

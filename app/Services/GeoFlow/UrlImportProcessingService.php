@@ -43,7 +43,7 @@ use Throwable;
 final class UrlImportProcessingService
 {
     private const AI_ANALYSIS_MAX_ATTEMPTS = 3;
-    private const AI_WEB_RESEARCH_MAX_ATTEMPTS = 1;
+    private const AI_WEB_RESEARCH_MAX_ATTEMPTS = 3;
 
     private ?string $lastRawAiContent = null;
 
@@ -183,7 +183,7 @@ final class UrlImportProcessingService
             $this->log($job, 'info', __('admin.url_import.log.page_json_done', [
                 'chars' => mb_strlen((string) data_get($parsed, 'raw_json.text', ''), 'UTF-8'),
             ]));
-            // 注意：fetch / parse 节点 log 已在 collectPageMaterials() 内部按物理顺序写入（fetch → parse → bocha → ai），
+            // 注意：fetch / parse 节点 log 已在 collectPageMaterials() 内部按物理顺序写入（fetch → parse → AI 补充调研），
             // 此处不再重复记录，避免同 key 出现多行日志导致前端轮询出现「下游先于上游绿勾」。
 
             $webOut = (array) ($collection['web_research_output'] ?? []);
@@ -198,7 +198,7 @@ final class UrlImportProcessingService
             $this->logNode(
                 $job,
                 'web_research',
-                'AI 全网调研',
+                'AI 补充调研',
                 array_merge(
                     $this->nodeChainInput('parse', $parseOutput),
                     [
@@ -781,17 +781,14 @@ final class UrlImportProcessingService
     private function collectPageMaterials(UrlImportJob $job): array
     {
         $jobId = (int) $job->id;
-        $webResearchEnabled = $this->jobWebResearchEnabled($job);
+        // AI 补充调研固定开启：纯靠 AI 模型先验知识 + 官网线索，不再依赖外部联网搜索。
+        $webResearchEnabled = true;
         $webResearchMode = (string) config('geoflow.url_import_web_research_mode', 'sequential');
         $runWebResearchInParallel = $webResearchEnabled && $webResearchMode === 'parallel';
 
         $directOutcome = null;
         $aiOutcome = null;
-        $searchPayload = null;
-
-        if (! $webResearchEnabled) {
-            $this->log($job, 'info', __('admin.url_import.log.web_research_skipped_disabled'));
-        }
+        $searchPayload = ['enabled' => false, 'results' => [], 'queries' => [], 'provider' => 'none'];
 
         if ($runWebResearchInParallel) {
             try {
@@ -817,7 +814,7 @@ final class UrlImportProcessingService
                 $aiOutcome = $this->collectAiWebResearch($jobId, $directOutcome['parsed'] ?? null);
             }
         } else {
-            // sequential（默认）：先官网直连，再用 page_title / 主体名做全网调研
+            // sequential（默认）：先官网直连，再用 page_title / 主体名让 AI 补充资料
             $directOutcome = $this->collectDirect($jobId);
             $this->updateStep($job, 'page_json', 18);
             if ($webResearchEnabled && $this->shouldRunWebResearch($job, $directOutcome)) {
@@ -845,18 +842,18 @@ final class UrlImportProcessingService
             $this->logNode(
                 $job,
                 'web_research_retry',
-                'AI 全网调研（带主体上下文重试）',
+                'AI 补充调研（带主体上下文重试）',
                 [
                     'reason' => 'first_pass_missing_company_or_queries',
                     'first_company' => trim((string) data_get($aiOutcome, 'research.company_name', '')),
                     'first_queries' => array_values((array) data_get($aiOutcome, 'search.queries', [])),
                     'feeds_into' => 'web_research_ai',
-                    'chain_note' => '首次 AI 调研未识别主体或未用主体词检索；用官网解析出的主体名重做一次',
+                    'chain_note' => '首次 AI 补充调研未识别主体；用官网解析出的主体名重做一次',
                 ],
                 [
                     'triggered' => true,
                     'feeds_into' => 'web_research_ai',
-                    'chain_note' => '把官网解析出的公司名带进提示词后再次调 AI 调研',
+                    'chain_note' => '把官网解析出的公司名带进提示词后再次调 AI 补充调研',
                 ],
                 0,
                 1,
@@ -889,6 +886,21 @@ final class UrlImportProcessingService
         $jobOptions = json_decode((string) $job->options_json, true);
         $jobOptions = is_array($jobOptions) ? $jobOptions : [];
         $minTextChars = max(40, (int) config('geoflow.url_import_min_text_chars', 80));
+
+        // ===== 直连官网正文兜底：AI 调研失败时仍用官网直连正文生成 research，让 03 节点不至于整段失败 =====
+        if (! ($aiOutcome['ok'] ?? false) && $webResearchEnabled && ! ($aiOutcome['bocha_fallback'] ?? false)) {
+            $directFallback = $this->buildWebResearchFromDirectPage($directParsed, $job);
+            if ($this->webResearchNormalizer->isUsable($directFallback, $minTextChars)) {
+                $aiResearch = $directFallback;
+                $aiOutcome['research'] = $directFallback;
+                $aiOutcome['bocha_fallback'] = true; // 兼容 controller：失败但有降级时仍标记为 success
+                $aiOutcome['direct_fallback'] = true;
+                $this->log($job, 'warning', __('admin.url_import.log.web_research_direct_fallback', [
+                    'chars' => mb_strlen((string) ($directFallback['research_text'] ?? ''), 'UTF-8'),
+                ]));
+            }
+        }
+
         $merged = $this->collectionMerger->merge(
             $directParsed,
             $aiResearch,
@@ -899,6 +911,58 @@ final class UrlImportProcessingService
         );
         $parsed = $merged['parsed'];
         $collectionMode = (string) $merged['collection_mode'];
+
+        // ===== 节点记录：fetch / parse（按物理执行顺序：先 fetch → 再 parse）=====
+        // 关键：必须在 web_research_ai / bocha_search 节点 log 写入之前 INSERT，
+        // 否则前端 3 秒轮询会先看到下游（bocha / ai）变绿、上游（fetch / parse）还是 pending。
+        $pageJsonForLog = $this->buildPageJson($parsed, $job);
+        $fetchOutput = [
+            'status' => (int) ($fetched['status'] ?? 0),
+            'html_length' => strlen((string) ($fetched['html'] ?? '')),
+            'is_bot_challenge' => (bool) ($fetched['is_bot_challenge'] ?? false),
+            'html_preview' => Str::limit((string) ($fetched['html'] ?? ''), 2000, '…'),
+            'url' => (string) $job->normalized_url,
+            'domain' => (string) $job->source_domain,
+            'feeds_into' => 'parse',
+            'chain_note' => '原始 HTML，供正文解析使用',
+        ];
+        $parseOutput = $this->summarizeParseForNode($parsed, $pageJsonForLog);
+        $parseOutput['collection_mode'] = $collectionMode;
+        $parseOutput['direct_text_chars'] = (int) ($merged['direct_meta']['text_chars'] ?? 0);
+        $parseOutput['ai_research_text_chars'] = (int) ($merged['ai_meta']['text_chars'] ?? 0);
+        $fetchMs = (int) ($directOutcome['fetch_ms'] ?? 0);
+        $parseMs = (int) ($directOutcome['parse_ms'] ?? 0);
+
+        UrlImportNodeRecorder::record(
+            (int) $job->id,
+            'fetch',
+            '读取网页',
+            $this->resolveFetchNodeStatus($fetched),
+            [
+                'url' => (string) $job->normalized_url,
+                'chain_note' => '读取网页：HTTP 拉取 + 编码识别',
+            ],
+            array_merge($fetchOutput, [
+                'feeds_into' => 'parse',
+                'chain_note' => '原始 HTML，供正文解析使用',
+            ]),
+            $fetchMs
+        );
+
+        UrlImportNodeRecorder::record(
+            (int) $job->id,
+            'parse',
+            '提取正文',
+            $this->resolveParseNodeStatus($directParsed, $fetched),
+            $this->nodeChainInput('fetch', $fetchOutput),
+            array_merge($parseOutput, [
+                'feeds_into' => $webResearchEnabled ? 'web_research' : 'ai_analysis',
+                'chain_note' => $webResearchEnabled
+                    ? '提取正文：清洗后的页面文本，供 AI 补充调研'
+                    : '提取正文：清洗后的页面文本，供 AI 知识库分析',
+            ]),
+            $parseMs
+        );
 
         if (($aiOutcome['ok'] ?? false) || ($aiOutcome['bocha_fallback'] ?? false)) {
             $this->log($job, 'info', __('admin.url_import.log.web_research_done', [
@@ -912,41 +976,8 @@ final class UrlImportProcessingService
             ]));
         }
 
-        // ===== 节点记录：bocha_search =====
         $searchQueries = (array) ($searchPayload['queries'] ?? []);
         $searchResults = (array) ($searchPayload['results'] ?? []);
-        $searchDuration = (int) ($searchPayload['duration_ms'] ?? 0);
-        UrlImportNodeRecorder::record(
-            (int) $job->id,
-            'bocha_search',
-            '博查搜索',
-            $searchResults !== [] ? 'success' : 'skipped',
-            [
-                'from_node' => 'parse',
-                'company_hint' => (string) ($searchPayload['company_name'] ?? ''),
-                'domain' => (string) $job->source_domain,
-                'search_provider' => (string) ($searchPayload['provider'] ?? 'bocha'),
-                'search_queries' => $searchQueries,
-                'feeds_into' => 'web_research',
-                'chain_note' => '博查全网搜索：拉取联网素材',
-            ],
-            [
-                'ok' => $searchResults !== [],
-                'result_count' => count($searchResults),
-                'queries' => $searchQueries,
-                'results' => array_slice(array_map(static function (array $r): array {
-                    return [
-                        'title' => (string) ($r['title'] ?? ''),
-                        'url' => (string) ($r['url'] ?? ''),
-                        'snippet' => mb_substr((string) ($r['snippet'] ?? ''), 0, 240, 'UTF-8'),
-                    ];
-                }, $searchResults), 0, 6),
-                'feeds_into' => 'web_research',
-                'chain_note' => '博查结果，供下一阶段 AI 全网调研汇总',
-            ],
-            $searchDuration,
-            1
-        );
 
         // ===== 节点记录：web_research_ai =====
         $aiOk = (bool) ($aiOutcome['ok'] ?? false);
@@ -962,20 +993,20 @@ final class UrlImportProcessingService
             $aiSysPrompt = UrlImportPromptCatalog::webResearchSystem(is_array($searchPayload) ? $searchPayload : []);
             $aiUserPrompt = $this->buildWebResearchUserPrompt($job, is_array($directOutcome['parsed'] ?? null) ? $directOutcome['parsed'] : null, is_array($searchPayload) ? $searchPayload : null);
         }
-        $aiOutputNote = $aiOk ? 'AI 调研完成：供下一步 AI 知识库整合' : ($aiBochaFallback ? 'AI 调研失败：使用博查结果兜底合并' : 'AI 调研失败/跳过');
+        $aiOutputNote = $aiOk ? 'AI 补充调研完成：供下一步 AI 知识库整合' : ($aiBochaFallback ? 'AI 调研失败：使用联网结果兜底合并' : 'AI 补充调研失败/跳过');
         UrlImportNodeRecorder::record(
             (int) $job->id,
-            'web_research_ai',
-            'AI 全网调研',
+            'web_research',
+            'AI 补充调研',
             $aiStatus,
             [
-                'from_node' => 'bocha_search',
+                'from_node' => 'parse',
                 'upstream_queries' => $searchQueries,
                 'upstream_results' => count($searchResults),
                 'system_prompt' => $aiSysPrompt,
                 'user_prompt_preview' => Str::limit($aiUserPrompt, 6000, '…'),
                 'feeds_into' => 'ai_analysis',
-                'chain_note' => 'AI 全网调研：基于博查结果 + 官网直连正文汇总',
+                'chain_note' => 'AI 补充调研：基于官网线索直接询问模型，不调用外部搜索',
             ],
             [
                 'ok' => $aiOk,
@@ -993,67 +1024,14 @@ final class UrlImportProcessingService
             $aiError !== '' ? $aiError : null
         );
 
-        $pageJson = $this->buildPageJson($parsed, $job);
-        $parseOutput = $this->summarizeParseForNode($parsed, $pageJson);
-        $parseOutput['collection_mode'] = $collectionMode;
-        $parseOutput['direct_text_chars'] = (int) ($merged['direct_meta']['text_chars'] ?? 0);
-        $parseOutput['ai_research_text_chars'] = (int) ($merged['ai_meta']['text_chars'] ?? 0);
-
-        $fetchOutput = [
-            'status' => (int) ($fetched['status'] ?? 0),
-            'html_length' => strlen((string) ($fetched['html'] ?? '')),
-            'is_bot_challenge' => (bool) ($fetched['is_bot_challenge'] ?? false),
-            'html_preview' => Str::limit((string) ($fetched['html'] ?? ''), 2000, '…'),
-            'url' => (string) $job->normalized_url,
-            'domain' => (string) $job->source_domain,
-            'feeds_into' => 'parse',
-            'chain_note' => '原始 HTML，供正文解析使用',
-        ];
-        $fetchMs = (int) ($directOutcome['fetch_ms'] ?? 0);
-        $parseMs = (int) ($directOutcome['parse_ms'] ?? 0);
-
-        // ===== 节点记录：fetch（顺序：先 fetch、再 parse、最后 bocha_search / web_research_ai）=====
-        // 关键：物理写入顺序与实际执行顺序一致，避免前端轮询时下游节点先于上游节点绿勾。
-        UrlImportNodeRecorder::record(
-            (int) $job->id,
-            'fetch',
-            '读取网页',
-            $this->resolveFetchNodeStatus($fetched),
-            [
-                'url' => (string) $job->normalized_url,
-                'chain_note' => '读取网页：HTTP 拉取 + 编码识别',
-            ],
-            array_merge($fetchOutput, [
-                'feeds_into' => 'parse',
-                'chain_note' => '原始 HTML，供正文解析使用',
-            ]),
-            $fetchMs
-        );
-
-        // ===== 节点记录：parse（紧随 fetch）=====
-        UrlImportNodeRecorder::record(
-            (int) $job->id,
-            'parse',
-            '提取正文',
-            $this->resolveParseNodeStatus($directParsed, $fetched),
-            $this->nodeChainInput('fetch', $fetchOutput),
-            array_merge($parseOutput, [
-                'feeds_into' => $webResearchEnabled ? 'bocha_search' : 'ai_analysis',
-                'chain_note' => $webResearchEnabled
-                    ? '提取正文：清洗后的页面文本，供博查 + AI 调研'
-                    : '提取正文：清洗后的页面文本，供 AI 知识库分析',
-            ]),
-            $parseMs
-        );
-
         return [
             'fetched' => $fetched,
             'parsed' => $parsed,
             'collection_mode' => $collectionMode,
             'fetch_output' => $fetchOutput,
             'parse_output' => $parseOutput,
-            'fetch_ms' => (int) ($directOutcome['fetch_ms'] ?? 0),
-            'parse_ms' => (int) ($directOutcome['parse_ms'] ?? 0),
+            'fetch_ms' => $fetchMs,
+            'parse_ms' => $parseMs,
             'web_research_output' => $this->buildWebResearchNodeOutput($aiOutcome, $parsed, $merged, $webResearchEnabled),
             'web_research_ms' => (int) ($aiOutcome['duration_ms'] ?? 0),
         ];
@@ -1107,14 +1085,14 @@ final class UrlImportProcessingService
             'feeds_into' => 'ai_analysis',
             'chain_note' => match (true) {
                 $ok => '调研摘要已合并进正文，供 AI 分析使用',
-                (bool) ($aiOutcome['bocha_fallback'] ?? false) => 'AI 汇总失败，已用博查搜索结果降级合并进正文',
+                (bool) ($aiOutcome['bocha_fallback'] ?? false) => 'AI 汇总失败，已用联网摘要降级合并进正文',
                 default => '跳过时 AI 分析直接使用「提取正文」输出',
             },
         ];
     }
 
     /**
-     * AI 全网调研失败时，用博查/联网搜索摘要拼接可合并的调研结构。
+     * AI 补充调研失败时，用联网搜索摘要拼接可合并的调研结构。
      *
      * @param  array<string, mixed>  $searchPayload
      * @param  array<string, mixed>  $directParsed
@@ -1155,7 +1133,7 @@ final class UrlImportProcessingService
             }
         }
 
-        $evidenceLimits = 'AI 全网汇总未成功；以下内容来自博查实时搜索摘要与官网直连片段，未经 AI 交叉验证，下游整理时需标注来源边界。';
+        $evidenceLimits = 'AI 补充调研未成功；以下内容来自联网搜索摘要与官网直连片段，未经 AI 交叉验证，下游整理时需标注来源边界。';
 
         return $this->webResearchNormalizer->normalize([
             'company_name' => $companyName,
@@ -1307,16 +1285,14 @@ final class UrlImportProcessingService
     private function collectAiWebResearch(int $jobId, ?array $directParsed): array
     {
         $job = UrlImportJob::query()->findOrFail($jobId);
-        if (! $this->jobWebResearchEnabled($job)) {
-            return ['ok' => false, 'research' => null, 'error' => '', 'skipped' => true, 'duration_ms' => 0];
-        }
+        // AI 补充调研固定开启，不再因 options/config 跳过。
 
         $started = microtime(true);
 
         $hostKey = 'url_import_company_resolve:'.strtolower(trim((string) $job->source_domain));
         $cached = self::readCompanyCache($hostKey);
         if ($cached !== null) {
-            $search = (array) ($cached['search'] ?? []);
+            $search = $this->buildAiOnlyResearchPayload($job, $directParsed) + ['cached' => true];
             $research = $this->webResearchNormalizer->normalize([
                 'company_name' => (string) ($cached['company_name'] ?? ''),
                 'research_text' => (string) ($cached['text'] ?? ''),
@@ -1330,11 +1306,11 @@ final class UrlImportProcessingService
                 'error' => '',
                 'skipped' => false,
                 'duration_ms' => (int) round((microtime(true) - $started) * 1000),
-                'search' => $search + ['cached' => true],
+                'search' => $search,
             ];
         }
 
-        $searchPayload = $this->domesticWebSearch->searchForJob($job, $directParsed);
+        $searchPayload = $this->buildAiOnlyResearchPayload($job, $directParsed);
 
         try {
             $models = $this->resolveAnalysisModels((int) ($job->tenant_id ?? 0) ?: null);
@@ -1408,6 +1384,69 @@ final class UrlImportProcessingService
     }
 
     /**
+     * AI 调研失败时，从官网直连正文里挤出一份基础 research。
+     * 不是 AI 输出，但保证 03 节点不会因模型超时而整段失败。
+     *
+     * @param  array<string, mixed>|null  $directParsed
+     * @return array<string, mixed>
+     */
+    private function buildWebResearchFromDirectPage(?array $directParsed, UrlImportJob $job): array
+    {
+        $parsed = is_array($directParsed) ? $directParsed : [];
+        $text = trim((string) ($parsed['text'] ?? ''));
+        $title = trim((string) ($parsed['title'] ?? ''));
+        $companyHint = trim((string) ($parsed['company_name'] ?? ''));
+        if ($companyHint === '') {
+            $companyHint = trim((string) $job->source_domain);
+        }
+        $summary = mb_substr(preg_replace('/\s+/u', ' ', strip_tags($text)) ?? $text, 0, 220);
+
+        // 拼一份 research_text：标题 + summary + 头部正文 1200 字
+        $headText = mb_substr($text, 0, 1200);
+        $researchText = ($title !== '' ? '# '.$title."\n\n" : '').($summary !== '' ? $summary."\n\n" : '').$headText;
+
+        return $this->webResearchNormalizer->normalize([
+            'company_name' => $companyHint,
+            'research_title' => $title !== '' ? $title : ($companyHint !== '' ? $companyHint.' 官网正文摘要' : '官网正文摘要'),
+            'research_summary' => $summary,
+            'research_text' => $researchText,
+            'products_services' => is_array($parsed['products_services'] ?? null) ? $parsed['products_services'] : [],
+            'industries' => is_array($parsed['industries'] ?? null) ? $parsed['industries'] : [],
+            'scenarios' => is_array($parsed['scenarios'] ?? null) ? $parsed['scenarios'] : [],
+            'confidence' => 'low',
+            'evidence_limits' => 'AI 调研模型调用失败，本条目由官网直连正文兜底生成，可能不完整',
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $directParsed
+     * @return array<string, mixed>
+     */
+    private function buildAiOnlyResearchPayload(UrlImportJob $job, ?array $directParsed): array
+    {
+        $options = json_decode((string) $job->options_json, true);
+        $options = is_array($options) ? $options : [];
+        $parsed = is_array($directParsed) ? $directParsed : [];
+        $hint = UrlImportCompanyHint::build(
+            (string) $job->normalized_url,
+            (string) $job->source_domain,
+            $options,
+            $parsed,
+        );
+
+        return [
+            'provider' => 'ai_only',
+            'enabled' => false,
+            'company_name' => UrlImportCompanyHint::inferCompanyName($hint, ''),
+            'queries' => array_values((array) ($hint['search_queries'] ?? [])),
+            'results' => [],
+            'error' => '',
+            'duration_ms' => 0,
+            'note' => '未调用外部搜索；基于官网线索直接请求 AI 模型补充调研。',
+        ];
+    }
+
+    /**
      * @param  array{fetched:array<string,mixed>,parsed:?array<string,mixed>}  $directOutcome
      */
     private function directNeedsSupplement(array $directOutcome): bool
@@ -1424,7 +1463,7 @@ final class UrlImportProcessingService
     }
 
     /**
-     * 官网直连已识别主体且正文足够时，可跳过全网调研以节省时间。
+     * 官网直连已识别主体且正文足够时，可跳过 AI 补充调研以节省时间。
      *
      * @param  array{fetched:array<string,mixed>,parsed:?array<string,mixed>}  $directOutcome
      */
@@ -1483,7 +1522,7 @@ final class UrlImportProcessingService
     }
 
     /**
-     * parallel 或无主体线索的首次调研结果不可靠时，用官网 title/正文重跑博查 + AI。
+     * parallel 或无主体线索的首次调研结果不可靠时，用官网 title/正文重跑 AI 补充调研。
      *
      * @param  array{ok?:bool,research?:?array<string,mixed>,error?:string,skipped?:bool,duration_ms?:int,search?:array<string,mixed>}  $aiOutcome
      * @param  array<string, mixed>  $directParsed
@@ -1603,7 +1642,8 @@ final class UrlImportProcessingService
         )));
         $directSnippet = trim((string) ($directParsed['text'] ?? ''));
         $hasDirectBody = mb_strlen($directSnippet, 'UTF-8') >= 30;
-        $searchPayload ??= $this->domesticWebSearch->searchForJob($job, $directParsed);
+        // 不再调用联网搜索：仅依赖官网直连正文 + AI 模型先验知识做调研。
+        $searchPayload = ['enabled' => false, 'results' => [], 'queries' => [], 'provider' => 'none'];
 
         return UrlImportPromptCatalog::webResearchUser([
             'normalized_url' => (string) $job->normalized_url,
@@ -1611,8 +1651,8 @@ final class UrlImportProcessingService
             'direct_snippet' => Str::limit($directSnippet, 2500, '…'),
             'has_direct_body' => $hasDirectBody,
             'operator_notes' => (string) ($options['notes'] ?? ''),
-            'search_block' => UrlImportDomesticWebSearchService::formatResultsForPrompt($searchPayload),
-            'search_enabled' => (bool) ($searchPayload['enabled'] ?? false),
+            'search_block' => '',
+            'search_enabled' => false,
         ]);
     }
 
@@ -2042,18 +2082,13 @@ final class UrlImportProcessingService
     }
 
     /**
-     * 任务级开关优先：表单勾选「AI 辅助采集 / 全网调研」时才跑博查 + AI 调研。
+     * 任务级开关优先：表单勾选「AI 辅助采集」时才跑 AI 补充调研。
      */
     private function jobWebResearchEnabled(UrlImportJob $job): bool
     {
-        $options = json_decode((string) $job->options_json, true);
-        $options = is_array($options) ? $options : [];
-
-        if (array_key_exists('web_research_enabled', $options)) {
-            return filter_var($options['web_research_enabled'], FILTER_VALIDATE_BOOLEAN);
-        }
-
-        return (bool) config('geoflow.url_import_web_research_enabled', false);
+        // AI 补充调研固定开启：忽略 options.web_research_enabled 与 config，
+        // 也不再读取联网搜索（博查）API key。
+        return true;
     }
 
     private function fetchTimeoutSeconds(): int
@@ -2368,12 +2403,12 @@ final class UrlImportProcessingService
         $knowledgeMarkdown = UrlImportTextSanitizer::cleanMarkdown(
             $this->buildKnowledgeMarkdown($parsed, $job, $keywords)
         );
-        $titles = $this->generateTitles($title !== '' ? $title : $libraryName, $keywords);
+        $titles = $this->generateTitles($libraryName, $keywords);
         $minTitles = max(4, (int) config('geoflow.url_import_fast.min_decision_titles', 10));
-        if (count($titles) < $minTitles) {
+        if (count($titles) < $minTitles && $title !== '') {
             $titles = array_slice(array_values(array_unique(array_merge(
                 $titles,
-                $this->generateTitles($libraryName, array_slice($keywords, 0, 6))
+                $this->generateTitles($title, array_slice($keywords, 0, 6))
             ))), 0, max(12, (int) config('geoflow.url_import_fast.max_titles', 24)));
         }
 
@@ -3221,7 +3256,7 @@ final class UrlImportProcessingService
         $options = is_array($options) ? $options : [];
 
         // 关键：把 merged text 拆成「官网直连正文」与「AI/联网调研补充」两段，
-        // 避免 AI 看到【官网直连摘录】【AI 全网调研汇总】这种内部拼接标记。
+        // 避免 AI 看到【官网直连摘录】【AI 补充调研汇总】这种内部拼接标记。
         $split = $this->splitDirectAndResearch((string) ($parsed['text'] ?? ''));
         $cleanDirect = $this->stripNavigationNoise($split['direct']);
         $cleanDirect = UrlImportTextSanitizer::clean(Str::limit($cleanDirect, 12000, ''));
@@ -3278,7 +3313,7 @@ final class UrlImportProcessingService
             $direct = trim((string) $m[1]);
         }
 
-        if (preg_match('/【(?:AI 全网调研汇总|联网搜索摘要)[\s\S]*?】\s*(?:\n主体：[^\n]*)?(?:\n域名识别：[^\n]*)?\n?(.*)$/su', $mergedText, $m)) {
+        if (preg_match('/【(?:AI 全网调研汇总|AI 补充调研汇总|联网搜索摘要)[\s\S]*?】\s*(?:\n主体：[^\n]*)?(?:\n域名识别：[^\n]*)?\n?(.*)$/su', $mergedText, $m)) {
             $research = trim((string) $m[1]);
         }
 
@@ -3621,7 +3656,7 @@ final class UrlImportProcessingService
 
         return Collection::make($keywords)
             ->map(fn (string $keyword): string => $this->normalizeText($keyword))
-            ->map(static fn (string $keyword): string => preg_replace('/^[\s,，。.!！?？:：;；|｜\/\\\\()（）\[\]【】{}「」\'"“”‘’]+|[\s,，。.!！?？:：;；|｜\/\\\\()（）\[\]【】{}「」\'"“”‘’]+$/u', '', $keyword) ?? $keyword)
+            ->map(static fn (string $keyword): string => preg_replace('/^[\s,，、。.!！?？:：;；|｜\/\\\\()（）\[\]【】{}「」\'"“”‘’]+|[\s,，、。.!！?？:：;；|｜\/\\\\()（）\[\]【】{}「」\'"“”‘’]+$/u', '', $keyword) ?? $keyword)
             ->filter(function (string $keyword) use ($stopWords): bool {
                 $length = mb_strlen($keyword, 'UTF-8');
                 if ($length < 2 || $length > 12) {
@@ -3644,6 +3679,10 @@ final class UrlImportProcessingService
                 }
 
                 if (preg_match('/(点击|查看|详情|更多|登录|注册|返回|上一篇|下一篇|版权所有|联系我们|加入我们)/u', $keyword)) {
+                    return false;
+                }
+
+                if (preg_match('/^(为|和|及|与|或|等|并|对|在|将|把|从|由|以|可|能)/u', $keyword)) {
                     return false;
                 }
 
@@ -3746,8 +3785,11 @@ final class UrlImportProcessingService
         $out = [];
         $seen = [];
         foreach ($keywords as $keyword) {
-            $keyword = trim((string) $keyword);
+            $keyword = trim((string) preg_replace('/^[\s,，、。.!！?？:：;；|｜\/\\\\()（）\[\]【】{}「」\'"“”‘’]+|[\s,，、。.!！?？:：;；|｜\/\\\\()（）\[\]【】{}「」\'"“”‘’]+$/u', '', (string) $keyword));
             if ($keyword === '' || mb_strlen($keyword, 'UTF-8') < 2 || mb_strlen($keyword, 'UTF-8') > 14) {
+                continue;
+            }
+            if (preg_match('/^(为|和|及|与|或|等|并|对|在|将|把|从|由|以|可|能)/u', $keyword)) {
                 continue;
             }
             if ($base !== '' && (mb_strpos($base, $keyword) !== false || mb_strpos($keyword, $base) !== false)) {
@@ -4268,7 +4310,7 @@ final class UrlImportProcessingService
             'page_json_chars' => is_string($pageJsonJson) ? mb_strlen($pageJsonJson, 'UTF-8') : 0,
             'page_json_chunk_count' => count($pageJson['chunks'] ?? []),
             'feeds_into' => 'web_research',
-            'chain_note' => '结构化正文与图片清单，供全网调研与 AI 分析',
+            'chain_note' => '结构化正文与图片清单，供 AI 补充调研与 AI 分析',
         ];
     }
 

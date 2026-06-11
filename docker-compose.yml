@@ -104,7 +104,7 @@ services:
     environment:
       <<: *docker-env
       COMPOSER_ON_START: "false"
-    command: ["php", "artisan", "queue:work", "redis", "--queue=geoflow,distribution,default", "--sleep=1", "--tries=1", "--timeout=900"]
+    command: ["php", "artisan", "horizon"]
     volumes:
       - ./:/var/www/html
     depends_on:

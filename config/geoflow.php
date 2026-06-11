@@ -63,9 +63,9 @@ return [
         true
     ) ? strtolower(trim((string) env('GEOFLOW_URL_IMPORT_PIPELINE_MODE', 'fast'))) : 'fast',
     // 整条采集链路目标耗时（秒）；超时后跳过可选步骤（二次调研、AI 重试等）
-    'url_import_budget_seconds' => max(180, (int) env('GEOFLOW_URL_IMPORT_BUDGET_SECONDS', 300)),
+    'url_import_budget_seconds' => max(180, (int) env('GEOFLOW_URL_IMPORT_BUDGET_SECONDS', 480)),
     'url_import_budget_reserves' => [
-        'web_research' => max(60, (int) env('GEOFLOW_URL_IMPORT_BUDGET_WEB_RESEARCH', 100)),
+        'web_research' => max(60, (int) env('GEOFLOW_URL_IMPORT_BUDGET_WEB_RESEARCH', 200)),
         'web_research_retry' => max(45, (int) env('GEOFLOW_URL_IMPORT_BUDGET_WEB_RETRY', 90)),
         'ai_analysis' => max(90, (int) env('GEOFLOW_URL_IMPORT_BUDGET_AI', 120)),
         'images' => max(15, (int) env('GEOFLOW_URL_IMPORT_BUDGET_IMAGES', 25)),
@@ -102,8 +102,9 @@ return [
         'exclude_domains' => array_values(array_filter(array_map(static fn (string $d): string => trim($d), explode(',', (string) env('GEOFLOW_URL_IMPORT_WEB_SEARCH_EXCLUDE_DOMAINS', ''))))),
 
     ],
-    // 全网调研 AI 调用超时（秒）；须小于 MarkdownContentWriterAgent 默认 240s，避免单步占满 5 分钟预算
-    'url_import_web_research_ai_timeout' => max(30, min(180, (int) env('GEOFLOW_URL_IMPORT_WEB_RESEARCH_AI_TIMEOUT', 45))),
+    // 全网调研 AI 调用超时（秒）；为慢调用模型（如 DeepSeek/MiniMax 长 prompt 调研）保留充足等待时间，
+    // 须小于 MarkdownContentWriterAgent 默认 240s，避免单步占满 5 分钟预算
+    'url_import_web_research_ai_timeout' => max(60, min(180, (int) env('GEOFLOW_URL_IMPORT_WEB_RESEARCH_AI_TIMEOUT', 120))),
     // 正文分析（清洗/知识库/关键词）单次 AI 超时（秒）
     'url_import_analysis_ai_timeout' => max(30, min(180, (int) env('GEOFLOW_URL_IMPORT_ANALYSIS_AI_TIMEOUT', 60))),
     // 后端出站 HTTP 代理；Docker 内访问宿主机代理通常使用 http://host.docker.internal:端口。

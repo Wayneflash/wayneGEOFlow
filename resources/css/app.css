@@ -1246,35 +1246,19 @@
     
 /* ====== Dify-style 节点流图 ====== */
 .url-import-flow {
-    @apply relative w-full overflow-x-auto overflow-y-visible px-1 py-6;
-    scrollbar-width: thin;
-    scrollbar-color: #cbd5e1 transparent;
-}
-
-.url-import-flow::-webkit-scrollbar {
-    height: 8px;
-}
-
-.url-import-flow::-webkit-scrollbar-track {
-    background: transparent;
-}
-
-.url-import-flow::-webkit-scrollbar-thumb {
-    background: #cbd5e1;
-    border-radius: 9999px;
+    @apply relative w-full overflow-visible px-1 py-6;
 }
 
 .url-import-flow-track {
-    @apply relative flex min-w-full items-stretch justify-start gap-5;
-    width: max-content;
-    padding-right: 1.5rem;
+    @apply relative grid items-stretch gap-4;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
 }
 
 .url-import-flow-track::before {
     content: "";
     position: absolute;
-    left: 2.25rem;
-    right: 3rem;
+    left: 2.5rem;
+    right: 2.5rem;
     top: 50%;
     height: 2px;
     transform: translateY(-50%);
@@ -1285,8 +1269,8 @@
 .url-import-flow-track::after {
     content: "";
     position: absolute;
-    left: 2.25rem;
-    right: 3rem;
+    left: 2.5rem;
+    right: 2.5rem;
     top: 50%;
     height: 2px;
     transform: translateY(-50%);
@@ -1297,7 +1281,7 @@
 }
 
 .url-import-flow-node {
-    @apply relative z-10 flex min-h-[6.75rem] w-[190px] shrink-0 cursor-pointer flex-col gap-1.5 rounded-lg border bg-white/95 p-3 shadow-sm backdrop-blur transition;
+    @apply relative z-10 flex min-h-[6.75rem] min-w-0 cursor-pointer flex-col gap-1.5 rounded-lg border bg-white/95 p-3 shadow-sm backdrop-blur transition;
     border-color: rgba(203, 213, 225, 0.9);
     transition: transform .15s ease, box-shadow .2s ease, border-color .2s ease;
 }
@@ -1322,7 +1306,7 @@
 .url-import-flow-node::after {
     content: "";
     position: absolute;
-    right: -22px;
+    right: -18px;
     top: 50%;
     transform: translateY(-50%);
     width: 20px;
@@ -1337,7 +1321,7 @@
 .url-import-flow-node.is-parallel::before {
     content: "";
     position: absolute;
-    right: -22px;
+    right: -18px;
     top: 50%;
     transform: translateY(-50%);
     width: 20px;
@@ -1430,6 +1414,10 @@
 
 .url-import-flow-node-analysis-badge.is-heuristic {
     @apply bg-amber-100 text-amber-700;
+}
+
+.url-import-flow-node-analysis-badge.is-degraded {
+    @apply bg-slate-200 text-slate-700;
 }
 
 .url-import-flow-kicker {

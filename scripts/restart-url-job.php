@@ -50,6 +50,6 @@ $job->update([
     'result_json' => '',
 ]);
 
-ProcessUrlImportJob::dispatch($jobId)->onQueue('geoflow');
+ProcessUrlImportJob::dispatch($jobId)->onQueue('url-import');
 
-echo "Requeued job #{$jobId} on geoflow queue\n";
+echo "Requeued job #{$jobId} on url-import queue\n";

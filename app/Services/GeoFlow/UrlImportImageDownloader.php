@@ -5,8 +5,10 @@ namespace App\Services\GeoFlow;
 use App\Jobs\TagImageWithVisionJob;
 use App\Models\Image;
 use App\Models\SiteSetting;
+use App\Support\GeoFlow\AiVisionModelResolver;
 use App\Support\GeoFlow\OutboundHttpSsl;
 use App\Support\GeoFlow\UrlImportImageLibrary;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -241,7 +243,7 @@ class UrlImportImageDownloader
         }
 
         $hash = hash('sha256', $body);
-        $existing = Image::query()->where('file_path', 'like', '%/'.$hash.'.%')->first();
+        $existing = Image::query()->where('content_hash', $hash)->first();
         if ($existing) {
             return (int) $existing->id;
         }
@@ -256,31 +258,39 @@ class UrlImportImageDownloader
         $height = (int) ($candidate['height'] ?? 0);
         $size = $this->resolveImageSize($body, $mime, $width, $height);
 
-        $image = Image::query()->create([
-            'library_id' => $libraryId,
-            'filename' => $filename,
-            'original_name' => basename((string) parse_url($imageUrl, PHP_URL_PATH) ?: $filename),
-            'file_name' => $filename,
-            'file_path' => $dbPath,
-            'file_size' => $bytes,
-            'mime_type' => $mime,
-            'width' => $size[0],
-            'height' => $size[1],
-            'description' => $this->buildDescription($sectionTitle, $candidate),
-            'source_url' => $sourceUrl,
-            'source_title' => $pageTitle,
-            'source_section_path' => (string) ($candidate['section_path'] ?? ''),
-            'source_paragraph' => (string) ($candidate['paragraph'] ?? ''),
-            'source_alt' => (string) ($candidate['alt'] ?? ''),
-            'source_area' => (string) ($candidate['area'] ?? 'unknown'),
-            'value_status' => self::VALUE_PENDING,
-            'value_score' => null,
-            'suggested_caption' => null,
-            'ai_tag_status' => 'pending',
-        ]);
+        try {
+            $image = Image::query()->create([
+                'library_id' => $libraryId,
+                'filename' => $filename,
+                'original_name' => basename((string) parse_url($imageUrl, PHP_URL_PATH) ?: $filename),
+                'file_name' => $filename,
+                'file_path' => $dbPath,
+                'file_size' => $bytes,
+                'mime_type' => $mime,
+                'content_hash' => $hash,
+                'width' => $size[0],
+                'height' => $size[1],
+                'description' => $this->buildDescription($sectionTitle, $candidate),
+                'source_url' => $sourceUrl,
+                'source_title' => $pageTitle,
+                'source_section_path' => (string) ($candidate['section_path'] ?? ''),
+                'source_paragraph' => (string) ($candidate['paragraph'] ?? ''),
+                'source_alt' => (string) ($candidate['alt'] ?? ''),
+                'source_area' => (string) ($candidate['area'] ?? 'unknown'),
+                'value_status' => self::VALUE_PENDING,
+                'value_score' => null,
+                'suggested_caption' => null,
+                'ai_tag_status' => 'pending',
+            ]);
+        } catch (UniqueConstraintViolationException) {
+            // 并发 race：另一个 worker 已经写入了相同 content_hash 的图片，复用它
+            $existing = Image::query()->where('content_hash', $hash)->first();
+
+            return $existing ? (int) $existing->id : null;
+        }
 
         if (class_exists(TagImageWithVisionJob::class)) {
-            TagImageWithVisionJob::dispatch((int) $image->id);
+            TagImageWithVisionJob::dispatch((int) $image->id, $this->resolveVisionModelId());
         }
 
         return (int) $image->id;
@@ -520,7 +530,7 @@ class UrlImportImageDownloader
         }
 
         $hash = hash('sha256', $body);
-        $existing = Image::query()->where('file_path', 'like', '%/'.$hash.'.%')->first();
+        $existing = Image::query()->where('content_hash', $hash)->first();
         if ($existing) {
             return (int) $existing->id;
         }
@@ -535,31 +545,39 @@ class UrlImportImageDownloader
         $height = (int) ($candidate['height'] ?? 0);
         $size = $this->resolveImageSize($body, $mime, $width, $height);
 
-        $image = Image::query()->create([
-            'library_id' => $libraryId,
-            'filename' => $filename,
-            'original_name' => basename(parse_url($imageUrl, PHP_URL_PATH) ?: $filename),
-            'file_name' => $filename,
-            'file_path' => $dbPath,
-            'file_size' => $bytes,
-            'mime_type' => $mime,
-            'width' => $size[0],
-            'height' => $size[1],
-            'description' => $this->buildDescription($sectionTitle, $candidate),
-            'source_url' => $sourceUrl,
-            'source_title' => $pageTitle,
-            'source_section_path' => (string) ($candidate['section_path'] ?? ''),
-            'source_paragraph' => (string) ($candidate['paragraph'] ?? ''),
-            'source_alt' => (string) ($candidate['alt'] ?? ''),
-            'source_area' => (string) ($candidate['area'] ?? 'unknown'),
-            'value_status' => self::VALUE_PENDING,
-            'value_score' => null,
-            'suggested_caption' => null,
-            'ai_tag_status' => 'pending',
-        ]);
+        try {
+            $image = Image::query()->create([
+                'library_id' => $libraryId,
+                'filename' => $filename,
+                'original_name' => basename(parse_url($imageUrl, PHP_URL_PATH) ?: $filename),
+                'file_name' => $filename,
+                'file_path' => $dbPath,
+                'file_size' => $bytes,
+                'mime_type' => $mime,
+                'content_hash' => $hash,
+                'width' => $size[0],
+                'height' => $size[1],
+                'description' => $this->buildDescription($sectionTitle, $candidate),
+                'source_url' => $sourceUrl,
+                'source_title' => $pageTitle,
+                'source_section_path' => (string) ($candidate['section_path'] ?? ''),
+                'source_paragraph' => (string) ($candidate['paragraph'] ?? ''),
+                'source_alt' => (string) ($candidate['alt'] ?? ''),
+                'source_area' => (string) ($candidate['area'] ?? 'unknown'),
+                'value_status' => self::VALUE_PENDING,
+                'value_score' => null,
+                'suggested_caption' => null,
+                'ai_tag_status' => 'pending',
+            ]);
+        } catch (UniqueConstraintViolationException) {
+            // 并发 race：另一个 worker 已经写入了相同 content_hash 的图片，复用它
+            $existing = Image::query()->where('content_hash', $hash)->first();
+
+            return $existing ? (int) $existing->id : null;
+        }
 
         if (class_exists(TagImageWithVisionJob::class)) {
-            TagImageWithVisionJob::dispatch((int) $image->id);
+            TagImageWithVisionJob::dispatch((int) $image->id, $this->resolveVisionModelId());
         }
 
         return (int) $image->id;
@@ -661,5 +679,20 @@ class UrlImportImageDownloader
         }
 
         return [$fallbackWidth, $fallbackHeight];
+    }
+
+    /**
+     * 在派发 TagImageWithVisionJob 时优先使用 AI 配置器里设置的「默认视觉模型」，
+     * 避免再走关键字匹配的老路径。
+     */
+    private function resolveVisionModelId(): ?int
+    {
+        try {
+            $model = app(AiVisionModelResolver::class)->resolve();
+        } catch (\Throwable) {
+            return null;
+        }
+
+        return $model?->getKey() !== null ? (int) $model->getKey() : null;
     }
 }

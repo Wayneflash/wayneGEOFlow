@@ -56,11 +56,9 @@ class UrlImportJob extends Model
 
     public function webResearchEnabled(): bool
     {
-        $options = $this->optionsArray();
-        if (array_key_exists('web_research_enabled', $options)) {
-            return filter_var($options['web_research_enabled'], FILTER_VALIDATE_BOOLEAN);
-        }
-
-        return (bool) config('geoflow.url_import_web_research_enabled', false);
+        // AI 补充调研节点固定开启，不再读取 options.web_research_enabled 与 config，
+        // 也不再依赖外部联网搜索 API key。
+        return true;
     }
+
 }
