@@ -174,6 +174,7 @@ final class UrlImportNodeChainPresenter
             'duration_ms' => (int) ($aggregate['duration_ms'] ?? 0),
             'input' => $input,
             'output' => $output,
+            'prompt' => $this->extractAiPromptBundle($byKey),
             'error' => '',
             'created_at' => $summaryLog?->created_at?->toIso8601String() ?? '',
             'message' => '输入 = 上一步（提取正文 / 全网调研）产出；输出 = 清洗后的知识库 Markdown、关键词与标题，即预览入库内容来源。',
@@ -311,8 +312,9 @@ final class UrlImportNodeChainPresenter
             'attempt' => (int) $log->attempt,
             'status' => (string) $log->status,
             'duration_ms' => (int) ($log->duration_ms ?? 0),
-            'input' => $this->hydrate($log->input_json, $log->input_artifact_id) ?? new \stdClass,
+            'input' => $input = ($this->hydrate($log->input_json, $log->input_artifact_id) ?? new \stdClass),
             'output' => $this->hydrate($log->output_json, $log->output_artifact_id) ?? new \stdClass,
+            'prompt' => $this->extractPrompt($input),
             'error' => (string) ($log->error_message ?? ''),
             'created_at' => $log->created_at?->toIso8601String() ?? '',
         ];
@@ -342,6 +344,7 @@ final class UrlImportNodeChainPresenter
                 'duration_ms' => 0,
                 'input' => $input,
                 'output' => $output,
+                'prompt' => $this->extractPrompt($input),
                 'error' => '',
                 'message' => '节点日志不完整，已根据上下游节点与任务结果拼装链路数据。',
             ];
@@ -357,9 +360,67 @@ final class UrlImportNodeChainPresenter
             'duration_ms' => (int) ($log?->duration_ms ?? 0),
             'input' => $input,
             'output' => $output,
+            'prompt' => $this->extractPrompt($input),
             'error' => (string) ($log?->error_message ?? ''),
             'created_at' => $log?->created_at?->toIso8601String() ?? '',
             'message' => '输入中的 upstream 即上一节点的输出；output 即本节点产出并传给下一步。',
+        ];
+    }
+
+    /**
+     * @param  array<string, UrlImportJobNodeLog>  $byKey
+     * @return array<string, mixed>
+     */
+    private function extractAiPromptBundle(array $byKey): array
+    {
+        $items = [];
+        foreach (['web_research', 'ai_clean', 'ai_knowledge', 'ai_keywords', 'ai_titles'] as $key) {
+            $log = $byKey[$key] ?? null;
+            if ($log === null) {
+                continue;
+            }
+
+            $input = $this->hydrate($log->input_json, $log->input_artifact_id) ?? [];
+            $prompt = $this->extractPrompt($input);
+            if (($prompt['available'] ?? false) !== true) {
+                continue;
+            }
+
+            $items[] = [
+                'node_key' => $key,
+                'node_label' => (string) $log->node_label,
+                'system_prompt' => (string) ($prompt['system_prompt'] ?? ''),
+                'user_prompt' => (string) ($prompt['user_prompt'] ?? ''),
+                'messages' => $prompt['messages'] ?? [],
+            ];
+        }
+
+        return [
+            'available' => $items !== [],
+            'items' => $items,
+            'message' => $items === []
+                ? '该节点没有独立保存 AI 提示词；历史任务或非 AI 节点只展示输入/输出。'
+                : '',
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>|\stdClass|null  $input
+     * @return array<string, mixed>
+     */
+    private function extractPrompt(array|\stdClass|null $input): array
+    {
+        $data = $input instanceof \stdClass ? (array) $input : ($input ?? []);
+        $system = trim((string) ($data['system_prompt'] ?? $data['system'] ?? ''));
+        $user = trim((string) ($data['user_prompt'] ?? $data['prompt'] ?? $data['user'] ?? ''));
+        $messages = is_array($data['messages'] ?? null) ? $data['messages'] : [];
+
+        return [
+            'available' => $system !== '' || $user !== '' || $messages !== [],
+            'system_prompt' => $system,
+            'user_prompt' => $user,
+            'messages' => $messages,
+            'message' => '该节点没有独立保存 AI 提示词；历史任务或非 AI 节点只展示输入/输出。',
         ];
     }
 

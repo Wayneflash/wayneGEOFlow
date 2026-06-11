@@ -104,6 +104,8 @@ return [
     ],
     // 全网调研 AI 调用超时（秒）；须小于 MarkdownContentWriterAgent 默认 240s，避免单步占满 5 分钟预算
     'url_import_web_research_ai_timeout' => max(30, min(180, (int) env('GEOFLOW_URL_IMPORT_WEB_RESEARCH_AI_TIMEOUT', 45))),
+    // 正文分析（清洗/知识库/关键词）单次 AI 超时（秒）
+    'url_import_analysis_ai_timeout' => max(30, min(180, (int) env('GEOFLOW_URL_IMPORT_ANALYSIS_AI_TIMEOUT', 60))),
     // 后端出站 HTTP 代理；Docker 内访问宿主机代理通常使用 http://host.docker.internal:端口。
     'outbound_http_proxy' => trim((string) env('GEOFLOW_HTTP_PROXY', '')),
     'outbound_https_proxy' => trim((string) env('GEOFLOW_HTTPS_PROXY', env('GEOFLOW_HTTP_PROXY', ''))),

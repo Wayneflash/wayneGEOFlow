@@ -255,12 +255,24 @@
                         </div>
                     </div>
                 </div>
-﻿                <div class="url-import-pipeline" data-url-import-pipeline>
-                    <div class="col-span-full mb-3 flex items-center justify-between gap-2 px-1">
-                        <p class="text-xs text-slate-400">点击节点查看调试数据 · 输入 upstream = 上一步输出</p>
+                <div class="url-import-pipeline" data-url-import-pipeline>
+                    <div class="mb-4 flex flex-col gap-3 px-1 sm:flex-row sm:items-center sm:justify-between">
+                        <div class="min-w-0">
+                            <div class="flex items-center gap-2">
+                                <span class="url-import-flow-kicker">
+                                    <i data-lucide="route" class="h-3.5 w-3.5"></i>
+                                    Workflow
+                                </span>
+                                <span class="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-500">
+                                    {{ count($nodeSteps) }} 节点
+                                </span>
+                            </div>
+                            <h3 class="mt-2 text-base font-semibold text-slate-950">采集执行链路</h3>
+                            <p class="mt-1 text-xs text-slate-500">点击节点查看输入、输出、AI 提示词与错误信息；upstream 表示上一步输出。</p>
+                        </div>
                         <button
                             type="button"
-                            class="admin-icon-btn h-8 w-8 shrink-0 text-slate-400 transition hover:text-blue-600"
+                            class="admin-icon-btn h-9 w-9 shrink-0 text-slate-400 transition hover:text-blue-600"
                             data-flow-help-open
                             aria-label="查看采集流程说明"
                             title="采集流程说明"
@@ -275,31 +287,50 @@
                                     $nodeKey = (string) $node['key'];
                                     $nodeLabel = (string) $node['label'];
                                     $nodeStatus = (string) $node['status'];
-                                    $isDone = in_array($nodeStatus, ['success', 'skipped'], true);
+                                    $isDone = $nodeStatus === 'success';
+                                    $isSkipped = $nodeStatus === 'skipped';
                                     $isFailed = $nodeStatus === 'failed';
                                     $isCurrent = (string) ($currentNodeKey ?? '') === $nodeKey && in_array($job->status, ['queued', 'running'], true);
                                     $nodeIcon = (string) ($node['icon'] ?? 'circle');
+                                    $skipReason = (string) ($node['skip_reason'] ?? '');
+                                    $skipLabel = match (true) {
+                                        $skipReason === 'disabled_by_user' => '未勾选 · 已跳过',
+                                        $skipReason === 'not_needed_or_budget' => '正文已够 · 已跳过',
+                                        $skipReason === 'budget_exhausted' => '预算不足 · 已跳过',
+                                        default => '已跳过',
+                                    };
                                     $statusText = match ($nodeStatus) {
                                         'success' => number_format((int) $node['duration_ms']).' ms · 已完成',
-                                        'skipped' => '已跳过',
+                                        'skipped' => $skipLabel,
                                         'failed' => '失败'.($node['error'] ? '：'.\Illuminate\Support\Str::limit($node['error'], 40) : ''),
                                         'queued' => '等待执行',
                                         'running' => '执行中…',
                                         default => '待执行',
                                     };
                                     $isParallel = ! ($node['sequential'] ?? true);
+                                    $analysisSource = (string) ($node['analysis_source'] ?? '');
+                                    $analysisSourceLabel = $analysisSource === 'heuristic' ? '启发式' : ($analysisSource === 'ai' ? 'AI' : '');
                                 @endphp
-                                <div class="url-import-flow-node {{ $isDone ? 'is-done' : '' }} {{ $isFailed ? 'is-failed' : '' }} {{ $isCurrent ? 'is-current' : '' }} {{ $isParallel ? 'is-parallel' : '' }}"
+                                <div class="url-import-flow-node {{ $isDone ? 'is-done' : '' }} {{ $isSkipped ? 'is-skipped' : '' }} {{ $isFailed ? 'is-failed' : '' }} {{ $isCurrent ? 'is-current' : '' }} {{ $isParallel ? 'is-parallel' : '' }}"
                                      data-node-step-row="{{ $nodeKey }}"
                                      data-node-label="{{ $nodeLabel }}"
-                                     onclick="openNodeDebug('{{ $nodeKey }}', '{{ $nodeLabel }}', {{ (int) ($node['attempt'] ?? 0) }})">
+                                     role="button"
+                                     tabindex="0"
+                                     aria-label="查看 {{ $nodeLabel }} 节点调试数据"
+                                     onclick="openNodeDebug(@js($nodeKey), @js($nodeLabel), {{ (int) ($node['attempt'] ?? 0) }})"
+                                     onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openNodeDebug(@js($nodeKey), @js($nodeLabel), {{ (int) ($node['attempt'] ?? 0) }}); }">
                                     <div class="url-import-flow-node-head">
-                                        <div class="url-import-flow-node-icon">
-                                            <i data-lucide="{{ $nodeIcon }}" class="h-4 w-4"></i>
+                                        <div class="flex items-center gap-2">
+                                            <span class="url-import-flow-node-index">{{ str_pad((string) ($nodeIndex + 1), 2, '0', STR_PAD_LEFT) }}</span>
+                                            <div class="url-import-flow-node-icon">
+                                                <i data-lucide="{{ $nodeIcon }}" class="h-4 w-4"></i>
+                                            </div>
                                         </div>
                                         <div class="url-import-flow-node-status">
                                             @if ($isDone)
                                                 <i data-lucide="check" class="h-3.5 w-3.5"></i>
+                                            @elseif ($isSkipped)
+                                                <i data-lucide="minus" class="h-3.5 w-3.5"></i>
                                             @elseif ($isFailed)
                                                 <i data-lucide="x" class="h-3.5 w-3.5"></i>
                                             @elseif ($isCurrent)
@@ -313,6 +344,9 @@
                                     <div class="url-import-flow-node-sub" data-node-subtitle>{{ $statusText }}</div>
                                     @if ($isParallel)
                                         <span class="url-import-flow-node-badge">并行</span>
+                                    @endif
+                                    @if ($analysisSourceLabel !== '')
+                                        <span class="url-import-flow-node-analysis-badge {{ $analysisSource === 'heuristic' ? 'is-heuristic' : 'is-ai' }}" data-node-analysis-source>{{ $analysisSourceLabel }}</span>
                                     @endif
                                 </div>
                                 @if (! $loop->last)
@@ -917,7 +951,8 @@
                     const row = root.querySelector(`[data-node-step-row="${step.key}"]`);
                     if (!row) return;
 
-                    const done = ['success', 'skipped'].includes(String(step.status));
+                    const done = String(step.status) === 'success';
+                    const skipped = String(step.status) === 'skipped';
                     const failed = String(step.status) === 'failed';
                     const queued = ['queued', 'running'].includes(String(step.status));
                     const isSequential = step.sequential !== false;
@@ -930,24 +965,40 @@
                     }
 
                     row.classList.toggle('is-done', done);
+                    row.classList.toggle('is-skipped', skipped);
                     row.classList.toggle('is-failed', failed);
                     row.classList.toggle('is-current', isCurrent);
                     row.classList.toggle('is-parallel', !isSequential);
 
-                    const dot = row.querySelector('.url-import-step-dot');
-                    dot?.classList.toggle('is-done', done);
-                    dot?.classList.toggle('is-failed', failed);
-                    dot?.classList.toggle('is-current', isCurrent);
-
-                    const iconName = done ? 'check' : (failed ? 'x' : (isCurrent ? 'loader-circle' : 'circle'));
-                    const icon = dot?.querySelector('i[data-lucide]');
-                    if (icon) {
-                        icon.setAttribute('data-lucide', iconName);
-                        icon.classList.toggle('animate-spin', isCurrent);
+                    const iconName = done
+                        ? 'check'
+                        : (skipped ? 'minus' : (failed ? 'x' : (isCurrent ? 'loader-circle' : 'circle')));
+                    const statusIcon = row.querySelector('.url-import-flow-node-status');
+                    if (statusIcon) {
+                        statusIcon.innerHTML = `<i data-lucide="${iconName}" class="h-3.5 w-3.5 ${isCurrent ? 'animate-spin' : ''}"></i>`;
                     }
 
                     const subtitle = row.querySelector('[data-node-subtitle]');
                     if (subtitle) subtitle.textContent = nodeSubtitleText(step);
+
+                    const analysisSource = step.analysis_source ? String(step.analysis_source) : '';
+                    let analysisBadge = row.querySelector('[data-node-analysis-source]');
+                    if (analysisSource === 'ai' || analysisSource === 'heuristic') {
+                        const label = analysisSource === 'heuristic' ? '启发式' : 'AI';
+                        if (!analysisBadge) {
+                            analysisBadge = document.createElement('span');
+                            analysisBadge.setAttribute('data-node-analysis-source', '');
+                            analysisBadge.className = 'url-import-flow-node-analysis-badge ' + (analysisSource === 'heuristic' ? 'is-heuristic' : 'is-ai');
+                            analysisBadge.textContent = label;
+                            row.appendChild(analysisBadge);
+                        } else {
+                            analysisBadge.textContent = label;
+                            analysisBadge.classList.toggle('is-heuristic', analysisSource === 'heuristic');
+                            analysisBadge.classList.toggle('is-ai', analysisSource === 'ai');
+                        }
+                    } else if (analysisBadge) {
+                        analysisBadge.remove();
+                    }
                 });
             };
 
@@ -1659,41 +1710,71 @@
 
     <div id="node-debug-modal" class="admin-modal-shell fixed inset-0 z-50 hidden" role="dialog" aria-modal="true" aria-labelledby="node-debug-title">
         <div class="admin-modal-backdrop absolute inset-0 bg-slate-900/45 backdrop-blur-sm" data-node-debug-close></div>
-        <div class="relative mx-auto mt-[3vh] flex h-[94vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
-            <div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+        <div class="relative mx-auto mt-[3vh] flex h-[94vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+            <div class="flex flex-col gap-4 border-b border-slate-200 bg-white px-6 py-5 text-slate-950 lg:flex-row lg:items-center lg:justify-between">
                 <div class="flex items-center gap-3">
-                    <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+                    <span class="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600 ring-1 ring-blue-100">
                         <i data-lucide="braces" class="h-4 w-4"></i>
                     </span>
-                    <div>
-                        <h3 id="node-debug-title" class="text-base font-semibold text-slate-950" data-node-debug-title>节点调试</h3>
-                        <p class="mt-0.5 text-xs text-slate-500" data-node-debug-subtitle>—</p>
+                    <div class="min-w-0">
+                        <h3 id="node-debug-title" class="truncate text-base font-semibold" data-node-debug-title>节点调试</h3>
+                        <p class="mt-1 text-xs text-slate-500" data-node-debug-subtitle>—</p>
                     </div>
                 </div>
-                <button type="button" data-node-debug-close class="admin-icon-btn" aria-label="{{ __('admin.common.close') }}">
-                    <i data-lucide="x" class="h-4 w-4"></i>
+                <div class="flex items-center gap-2">
+                    <span class="node-debug-chip" data-node-debug-status>等待</span>
+                    <span class="node-debug-chip" data-node-debug-duration>0 ms</span>
+                    <button type="button" data-node-debug-close class="admin-icon-btn" aria-label="{{ __('admin.common.close') }}">
+                        <i data-lucide="x" class="h-4 w-4"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-4 py-3" data-node-debug-tabs>
+                <button type="button" class="node-debug-tab is-active" data-node-debug-tab="input">
+                    <i data-lucide="log-in" class="h-3.5 w-3.5"></i>
+                    输入
+                </button>
+                <button type="button" class="node-debug-tab" data-node-debug-tab="output">
+                    <i data-lucide="log-out" class="h-3.5 w-3.5"></i>
+                    输出
+                </button>
+                <button type="button" class="node-debug-tab" data-node-debug-tab="prompt">
+                    <i data-lucide="message-square-text" class="h-3.5 w-3.5"></i>
+                    AI 提示词
+                </button>
+                <button type="button" class="node-debug-tab" data-node-debug-tab="error">
+                    <i data-lucide="triangle-alert" class="h-3.5 w-3.5"></i>
+                    错误
                 </button>
             </div>
-            <div class="flex flex-1 flex-col overflow-hidden">
-                <div class="flex flex-1 flex-col overflow-hidden border-r border-slate-200">
-                    <div class="flex items-center justify-between border-b border-slate-100 bg-slate-50/60 px-5 py-2.5">
-                        <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
-                            <i data-lucide="log-in" class="h-3.5 w-3.5 text-blue-500"></i>
-                            输入
-                        </div>
-                        <button type="button" data-node-debug-copy="input" class="rounded-md px-2 py-1 text-[11px] font-medium text-slate-500 transition hover:bg-slate-200/60 hover:text-slate-700">复制</button>
+            <div class="min-h-0 flex-1 overflow-hidden bg-white">
+                <div class="node-debug-panel h-full" data-node-debug-panel="input">
+                    <div class="node-debug-panel-head">
+                        <span>本节点收到的数据</span>
+                        <button type="button" data-node-debug-copy="input" class="node-debug-copy">复制</button>
                     </div>
-                    <pre class="flex-1 overflow-auto px-5 py-4 text-[12px] leading-6 text-slate-700" data-node-debug-input>加载中…</pre>
+                    <pre class="node-debug-pre" data-node-debug-input>加载中…</pre>
                 </div>
-                <div class="flex flex-1 flex-col overflow-hidden">
-                    <div class="flex items-center justify-between border-b border-slate-100 bg-slate-50/60 px-5 py-2.5">
-                        <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
-                            <i data-lucide="log-out" class="h-3.5 w-3.5 text-emerald-500"></i>
-                            输出
-                        </div>
-                        <button type="button" data-node-debug-copy="output" class="rounded-md px-2 py-1 text-[11px] font-medium text-slate-500 transition hover:bg-slate-200/60 hover:text-slate-700">复制</button>
+                <div class="node-debug-panel hidden h-full" data-node-debug-panel="output">
+                    <div class="node-debug-panel-head">
+                        <span>本节点产出并传给下一步</span>
+                        <button type="button" data-node-debug-copy="output" class="node-debug-copy">复制</button>
                     </div>
-                    <pre class="flex-1 overflow-auto px-5 py-4 text-[12px] leading-6 text-slate-700" data-node-debug-output>加载中…</pre>
+                    <pre class="node-debug-pre" data-node-debug-output>加载中…</pre>
+                </div>
+                <div class="node-debug-panel hidden h-full" data-node-debug-panel="prompt">
+                    <div class="node-debug-panel-head">
+                        <span>AI 调用提示词</span>
+                        <button type="button" data-node-debug-copy="prompt" class="node-debug-copy">复制</button>
+                    </div>
+                    <pre class="node-debug-pre" data-node-debug-prompt>加载中…</pre>
+                </div>
+                <div class="node-debug-panel hidden h-full" data-node-debug-panel="error">
+                    <div class="node-debug-panel-head">
+                        <span>错误与异常信息</span>
+                        <button type="button" data-node-debug-copy="error" class="node-debug-copy">复制</button>
+                    </div>
+                    <pre class="node-debug-pre" data-node-debug-error>加载中…</pre>
                 </div>
             </div>
         </div>
@@ -1732,12 +1813,58 @@
             const subtitleEl = modal?.querySelector('[data-node-debug-subtitle]');
             const inputEl = modal?.querySelector('[data-node-debug-input]');
             const outputEl = modal?.querySelector('[data-node-debug-output]');
+            const promptEl = modal?.querySelector('[data-node-debug-prompt]');
+            const errorEl = modal?.querySelector('[data-node-debug-error]');
+            const statusEl = modal?.querySelector('[data-node-debug-status]');
+            const durationEl = modal?.querySelector('[data-node-debug-duration]');
 
             const nodesBaseUrl = @json(route('admin.url-import.nodes', ['jobId' => $job->id]));
 
             const setLoading = () => {
                 if (inputEl) inputEl.textContent = '加载中…';
                 if (outputEl) outputEl.textContent = '加载中…';
+                if (promptEl) promptEl.textContent = '加载中…';
+                if (errorEl) errorEl.textContent = '加载中…';
+                if (statusEl) statusEl.textContent = '加载中';
+                if (durationEl) durationEl.textContent = '0 ms';
+            };
+
+            const setActiveTab = (name) => {
+                modal?.querySelectorAll('[data-node-debug-tab]').forEach((tab) => {
+                    tab.classList.toggle('is-active', tab.getAttribute('data-node-debug-tab') === name);
+                });
+                modal?.querySelectorAll('[data-node-debug-panel]').forEach((panel) => {
+                    panel.classList.toggle('hidden', panel.getAttribute('data-node-debug-panel') !== name);
+                });
+            };
+
+            const formatJson = (value, fallback) => {
+                if (value === null || value === undefined || value === '') return fallback;
+                if (typeof value === 'string') return value;
+                try {
+                    return JSON.stringify(value, null, 2);
+                } catch (e) {
+                    return String(value);
+                }
+            };
+
+            const formatPrompt = (prompt) => {
+                if (!prompt || prompt.available !== true) {
+                    return prompt?.message || '该节点没有独立保存 AI 提示词；历史任务或非 AI 节点只展示输入/输出。';
+                }
+                if (Array.isArray(prompt.items) && prompt.items.length > 0) {
+                    return prompt.items.map((item) => [
+                        `# ${item.node_label || item.node_key}`,
+                        item.system_prompt ? `\n## System\n${item.system_prompt}` : '',
+                        item.user_prompt ? `\n## User\n${item.user_prompt}` : '',
+                        Array.isArray(item.messages) && item.messages.length > 0 ? `\n## Messages\n${formatJson(item.messages, '')}` : '',
+                    ].join('\n')).join('\n\n---\n\n');
+                }
+                return [
+                    prompt.system_prompt ? `## System\n${prompt.system_prompt}` : '',
+                    prompt.user_prompt ? `## User\n${prompt.user_prompt}` : '',
+                    Array.isArray(prompt.messages) && prompt.messages.length > 0 ? `## Messages\n${formatJson(prompt.messages, '')}` : '',
+                ].filter(Boolean).join('\n\n') || prompt.message || '未记录提示词';
             };
 
             const open = () => {
@@ -1765,6 +1892,7 @@
                     subtitleEl.textContent = extra ? `${base} · ${extra}` : base;
                 };
                 setLoading();
+                setActiveTab('input');
                 open();
 
                 const params = new URLSearchParams({ node_key: nodeKey });
@@ -1779,30 +1907,42 @@
                             setSubtitle('输入来自 ' + data.input.from_node);
                         }
                         const pending = data?.status === 'pending';
+                        if (statusEl) statusEl.textContent = pending ? '待执行' : (data?.status || '完成');
+                        if (durationEl) durationEl.textContent = `${Number(data?.duration_ms || 0).toLocaleString()} ms`;
                         if (inputEl) {
                             inputEl.textContent = pending
                                 ? '(尚未执行)'
-                                : (data.input ? JSON.stringify(data.input, null, 2) : '(无输入)');
+                                : formatJson(data.input, '(无输入)');
                         }
                         if (outputEl) {
                             const intro = data?.message && data.status !== 'pending' ? `${data.message}\n\n` : '';
                             outputEl.textContent = pending
                                 ? (data.message || '该节点尚未执行，暂无调试数据')
                                 : (intro + (data.output && Object.keys(data.output).length > 0
-                                    ? JSON.stringify(data.output, null, 2)
+                                    ? formatJson(data.output, '(无输出)')
                                     : (data.error ? '✗ ' + data.error : '(无输出)')));
                         }
+                        if (promptEl) promptEl.textContent = pending ? '(尚未执行)' : formatPrompt(data.prompt);
+                        if (errorEl) errorEl.textContent = data.error ? data.error : '暂无错误';
                     })
                     .catch(() => {
                         if (inputEl) inputEl.textContent = '(尚未执行)';
                         if (outputEl) outputEl.textContent = '暂时无法获取节点数据，请稍后再试';
+                        if (promptEl) promptEl.textContent = '暂时无法获取提示词数据';
+                        if (errorEl) errorEl.textContent = '节点调试接口请求失败';
+                        if (statusEl) statusEl.textContent = '失败';
                     });
             };
+
+            modal?.querySelectorAll('[data-node-debug-tab]').forEach((tab) => {
+                tab.addEventListener('click', () => setActiveTab(tab.getAttribute('data-node-debug-tab') || 'input'));
+            });
 
             modal?.querySelectorAll('[data-node-debug-copy]').forEach((btn) => {
                 btn.addEventListener('click', async () => {
                     const target = btn.getAttribute('data-node-debug-copy');
-                    const text = target === 'input' ? inputEl?.textContent : outputEl?.textContent;
+                    const source = target === 'input' ? inputEl : (target === 'output' ? outputEl : (target === 'prompt' ? promptEl : errorEl));
+                    const text = source?.textContent;
                     if (!text) return;
                     try {
                         await navigator.clipboard.writeText(text);

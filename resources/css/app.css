@@ -754,7 +754,10 @@
     }
 
     .url-import-pipeline {
-        @apply relative grid gap-0 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5;
+        @apply relative overflow-hidden p-5;
+        background:
+            radial-gradient(circle at 20% 10%, rgba(59, 130, 246, 0.08), transparent 34%),
+            radial-gradient(circle at 80% 70%, rgba(20, 184, 166, 0.06), transparent 36%);
     }
 
     .url-import-pipeline-step {
@@ -1243,30 +1246,73 @@
     
 /* ====== Dify-style 节点流图 ====== */
 .url-import-flow {
-    @apply relative w-full py-5 px-3;
-    background:
-        radial-gradient(circle at 12% 0%, rgba(59, 130, 246, 0.06), transparent 40%),
-        radial-gradient(circle at 88% 100%, rgba(139, 92, 246, 0.05), transparent 40%);
+    @apply relative w-full overflow-x-auto overflow-y-visible px-1 py-6;
+    scrollbar-width: thin;
+    scrollbar-color: #cbd5e1 transparent;
+}
+
+.url-import-flow::-webkit-scrollbar {
+    height: 8px;
+}
+
+.url-import-flow::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.url-import-flow::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 9999px;
 }
 
 .url-import-flow-track {
-    @apply flex flex-wrap items-stretch justify-center gap-3;
+    @apply relative flex min-w-full items-stretch justify-start gap-5;
+    width: max-content;
+    padding-right: 1.5rem;
+}
+
+.url-import-flow-track::before {
+    content: "";
+    position: absolute;
+    left: 2.25rem;
+    right: 3rem;
+    top: 50%;
+    height: 2px;
+    transform: translateY(-50%);
+    background: linear-gradient(90deg, rgba(16, 185, 129, 0.28), rgba(59, 130, 246, 0.28), rgba(139, 92, 246, 0.18));
+    pointer-events: none;
+}
+
+.url-import-flow-track::after {
+    content: "";
+    position: absolute;
+    left: 2.25rem;
+    right: 3rem;
+    top: 50%;
+    height: 2px;
+    transform: translateY(-50%);
+    background: linear-gradient(90deg, transparent 0%, rgba(59, 130, 246, 0.0) 20%, rgba(59, 130, 246, 0.85) 48%, rgba(16, 185, 129, 0.85) 52%, transparent 80%);
+    background-size: 260px 100%;
+    animation: url-import-flow-energy 2.8s linear infinite;
+    pointer-events: none;
 }
 
 .url-import-flow-node {
-    @apply relative flex w-[170px] cursor-pointer flex-col gap-1.5 rounded-xl border bg-white p-3 shadow-sm transition;
-    border-color: #e2e8f0;
+    @apply relative z-10 flex min-h-[6.75rem] w-[190px] shrink-0 cursor-pointer flex-col gap-1.5 rounded-lg border bg-white/95 p-3 shadow-sm backdrop-blur transition;
+    border-color: rgba(203, 213, 225, 0.9);
     transition: transform .15s ease, box-shadow .2s ease, border-color .2s ease;
 }
+.url-import-flow-node:focus-visible {
+    @apply outline-none ring-2 ring-blue-500 ring-offset-2;
+}
 .url-import-flow-node:hover {
-    @apply -translate-y-0.5 border-blue-300 shadow-md shadow-blue-500/10;
+    @apply -translate-y-1 border-blue-300 shadow-lg shadow-blue-500/15;
 }
 
 .url-import-flow-node.is-done {
-    @apply border-emerald-200 bg-gradient-to-br from-emerald-50/70 to-white;
+    @apply border-emerald-200 bg-gradient-to-br from-emerald-50/80 to-white;
 }
 .url-import-flow-node.is-current {
-    @apply border-blue-400 bg-gradient-to-br from-blue-50 to-white shadow-lg shadow-blue-500/20;
+    @apply border-blue-400 bg-gradient-to-br from-blue-50 to-white shadow-xl shadow-blue-500/20;
     animation: url-import-node-pulse 1.6s ease-in-out infinite;
 }
 .url-import-flow-node.is-failed {
@@ -1276,7 +1322,7 @@
 .url-import-flow-node::after {
     content: "";
     position: absolute;
-    right: -10px;
+    right: -22px;
     top: 50%;
     transform: translateY(-50%);
     width: 20px;
@@ -1291,7 +1337,7 @@
 .url-import-flow-node.is-parallel::before {
     content: "";
     position: absolute;
-    right: -10px;
+    right: -22px;
     top: 50%;
     transform: translateY(-50%);
     width: 20px;
@@ -1307,7 +1353,7 @@
 .url-import-flow-node.is-parallel::after {
     width: 8px !important;
     height: 8px !important;
-    right: -14px !important;
+    right: 0.5rem !important;
     top: -6px !important;
     transform: none !important;
     border-radius: 9999px;
@@ -1335,10 +1381,13 @@
     @apply flex items-center justify-between;
 }
 .url-import-flow-node-icon {
-    @apply flex h-7 w-7 items-center justify-center rounded-lg bg-slate-100 text-slate-500;
+    @apply flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-500 ring-1 ring-slate-200/80;
 }
 .url-import-flow-node.is-done .url-import-flow-node-icon {
     @apply bg-emerald-100 text-emerald-700;
+}
+.url-import-flow-node.is-skipped .url-import-flow-node-icon {
+    @apply bg-slate-50 text-slate-400 ring-slate-200/60;
 }
 .url-import-flow-node.is-current .url-import-flow-node-icon {
     @apply bg-blue-100 text-blue-700;
@@ -1348,10 +1397,13 @@
 }
 
 .url-import-flow-node-status {
-    @apply flex h-5 w-5 items-center justify-center rounded-full;
+    @apply flex h-5 w-5 items-center justify-center rounded-full shadow-sm;
 }
 .url-import-flow-node.is-done .url-import-flow-node-status {
     @apply bg-emerald-500 text-white;
+}
+.url-import-flow-node.is-skipped .url-import-flow-node-status {
+    @apply bg-slate-200 text-slate-500;
 }
 .url-import-flow-node.is-failed .url-import-flow-node-status {
     @apply bg-red-500 text-white;
@@ -1361,7 +1413,7 @@
 }
 
 .url-import-flow-node-title {
-    @apply text-[13px] font-semibold leading-tight text-slate-800;
+    @apply mt-1 text-[13px] font-semibold leading-tight text-slate-900;
     word-break: break-all;
 }
 .url-import-flow-node-sub {
@@ -1372,6 +1424,50 @@
     @apply absolute right-2 top-2 rounded bg-violet-100 px-1.5 py-0.5 text-[9px] font-semibold text-violet-700;
 }
 
+.url-import-flow-node-analysis-badge {
+    @apply absolute bottom-2 right-2 rounded bg-blue-100 px-1.5 py-0.5 text-[9px] font-semibold text-blue-700;
+}
+
+.url-import-flow-node-analysis-badge.is-heuristic {
+    @apply bg-amber-100 text-amber-700;
+}
+
+.url-import-flow-kicker {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-blue-100 bg-blue-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-blue-700;
+}
+
+.url-import-flow-node-index {
+    @apply text-[10px] font-semibold tabular-nums text-slate-400;
+}
+
+.node-debug-chip {
+    @apply inline-flex h-7 items-center rounded-full border border-slate-200 bg-slate-50 px-3 text-xs font-semibold text-slate-600;
+}
+
+.node-debug-tab {
+    @apply inline-flex h-9 items-center gap-1.5 rounded-md px-3 text-xs font-semibold text-slate-500 transition hover:bg-white hover:text-slate-900;
+}
+.node-debug-tab.is-active {
+    @apply bg-white text-blue-700 shadow-sm ring-1 ring-slate-200;
+}
+.node-debug-panel {
+    @apply min-h-0 flex-col overflow-hidden;
+    display: flex;
+}
+.node-debug-panel.hidden {
+    display: none;
+}
+.node-debug-panel-head {
+    @apply flex items-center justify-between border-b border-slate-100 bg-white px-5 py-3 text-xs font-semibold text-slate-500;
+}
+.node-debug-copy {
+    @apply rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-500 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700;
+}
+.node-debug-pre {
+    @apply flex-1 overflow-auto bg-slate-50 px-5 py-4 font-mono text-[12px] leading-6 text-slate-700;
+    tab-size: 2;
+}
+
 /* 老式横向箭头节点保留兼容，但默认隐藏（新方案用卡片内 ::after） */
 .url-import-flow-arrow {
     display: none !important;
@@ -1379,6 +1475,11 @@
 @keyframes url-import-node-pulse {
     0%, 100% { box-shadow: 0 10px 25px -5px rgba(59, 130, 246, 0.18); }
     50% { box-shadow: 0 10px 35px -5px rgba(59, 130, 246, 0.32); }
+}
+
+@keyframes url-import-flow-energy {
+    from { background-position: 0 0; }
+    to { background-position: 260px 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {

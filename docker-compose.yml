@@ -1,5 +1,12 @@
 name: geoflow-laravel
 
+# 容器内必须用服务名连库/Redis；.env 里为宿主机 Windows 配的 127.0.0.1:15432 在容器内无效。
+x-docker-env: &docker-env
+  DB_HOST: postgres
+  DB_PORT: 5432
+  REDIS_HOST: redis
+  REDIS_PORT: 6379
+
 services:
   postgres:
     image: ${PGVECTOR_IMAGE:-pgvector/pgvector:pg16}
@@ -41,6 +48,8 @@ services:
     # 交给 entrypoint 执行自动初始化（生成 APP_KEY / migrate / seed）
     command: ["php", "artisan", "about"]
     environment:
+      <<: *docker-env
+      COMPOSER_ON_START: "false"
       AUTO_GENERATE_APP_KEY: "true"
       AUTO_INIT_ONCE: "true"
     volumes:
@@ -65,6 +74,7 @@ services:
     env_file:
       - ./.env
     environment:
+      <<: *docker-env
       COMPOSER_ON_START: "false"
       PHP_CLI_SERVER_WORKERS: "8"
       APP_KEY: ${APP_KEY}
@@ -92,6 +102,7 @@ services:
     env_file:
       - ./.env
     environment:
+      <<: *docker-env
       COMPOSER_ON_START: "false"
     command: ["php", "artisan", "queue:work", "redis", "--queue=geoflow,distribution,default", "--sleep=1", "--tries=1", "--timeout=900"]
     volumes:
@@ -114,6 +125,7 @@ services:
     env_file:
       - ./.env
     environment:
+      <<: *docker-env
       COMPOSER_ON_START: "false"
     command: ["php", "artisan", "schedule:work"]
     volumes:
@@ -136,6 +148,7 @@ services:
     env_file:
       - ./.env
     environment:
+      <<: *docker-env
       COMPOSER_ON_START: "false"
     command: ["php", "artisan", "reverb:start", "--host=0.0.0.0", "--port=8080"]
     ports:

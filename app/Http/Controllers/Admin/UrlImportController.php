@@ -403,6 +403,7 @@ class UrlImportController extends Controller
                 'duration_ms' => (int) ($log->duration_ms ?? 0),
                 'attempt' => (int) $log->attempt,
                 'error' => (string) ($log->error_message ?? '') ?: null,
+                'analysis_source' => isset($byKey['ai_analysis_fallback']) ? 'heuristic' : 'ai',
                 'created_at' => $log->created_at?->toIso8601String(),
                 'fast_one_shot' => str_contains((string) $log->node_label, 'ä¸€ç«™å¼'),
             ];
@@ -561,7 +562,7 @@ class UrlImportController extends Controller
             $pipeline[] = ['key' => 'bocha_search', 'label' => 'åšæŸ¥æœç´¢', 'sequential' => true, 'icon' => 'search'];
             $pipeline[] = ['key' => 'web_research', 'label' => (string) $webResearch['label'], 'sequential' => true, 'icon' => 'sparkles'];
         }
-        // AI ·ÖÎö½Úµã£ºfast Ò»Õ¾Ê½Ä£Ê½Ö»ÅÜ 1 ¸ö´ó½Úµã£»·Ö²½Ä£Ê½²ğ 5 ¸ö×Ó½Úµã
+        // AI ï¿½ï¿½ï¿½ï¿½ï¿½Úµã£ºfast Ò»Õ¾Ê½Ä£Ê½Ö»ï¿½ï¿½ 1 ï¿½ï¿½ï¿½ï¿½Úµã£»ï¿½Ö²ï¿½Ä£Ê½ï¿½ï¿½ 5 ï¿½ï¿½ï¿½Ó½Úµï¿½
         if (! empty($aiAggregate['fast_one_shot'])) {
             $pipeline[] = ['key' => 'ai_analysis', 'label' => (string) $aiAggregate['label'], 'sequential' => true, 'icon' => 'brain'];
         } else {

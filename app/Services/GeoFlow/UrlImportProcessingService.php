@@ -174,14 +174,6 @@ final class UrlImportProcessingService
             $parseMs = (int) ($collection['parse_ms'] ?? 0);
 
             $this->log($job, 'info', __('admin.url_import.log.fetch_done', ['length' => strlen((string) ($fetched['html'] ?? ''))]));
-            $this->logNode(
-                $job,
-                'fetch',
-                '读取网页',
-                ['url' => (string) $job->normalized_url],
-                $fetchOutput,
-                $fetchMs
-            );
 
             $this->updateStep($job, 'page_json', 25);
             $this->log($job, 'info', __('admin.url_import.log.page_json_start'));
@@ -191,14 +183,8 @@ final class UrlImportProcessingService
             $this->log($job, 'info', __('admin.url_import.log.page_json_done', [
                 'chars' => mb_strlen((string) data_get($parsed, 'raw_json.text', ''), 'UTF-8'),
             ]));
-            $this->logNode(
-                $job,
-                'parse',
-                '提取正文',
-                $this->nodeChainInput('fetch', $fetchOutput),
-                $parseOutput,
-                $parseMs
-            );
+            // 注意：fetch / parse 节点 log 已在 collectPageMaterials() 内部按物理顺序写入（fetch → parse → bocha → ai），
+            // 此处不再重复记录，避免同 key 出现多行日志导致前端轮询出现「下游先于上游绿勾」。
 
             $webOut = (array) ($collection['web_research_output'] ?? []);
             $webStatus = 'success';
@@ -856,6 +842,26 @@ final class UrlImportProcessingService
         if ($this->directHasIdentificationHints($directParsed)
             && $this->webResearchNeedsDirectRetry($aiOutcome, $directParsed, $job)
             && ($this->pipelineBudget?->hasTimeFor('web_research_retry') ?? true)) {
+            $this->logNode(
+                $job,
+                'web_research_retry',
+                'AI 全网调研（带主体上下文重试）',
+                [
+                    'reason' => 'first_pass_missing_company_or_queries',
+                    'first_company' => trim((string) data_get($aiOutcome, 'research.company_name', '')),
+                    'first_queries' => array_values((array) data_get($aiOutcome, 'search.queries', [])),
+                    'feeds_into' => 'web_research_ai',
+                    'chain_note' => '首次 AI 调研未识别主体或未用主体词检索；用官网解析出的主体名重做一次',
+                ],
+                [
+                    'triggered' => true,
+                    'feeds_into' => 'web_research_ai',
+                    'chain_note' => '把官网解析出的公司名带进提示词后再次调 AI 调研',
+                ],
+                0,
+                1,
+                'success'
+            );
             $aiOutcome = $this->collectAiWebResearch($jobId, $directParsed);
         }
 
@@ -993,20 +999,58 @@ final class UrlImportProcessingService
         $parseOutput['direct_text_chars'] = (int) ($merged['direct_meta']['text_chars'] ?? 0);
         $parseOutput['ai_research_text_chars'] = (int) ($merged['ai_meta']['text_chars'] ?? 0);
 
+        $fetchOutput = [
+            'status' => (int) ($fetched['status'] ?? 0),
+            'html_length' => strlen((string) ($fetched['html'] ?? '')),
+            'is_bot_challenge' => (bool) ($fetched['is_bot_challenge'] ?? false),
+            'html_preview' => Str::limit((string) ($fetched['html'] ?? ''), 2000, '…'),
+            'url' => (string) $job->normalized_url,
+            'domain' => (string) $job->source_domain,
+            'feeds_into' => 'parse',
+            'chain_note' => '原始 HTML，供正文解析使用',
+        ];
+        $fetchMs = (int) ($directOutcome['fetch_ms'] ?? 0);
+        $parseMs = (int) ($directOutcome['parse_ms'] ?? 0);
+
+        // ===== 节点记录：fetch（顺序：先 fetch、再 parse、最后 bocha_search / web_research_ai）=====
+        // 关键：物理写入顺序与实际执行顺序一致，避免前端轮询时下游节点先于上游节点绿勾。
+        UrlImportNodeRecorder::record(
+            (int) $job->id,
+            'fetch',
+            '读取网页',
+            $this->resolveFetchNodeStatus($fetched),
+            [
+                'url' => (string) $job->normalized_url,
+                'chain_note' => '读取网页：HTTP 拉取 + 编码识别',
+            ],
+            array_merge($fetchOutput, [
+                'feeds_into' => 'parse',
+                'chain_note' => '原始 HTML，供正文解析使用',
+            ]),
+            $fetchMs
+        );
+
+        // ===== 节点记录：parse（紧随 fetch）=====
+        UrlImportNodeRecorder::record(
+            (int) $job->id,
+            'parse',
+            '提取正文',
+            $this->resolveParseNodeStatus($directParsed, $fetched),
+            $this->nodeChainInput('fetch', $fetchOutput),
+            array_merge($parseOutput, [
+                'feeds_into' => $webResearchEnabled ? 'bocha_search' : 'ai_analysis',
+                'chain_note' => $webResearchEnabled
+                    ? '提取正文：清洗后的页面文本，供博查 + AI 调研'
+                    : '提取正文：清洗后的页面文本，供 AI 知识库分析',
+            ]),
+            $parseMs
+        );
+
         return [
             'fetched' => $fetched,
             'parsed' => $parsed,
             'collection_mode' => $collectionMode,
-            'fetch_output' => [
-                'status' => (int) ($fetched['status'] ?? 0),
-                'html_length' => strlen((string) ($fetched['html'] ?? '')),
-                'is_bot_challenge' => (bool) ($fetched['is_bot_challenge'] ?? false),
-                'html_preview' => Str::limit((string) ($fetched['html'] ?? ''), 2000, '…'),
-                'url' => (string) $job->normalized_url,
-                'domain' => (string) $job->source_domain,
-                'feeds_into' => 'parse',
-                'chain_note' => '原始 HTML，供正文解析使用',
-            ],
+            'fetch_output' => $fetchOutput,
             'parse_output' => $parseOutput,
             'fetch_ms' => (int) ($directOutcome['fetch_ms'] ?? 0),
             'parse_ms' => (int) ($directOutcome['parse_ms'] ?? 0),
@@ -1974,11 +2018,22 @@ final class UrlImportProcessingService
      */
     private function buildAnalysis(array $parsed, UrlImportJob $job, ?array $pageJson = null): array
     {
-        if ($this->isFastPipelineMode()) {
-            return $this->buildAnalysisFast($parsed, $job, $pageJson);
-        }
+        try {
+            if ($this->isFastPipelineMode()) {
+                return $this->buildAnalysisFast($parsed, $job, $pageJson);
+            }
 
-        return $this->buildAnalysisStandard($parsed, $job, $pageJson);
+            return $this->buildAnalysisStandard($parsed, $job, $pageJson);
+        } catch (Throwable $exception) {
+            $pageJson ??= $this->buildPageJson($parsed, $job);
+
+            return $this->buildAnalysisHeuristicFallback(
+                $parsed,
+                $job,
+                $pageJson,
+                $exception->getMessage()
+            );
+        }
     }
 
     private function isFastPipelineMode(): bool
@@ -2015,7 +2070,19 @@ final class UrlImportProcessingService
 
         $remaining = $this->pipelineBudget->remainingSeconds();
 
-        return max(30, min($configured, $remaining - 20));
+        return max(30, min($configured, (int) $remaining - 20));
+    }
+
+    private function analysisAiTimeoutSeconds(): int
+    {
+        $configured = max(30, min(180, (int) config('geoflow.url_import_analysis_ai_timeout', 60)));
+        if ($this->pipelineBudget === null) {
+            return $configured;
+        }
+
+        $remaining = $this->pipelineBudget->remainingSeconds();
+
+        return max(30, min($configured, (int) $remaining - 15));
     }
 
     private function fastMaxAnalysisAttempts(): int
@@ -2208,6 +2275,8 @@ final class UrlImportProcessingService
                 'pipeline_mode' => 'standard',
                 'combined_with' => 'ai_keywords',
                 'knowledge_chars' => mb_strlen($aiKnowledge, 'UTF-8'),
+                'system_prompt' => $derivativesSystemPrompt,
+                'user_prompt' => Str::limit($derivativesUserPrompt, 6000, '…'),
             ]
         ),
         ['titles' => $aiTitles],
@@ -2217,20 +2286,25 @@ final class UrlImportProcessingService
     $this->log($job, 'info', __('admin.url_import.log.titles_done', ['count' => count($aiTitles)]));
                     $this->log($job, 'info', __('admin.url_import.log.ai_analyze_done', ['model' => $this->modelDisplayName($model)]));
 
-                    return [
-                        'summary' => $aiSummary !== '' ? $aiSummary : Str::limit($text, 220, '...'),
-                        'library_name' => $aiLibraryName !== '' ? $aiLibraryName : $libraryName,
-                        'keywords' => $aiKeywords,
-                        'titles' => $aiTitles,
-                        'knowledge_markdown' => $aiKnowledge,
-                        'analysis_source' => 'ai',
-                        'model' => [
-                            'id' => (int) $model->id,
-                            'name' => (string) $model->name,
+                    return $this->fallbackOnIncompleteAi(
+                        $job,
+                        [
+                            'summary' => $aiSummary !== '' ? $aiSummary : Str::limit($text, 220, '...'),
+                            'library_name' => $aiLibraryName !== '' ? $aiLibraryName : $libraryName,
+                            'keywords' => $aiKeywords,
+                            'titles' => $aiTitles,
+                            'knowledge_markdown' => $aiKnowledge,
+                            'model' => [
+                                'id' => (int) $model->id,
+                                'name' => (string) $model->name,
+                            ],
+                            'cleaned' => $cleaned,
                         ],
-                        'page_json' => $pageJson,
-                        'cleaned' => $cleaned,
-                    ];
+                        $parsed,
+                        $pageJson,
+                        $this->modelDisplayName($model),
+                        $attempt
+                    );
                 } catch (Throwable $exception) {
                     $message = $this->normalizeAiErrorMessage($exception, $model);
                     $this->logNode(
@@ -2272,6 +2346,203 @@ final class UrlImportProcessingService
     }
 
     /**
+     * AI 全失败或预算不足时：用已抓取的官网正文 + 规则关键词/标题完成采集，避免任务卡死。
+     *
+     * @param  array<string, mixed>  $parsed
+     * @param  array<string, mixed>  $pageJson
+     * @return array{summary:string,library_name:string,keywords:list<string>,titles:list<string>,knowledge_markdown:string,analysis_source:string,model:mixed,page_json:array<string,mixed>,cleaned:array<string,mixed>}
+     */
+    private function buildAnalysisHeuristicFallback(array $parsed, UrlImportJob $job, array $pageJson, string $reason): array
+    {
+        $title = (string) ($parsed['title'] ?? '');
+        $text = (string) ($parsed['text'] ?? '');
+        $summary = trim((string) ($parsed['summary'] ?? ''));
+        if ($summary === '') {
+            $summary = Str::limit($text !== '' ? $text : $title, 220, '...');
+        }
+        $libraryName = $this->resolveLibraryBaseName($job, [], $parsed);
+        $keywords = $this->extractFallbackKeywords($parsed, $job);
+        if ($keywords === []) {
+            $keywords = ['企业介绍', '产品服务'];
+        }
+        $knowledgeMarkdown = UrlImportTextSanitizer::cleanMarkdown(
+            $this->buildKnowledgeMarkdown($parsed, $job, $keywords)
+        );
+        $titles = $this->generateTitles($title !== '' ? $title : $libraryName, $keywords);
+        $minTitles = max(4, (int) config('geoflow.url_import_fast.min_decision_titles', 10));
+        if (count($titles) < $minTitles) {
+            $titles = array_slice(array_values(array_unique(array_merge(
+                $titles,
+                $this->generateTitles($libraryName, array_slice($keywords, 0, 6))
+            ))), 0, max(12, (int) config('geoflow.url_import_fast.max_titles', 24)));
+        }
+
+        $cleaned = [
+            'title' => $title,
+            'summary' => $summary,
+            'text' => UrlImportTextSanitizer::cleanMarkdown($text),
+        ];
+
+        $this->log($job, 'warning', 'AI 分析不可用，已用官网正文规则降级完成采集：'.Str::limit($reason, 240, '…'));
+        $this->logNode(
+            $job,
+            'ai_analysis_fallback',
+            'AI 分析降级（规则正文）',
+            ['reason' => Str::limit($reason, 500, '…'), 'pipeline_mode' => $this->isFastPipelineMode() ? 'fast' : 'standard'],
+            [
+                'analysis_source' => 'heuristic',
+                'knowledge_chars' => mb_strlen($knowledgeMarkdown, 'UTF-8'),
+                'keywords' => $keywords,
+                'titles_count' => count($titles),
+            ],
+            0,
+            1,
+            'success'
+        );
+
+        return [
+            'summary' => $summary,
+            'library_name' => $libraryName,
+            'keywords' => $keywords,
+            'titles' => $titles,
+            'knowledge_markdown' => $knowledgeMarkdown,
+            'analysis_source' => 'heuristic',
+            'model' => null,
+            'page_json' => $pageJson,
+            'cleaned' => $cleaned,
+        ];
+    }
+
+    /**
+     * 校验 AI 分析返回的字段完整性：knowledge_markdown 字数 / 9 节结构、keywords 数量、titles 数量、summary / library_name 非空。
+     * 返回空数组 = 完整；返回问题列表 = 触发降级。
+     *
+     * @param  array{summary:string, library_name:string, knowledge_markdown:string, keywords:list<string>, titles:list<string>}  $ai
+     * @return list<string>
+     */
+    private function validateAnalysisResult(array $ai): array
+    {
+        $issues = [];
+        $km = trim((string) ($ai['knowledge_markdown'] ?? ''));
+        $kmMin = max(800, (int) config('geoflow.url_import_fast.knowledge_min_chars', 2000) - 800);
+        if (mb_strlen($km, 'UTF-8') < $kmMin) {
+            $issues[] = 'knowledge_markdown 太短（'.mb_strlen($km, 'UTF-8').'/'.$kmMin.' 字符）';
+        }
+        $h1Count = preg_match_all('/^# /um', $km) ?: 0;
+        $h2Count = preg_match_all('/^## /um', $km) ?: 0;
+        $missingStructure = [];
+        if ($h1Count < 1) {
+            $missingStructure[] = 'H1（# 标题）';
+        }
+        if ($h2Count < 2) {
+            $missingStructure[] = 'H2（## 二级标题，至少 2 个）';
+        }
+        if (mb_strpos($km, '产品') === false && mb_strpos($km, '方案') === false) {
+            $missingStructure[] = '产品/方案相关段落';
+        }
+        if (mb_strpos($km, '联系') === false && mb_strpos($km, '电话') === false && mb_strpos($km, '邮箱') === false) {
+            $missingStructure[] = '联系方式段落';
+        }
+        if ($missingStructure !== []) {
+            $issues[] = 'knowledge_markdown 缺结构：'.implode('、', $missingStructure);
+        }
+        $titleCount = count((array) ($ai['titles'] ?? []));
+        $minTitles = max(4, (int) config('geoflow.url_import_fast.min_decision_titles', 10));
+        if ($titleCount < $minTitles) {
+            $issues[] = 'titles 不足（'.$titleCount.'/'.$minTitles.'）';
+        }
+        $keywordCount = count((array) ($ai['keywords'] ?? []));
+        if ($keywordCount < 3) {
+            $issues[] = 'keywords 不足（'.$keywordCount.'/3）';
+        }
+        if (trim((string) ($ai['summary'] ?? '')) === '') {
+            $issues[] = 'summary 缺失';
+        }
+        if (trim((string) ($ai['library_name'] ?? '')) === '') {
+            $issues[] = 'library_name 缺失';
+        }
+
+        return $issues;
+    }
+
+    /**
+     * 在 AI 成功返回但字段不完整时，记录降级原因、记节点日志、并返回启发式 fallback 结果。
+     * 统一封装，避免三处 AI 路径里都重复写完整性校验 + 降级逻辑。
+     *
+     * @param  array{summary:string, library_name:string, knowledge_markdown:string, keywords:list<string>, titles:list<string>}  $ai
+     * @param  array<string, mixed>  $parsed
+     * @param  array<string, mixed>  $pageJson
+     * @return array{summary:string,library_name:string,keywords:list<string>,titles:list<string>,knowledge_markdown:string,analysis_source:string,model:mixed,page_json:array<string,mixed>,cleaned:array<string,mixed>}
+     */
+    private function fallbackOnIncompleteAi(UrlImportJob $job, array $ai, array $parsed, array $pageJson, string $modelName, int $attempt): array
+    {
+        $issues = $this->validateAnalysisResult($ai);
+        if ($issues === []) {
+            return [
+                'summary' => $ai['summary'],
+                'library_name' => $ai['library_name'],
+                'keywords' => $ai['keywords'],
+                'titles' => $ai['titles'],
+                'knowledge_markdown' => $ai['knowledge_markdown'],
+                'analysis_source' => 'ai',
+                'model' => $ai['model'] ?? null,
+                'page_json' => $pageJson,
+                'cleaned' => $ai['cleaned'] ?? [],
+            ];
+        }
+
+        $this->log($job, 'warning', 'AI 分析字段不完整：'.implode('；', $issues));
+        $this->logNode(
+            $job,
+            'ai_analysis_integrity',
+            'AI 分析完整性',
+            ['model' => $modelName, 'attempt' => $attempt, 'issues' => $issues],
+            ['km_chars' => mb_strlen((string) ($ai['knowledge_markdown'] ?? ''), 'UTF-8'), 'title_count' => count((array) ($ai['titles'] ?? [])), 'keyword_count' => count((array) ($ai['keywords'] ?? []))],
+            0,
+            $attempt,
+            'failed',
+            'AI 输出关键字段缺失，触发启发式兜底'
+        );
+
+        return $this->buildAnalysisHeuristicFallback($parsed, $job, $pageJson, 'ai_response_incomplete');
+    }
+
+    /**
+     * @param  array<string, mixed>  $parsed
+     * @return list<string>
+     */
+    private function extractFallbackKeywords(array $parsed, UrlImportJob $job): array
+    {
+        $candidates = [];
+        $options = json_decode((string) $job->options_json, true);
+        $options = is_array($options) ? $options : [];
+        foreach (['company_name', 'brand_name', 'project_name'] as $key) {
+            $value = trim((string) ($options[$key] ?? ''));
+            if ($value !== '') {
+                $candidates[] = $value;
+            }
+        }
+
+        $title = (string) ($parsed['title'] ?? '');
+        foreach (preg_split('/[_|\/,，、]+/u', $title) ?: [] as $part) {
+            $part = trim((string) $part);
+            if ($part !== '') {
+                $candidates[] = $part;
+            }
+        }
+
+        $text = (string) ($parsed['text'] ?? '');
+        if (preg_match_all('/[\p{Han}A-Za-z0-9]{2,12}系统/u', $text, $matches)) {
+            $candidates = array_merge($candidates, $matches[0]);
+        }
+        if (preg_match_all('/[\p{Han}A-Za-z0-9]{2,10}终端/u', $text, $terminalMatches)) {
+            $candidates = array_merge($candidates, $terminalMatches[0]);
+        }
+
+        return $this->cleanKeywordList($candidates);
+    }
+
+    /**
      * 快速流水线：2 次 AI（清洗+知识库、关键词+标题），目标约 5 分钟内完成且保持入库质量。
      *
      * @param  array<string, mixed>  $parsed
@@ -2294,6 +2565,10 @@ final class UrlImportProcessingService
         $single = $this->tryBuildAnalysisSingleShot($parsed, $job, $pageJson, $chunkIds);
         if ($single !== null) {
             return $single;
+        }
+
+        if ($this->pipelineBudget !== null && ! $this->pipelineBudget->hasTimeFor('ai_analysis')) {
+            return $this->buildAnalysisHeuristicFallback($parsed, $job, $pageJson, 'pipeline_budget_exhausted');
         }
 
         return $this->buildAnalysisFastTwoStep($parsed, $job, $pageJson);
@@ -2340,7 +2615,13 @@ final class UrlImportProcessingService
                         $chunkIds,
                         trim($this->latestPromptContent('description')),
                     );
-                    $raw = $this->requestAiJson($runtime, $systemPrompt, $userPrompt);
+                    $raw = $this->requestAiJson(
+                        $runtime,
+                        $systemPrompt,
+                        $userPrompt,
+                        null,
+                        $this->analysisAiTimeoutSeconds()
+                    );
                     $durationMs = (int) round((microtime(true) - $start) * 1000);
 
                     $cleaned = $this->normalizeCleanedPage($raw, $parsed);
@@ -2453,20 +2734,25 @@ final class UrlImportProcessingService
 
                     $this->log($job, 'info', __('admin.url_import.log.ai_analyze_done', ['model' => $this->modelDisplayName($model)]));
 
-                    return [
-                        'summary' => $aiSummary !== '' ? $aiSummary : Str::limit($text, 220, '...'),
-                        'library_name' => $aiLibraryName !== '' ? $aiLibraryName : $libraryName,
-                        'keywords' => $aiKeywords,
-                        'titles' => $aiTitles,
-                        'knowledge_markdown' => $aiKnowledge,
-                        'analysis_source' => 'ai',
-                        'model' => [
-                            'id' => (int) $model->id,
-                            'name' => (string) $model->name,
+                    return $this->fallbackOnIncompleteAi(
+                        $job,
+                        [
+                            'summary' => $aiSummary !== '' ? $aiSummary : Str::limit($text, 220, '...'),
+                            'library_name' => $aiLibraryName !== '' ? $aiLibraryName : $libraryName,
+                            'keywords' => $aiKeywords,
+                            'titles' => $aiTitles,
+                            'knowledge_markdown' => $aiKnowledge,
+                            'model' => [
+                                'id' => (int) $model->id,
+                                'name' => (string) $model->name,
+                            ],
+                            'cleaned' => $cleaned,
                         ],
-                        'page_json' => $pageJson,
-                        'cleaned' => $cleaned,
-                    ];
+                        $parsed,
+                        $pageJson,
+                        $this->modelDisplayName($model),
+                        $attempt
+                    );
                 } catch (Throwable $exception) {
                     $message = $this->normalizeAiErrorMessage($exception, $model);
                     $this->logNode(
@@ -2595,6 +2881,8 @@ final class UrlImportProcessingService
                                 'model' => $this->modelDisplayName($model),
                                 'pipeline_mode' => 'fast',
                                 'combined_with' => 'ai_clean',
+                                'system_prompt' => $materialSystemPrompt,
+                                'user_prompt' => Str::limit($materialUserPrompt, 6000, '…'),
                             ]
                         ),
                         $knowledgeOutput,
@@ -2665,6 +2953,8 @@ final class UrlImportProcessingService
                                 'pipeline_mode' => 'fast',
                                 'combined_with' => 'ai_keywords',
                                 'knowledge_chars' => mb_strlen($aiKnowledge, 'UTF-8'),
+                                'system_prompt' => $derivativesSystemPrompt,
+                                'user_prompt' => Str::limit($derivativesUserPrompt, 6000, '…'),
                             ]
                         ),
                         ['titles' => $aiTitles],
@@ -2675,20 +2965,25 @@ final class UrlImportProcessingService
 
                     $this->log($job, 'info', __('admin.url_import.log.ai_analyze_done', ['model' => $this->modelDisplayName($model)]));
 
-                    return [
-                        'summary' => $aiSummary !== '' ? $aiSummary : Str::limit($text, 220, '...'),
-                        'library_name' => $aiLibraryName !== '' ? $aiLibraryName : $libraryName,
-                        'keywords' => $aiKeywords,
-                        'titles' => $aiTitles,
-                        'knowledge_markdown' => $aiKnowledge,
-                        'analysis_source' => 'ai',
-                        'model' => [
-                            'id' => (int) $model->id,
-                            'name' => (string) $model->name,
+                    return $this->fallbackOnIncompleteAi(
+                        $job,
+                        [
+                            'summary' => $aiSummary !== '' ? $aiSummary : Str::limit($text, 220, '...'),
+                            'library_name' => $aiLibraryName !== '' ? $aiLibraryName : $libraryName,
+                            'keywords' => $aiKeywords,
+                            'titles' => $aiTitles,
+                            'knowledge_markdown' => $aiKnowledge,
+                            'model' => [
+                                'id' => (int) $model->id,
+                                'name' => (string) $model->name,
+                            ],
+                            'cleaned' => $cleaned,
                         ],
-                        'page_json' => $pageJson,
-                        'cleaned' => $cleaned,
-                    ];
+                        $parsed,
+                        $pageJson,
+                        $this->modelDisplayName($model),
+                        $attempt
+                    );
                 } catch (Throwable $exception) {
                     $message = $this->normalizeAiErrorMessage($exception, $model);
                     $this->logNode(
@@ -2722,16 +3017,17 @@ final class UrlImportProcessingService
             }
         }
 
-        throw new \RuntimeException(__('admin.url_import.error.ai_parse_failed', [
-            'message' => __('admin.url_import.error.ai_all_models_failed', [
-                'messages' => implode('；', $errors),
-            ]),
-        ]));
-    }
+        if ($errors !== []) {
+            $this->log($job, 'warning', 'Fast 2-step AI 失败：'.implode('；', $errors));
+        }
 
-    /**
-     * @return Collection<int, AiModel>
-     */
+        return $this->buildAnalysisHeuristicFallback(
+            $parsed,
+            $job,
+            $pageJson ?? $this->buildPageJson($parsed, $job),
+            $errors !== [] ? implode('；', $errors) : 'ai_analysis_failed'
+        );
+    }
 
     private function resolveAnalysisModels(?int $tenantId = null): Collection
     {
@@ -2793,6 +3089,7 @@ final class UrlImportProcessingService
     private function requestAiJson(array $runtime, string $systemPrompt, string $userPrompt, ?string $listFallbackKey = null, ?int $timeout = null): array
     {
         $agent = new MarkdownContentWriterAgent($systemPrompt);
+        $timeout ??= $this->analysisAiTimeoutSeconds();
 
         try {
             $response = $agent->prompt(
@@ -2923,8 +3220,19 @@ final class UrlImportProcessingService
         $options = json_decode((string) $job->options_json, true);
         $options = is_array($options) ? $options : [];
 
-        // 块级分块：优先 raw_html（heading 切分），退到 text（段落切分）
-        $chunks = $this->resolveChunks($parsed);
+        // 关键：把 merged text 拆成「官网直连正文」与「AI/联网调研补充」两段，
+        // 避免 AI 看到【官网直连摘录】【AI 全网调研汇总】这种内部拼接标记。
+        $split = $this->splitDirectAndResearch((string) ($parsed['text'] ?? ''));
+        $cleanDirect = $this->stripNavigationNoise($split['direct']);
+        $cleanDirect = UrlImportTextSanitizer::clean(Str::limit($cleanDirect, 12000, ''));
+        $cleanResearch = UrlImportTextSanitizer::clean(Str::limit($split['research'], 4000, '…'));
+
+        // 块级分块：基于清洗后的官网直连正文（而不是含拼接段的 merged text）
+        $chunksSource = [
+            'text' => $cleanDirect,
+            'raw_html' => (string) ($parsed['raw_html'] ?? ''),
+        ];
+        $chunks = $this->resolveChunks($chunksSource);
 
         return [
             'source_url' => (string) $job->normalized_url,
@@ -2939,7 +3247,8 @@ final class UrlImportProcessingService
             'title' => (string) ($parsed['title'] ?? ''),
             'description' => (string) ($parsed['description'] ?? ''),
             'summary' => (string) ($parsed['summary'] ?? ''),
-            'text' => Str::limit((string) ($parsed['text'] ?? ''), 12000, ''),
+            'text' => $cleanDirect,
+            'ai_research_text' => $cleanResearch,
             'contact_info' => is_array($parsed['contact_info'] ?? null) ? $parsed['contact_info'] : [],
             'json_ld_struct' => is_array($parsed['json_ld_struct'] ?? null) ? $parsed['json_ld_struct'] : [],
             'chunks' => $chunks,
@@ -2951,6 +3260,90 @@ final class UrlImportProcessingService
     }
 
     /**
+     * 把 merger 拼出的 merged text 拆成「官网直连」与「AI/联网调研」两段，供 pageJson 与启发式整理复用。
+     *
+     * @return array{direct:string, research:string}
+     */
+    private function splitDirectAndResearch(string $mergedText): array
+    {
+        $mergedText = trim($mergedText);
+        if ($mergedText === '') {
+            return ['direct' => '', 'research' => ''];
+        }
+
+        $direct = '';
+        $research = '';
+
+        if (preg_match('/【官网直连(?:摘录|片段[^\n]*[）]?)】\s*(?:\n来源：[^\n]*)?\n?(.*?)(?=\n*【(?:AI|联网)[\s\S]*|$)/su', $mergedText, $m)) {
+            $direct = trim((string) $m[1]);
+        }
+
+        if (preg_match('/【(?:AI 全网调研汇总|联网搜索摘要)[\s\S]*?】\s*(?:\n主体：[^\n]*)?(?:\n域名识别：[^\n]*)?\n?(.*)$/su', $mergedText, $m)) {
+            $research = trim((string) $m[1]);
+        }
+
+        if ($direct === '' && $research === '') {
+            $direct = $mergedText;
+        }
+
+        return ['direct' => $direct, 'research' => $research];
+    }
+
+    /**
+     * 去除官网直连正文中的导航 / 版权 / 搜索框 / UI 提示 / 多语切换等噪音，
+     * 让 pageJson 喂给 AI 的是「经过基础整理的页面正文」，不是整张网页的原文。
+     */
+    private function stripNavigationNoise(string $text): string
+    {
+        $text = trim($text);
+        if ($text === '') {
+            return '';
+        }
+
+        $noiseLineRegexes = [
+            '/^(网站首页|产品中心|营销与服务|服务中心|文档下载|视频中心|成功案例|新闻资讯|关于我们|联系我们|留言咨询|公司简介|企业文化|资质荣誉|研发制造|加入我们)\s*$/u',
+            '/^(首页|产品中心|硬件产品|AI 智能|多媒体信息发布|交互屏|智能声像仪|智慧支付|其他|了解更多|解决方案)\s*$/u',
+            '/^(scroll\s*down|SAF\s*Coolest|TAG\s*$)/iu',
+            '/^(业务咨询电话|联系电?话|电话|email|EMAIL|TEL|FAX)\s*[:：]?\s*$/iu',
+            '/^(CN|English|Русский|español|简体中文)\s*$/u',
+            '/^(搜索历史清除全部记录|最多显示\d+条历史搜索记录噢)\s*[\.~]?\s*$/u',
+            '/^(违禁词)\s*[:：].*$/u',
+            '/^(版权|版权所有|备案|公安备|工信备|技术支持|中企动力|网站建设)\b.*$/u',
+            '/^V?\d+\.\d+(\.\d+)?\s*SVG\s*图标库.*$/u',
+        ];
+
+        $lines = preg_split('/\n/u', $text) ?: [];
+        $kept = [];
+        foreach ($lines as $line) {
+            $line = trim((string) $line);
+            if ($line === '') {
+                $kept[] = '';
+
+                continue;
+            }
+            $isNoise = false;
+            foreach ($noiseLineRegexes as $regex) {
+                if (preg_match($regex, $line) === 1) {
+                    $isNoise = true;
+                    break;
+                }
+            }
+            if ($isNoise) {
+                continue;
+            }
+            if (mb_strlen($line, 'UTF-8') < 2) {
+                continue;
+            }
+            $kept[] = $line;
+        }
+
+        $cleaned = preg_replace('/\n{3,}/u', "\n\n", implode("\n", $kept)) ?? implode("\n", $kept);
+
+        return trim($cleaned);
+    }
+
+    /**
+     * @param  array{text?:string, raw_html?:string}  $parsed
      * @return list<array{chunk_id:string,heading:string,heading_level:int,section_path:string,text:string,char_count:int,token_estimate:int}>
      */
     private function resolveChunks(array $parsed): array
@@ -3027,7 +3420,14 @@ final class UrlImportProcessingService
             });
         }
 
-        return (string) ($query->value('content') ?? '');
+        $content = (string) ($query->value('content') ?? '');
+        if (trim($content) !== '') {
+            return $content;
+        }
+
+        // 数据库里没有该类型 prompt 时，返回空串并由调用方判断是否使用
+        // （由 PromptCatalog 的内置方法提供基础 prompt 模板，二者不会同时缺失）。
+        return '';
     }
 
     /**
@@ -3261,56 +3661,281 @@ final class UrlImportProcessingService
     }
 
     /**
+     * 「公司型」采集时，标题应当是「公司名 + 业务/方案/场景」介绍型，而不是「概念名 + 是什么/为什么/怎么做」。
+     *
      * @param  list<string>  $keywords
      * @return list<string>
      */
     private function generateTitles(string $pageTitle, array $keywords): array
     {
-        $base = trim($pageTitle) !== '' ? trim($pageTitle) : ($keywords[0] ?? '网页采集内容');
+        $base = $this->resolveFallbackTitleBase($pageTitle, $keywords);
+        $baseKeywords = $this->dedupeShortKeywords($keywords, $base);
+        $headlineKeywords = array_slice($baseKeywords, 0, 5);
+        $detailKeywords = array_slice($baseKeywords, 0, 8);
+
         $candidates = [
-            $base,
-            $base.'完整解读',
-            $base.'：核心信息与应用场景',
-            '关于'.$base.'的关键信息整理',
-            $base.'为什么值得关注？核心价值与实践建议',
-            $base.'如何用于 GEO 内容建设？',
+            $base.'：企业核心信息与产品能力',
+            $base.'主营业务与解决方案',
+            '关于'.$base.'的产品体系与行业经验',
+            $base.'能提供哪些产品和服务？',
+            $base.'的发展历程与行业定位',
+            $base.'的研发能力与资质',
+            $base.'联系方式与商务合作',
         ];
-        foreach (array_slice($keywords, 0, 10) as $keyword) {
-            $candidates[] = $keyword.'是什么？核心信息与实践建议';
-            $candidates[] = $keyword.'完整指南：从概念到应用';
-            $candidates[] = $keyword.'为什么重要？业务场景与价值拆解';
-            $candidates[] = $keyword.'怎么做？适合 AI 搜索的内容建设方法';
-            $candidates[] = $keyword.'趋势与选型建议：机会、边界与适用场景';
+        foreach ($headlineKeywords as $keyword) {
+            $candidates[] = $base.'：'.$keyword.'产品介绍';
+            $candidates[] = $base.'在'.$keyword.'场景的解决方案';
+        }
+        foreach ($detailKeywords as $keyword) {
+            $candidates[] = $base.' - '.$keyword.'产品详情';
         }
 
-        return array_slice(array_values(array_unique(array_filter($candidates))), 0, 50);
+        $candidates = array_values(array_unique(array_filter($candidates, static fn (string $t): bool => $t !== '' && mb_strlen($t, 'UTF-8') <= 36)));
+
+        if (count($candidates) < max(4, (int) config('geoflow.url_import_fast.min_decision_titles', 10))) {
+            $candidates[] = $base.'简介与发展';
+            $candidates[] = $base.'产品与方案';
+            $candidates[] = $base.'公司介绍';
+        }
+
+        return array_slice(array_values(array_unique(array_filter($candidates))), 0, 24);
     }
 
     /**
+     * 把类似「厦门磁北科技有限公司_商用车信息化,交通支付系统,...」的原始 <title>
+     * 拆解出最像公司名/品牌名的第一段，避免把整串当一个标题 base。
+     *
+     * @param  list<string>  $keywords
+     */
+    private function resolveFallbackTitleBase(string $pageTitle, array $keywords): string
+    {
+        $pageTitle = trim($pageTitle);
+        if ($pageTitle === '') {
+            return $this->safeName((string) ($keywords[0] ?? '采集内容'));
+        }
+
+        $segments = preg_split('/[|_｜\-\/]+/u', $pageTitle) ?: [];
+        $segments = array_values(array_filter(array_map('trim', $segments), static fn (string $s): bool => $s !== ''));
+        if ($segments === []) {
+            $segments = [$pageTitle];
+        }
+
+        foreach ($segments as $segment) {
+            if (mb_strlen($segment, 'UTF-8') > 4 && mb_strlen($segment, 'UTF-8') <= 24 && ! str_contains($segment, ',')) {
+                return $this->safeName($segment);
+            }
+        }
+
+        $first = $segments[0] ?? $pageTitle;
+        if (mb_strlen($first, 'UTF-8') > 24) {
+            $first = mb_substr($first, 0, 24, 'UTF-8');
+        }
+
+        return $this->safeName($first);
+    }
+
+    /**
+     * 过滤掉与 base 重复或与公司名同义的关键词，避免「厦门磁北：厦门磁北业务介绍」这种重复。
+     *
+     * @param  list<string>  $keywords
+     * @return list<string>
+     */
+    private function dedupeShortKeywords(array $keywords, string $base): array
+    {
+        $base = trim($base);
+        $out = [];
+        $seen = [];
+        foreach ($keywords as $keyword) {
+            $keyword = trim((string) $keyword);
+            if ($keyword === '' || mb_strlen($keyword, 'UTF-8') < 2 || mb_strlen($keyword, 'UTF-8') > 14) {
+                continue;
+            }
+            if ($base !== '' && (mb_strpos($base, $keyword) !== false || mb_strpos($keyword, $base) !== false)) {
+                continue;
+            }
+            if (isset($seen[$keyword])) {
+                continue;
+            }
+            $seen[$keyword] = true;
+            $out[] = $keyword;
+            if (count($out) >= 8) {
+                break;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * 启发式整理：当 AI 不可用时也要输出「公司介绍式」结构化 markdown，
+     * 而非把整段原材料（含导航 / 版权 / 搜索框 / SVG 提示 / 联网搜索拼接段）原样塞给用户。
+     *
      * @param  array<string, mixed>  $parsed
      * @param  list<string>  $keywords
      */
     private function buildKnowledgeMarkdown(array $parsed, UrlImportJob $job, array $keywords): string
     {
-        $lines = [
-            '# '.(string) ($parsed['title'] ?? $job->source_domain),
-            '',
-            '- 来源 URL：'.(string) $job->normalized_url,
-            '- 来源域名：'.(string) $job->source_domain,
-        ];
-        if ($keywords !== []) {
-            $lines[] = '- 识别关键词：'.implode('、', array_slice($keywords, 0, 20));
-        }
+        $title = trim((string) ($parsed['title'] ?? '')) ?: (string) $job->source_domain;
         $description = trim((string) ($parsed['description'] ?? ''));
-        if ($description !== '') {
-            $lines[] = '- 页面描述：'.$description;
+        $rawText = (string) ($parsed['text'] ?? '');
+        $summary = trim((string) ($parsed['summary'] ?? ''));
+
+        $extracted = $this->splitDirectAndResearch($rawText);
+        $directText = $this->stripNavigationNoise($extracted['direct']);
+        $researchText = $extracted['research'];
+        $core = $this->extractCoreParagraphs($directText);
+
+        $lines = [];
+        $lines[] = '# '.$title;
+        $lines[] = '';
+
+        $intro = $summary !== ''
+            ? $summary
+            : ($description !== '' ? $description : $core['intro']);
+        if ($intro !== '') {
+            $lines[] = $intro;
+            $lines[] = '';
         }
-        $lines[] = '';
-        $lines[] = '## 页面正文抽取';
-        $lines[] = '';
-        $lines[] = trim((string) ($parsed['text'] ?? ''));
+
+        if ($keywords !== []) {
+            $lines[] = '## 关键标签';
+            $lines[] = implode('、', array_slice($keywords, 0, 16));
+            $lines[] = '';
+        }
+
+        if ($core['company'] !== '') {
+            $lines[] = '## 公司简介';
+            $lines[] = $core['company'];
+            $lines[] = '';
+        }
+
+        if ($core['products'] !== []) {
+            $lines[] = '## 产品与解决方案';
+            foreach ($core['products'] as $item) {
+                $lines[] = '- '.$item;
+            }
+            $lines[] = '';
+        }
+
+        if ($core['contact'] !== '') {
+            $lines[] = '## 联系方式';
+            $lines[] = $core['contact'];
+            $lines[] = '';
+        }
+
+        if ($researchText !== '') {
+            $lines[] = '## 其他资料';
+            $lines[] = UrlImportTextSanitizer::clean(Str::limit($researchText, 1200, '…'));
+            $lines[] = '';
+        }
+
+        $lines[] = '---';
+        $lines[] = '- 来源 URL：'.(string) $job->normalized_url;
+        $lines[] = '- 来源域名：'.(string) $job->source_domain;
+        $lines[] = '- 整理方式：AI 暂不可用，已用规则化整理（去除导航/版权/搜索框等噪音并按段落归类）';
 
         return trim(implode("\n", $lines));
+    }
+
+    /**
+     * 把官网直连正文按段落清洗：剔除导航 / 版权 / 搜索框 / UI 提示 / 单字符噪音段落，
+     * 然后按公司简介 / 产品 / 联系方式三种角色聚类。
+     *
+     * @return array{intro:string, company:string, products:list<string>, contact:string}
+     */
+    private function extractCoreParagraphs(string $text): array
+    {
+        $text = trim($text);
+        $out = ['intro' => '', 'company' => '', 'products' => [], 'contact' => ''];
+
+        if ($text === '') {
+            return $out;
+        }
+
+        $noisePatterns = [
+            '/^.{0,4}$/u',
+            '/^(网站首页|产品中心|营销与服务|服务中心|文档下载|视频中心|成功案例|新闻资讯|关于我们|联系我们|留言咨询|公司简介|企业文化|资质荣誉|研发制造|加入我们)\s*$/u',
+            '/^(scroll\s*down|SAF\s*Coolest|违禁词|SVG\s*图标|TAG\s*$)/u',
+            '/^(首页|产品中心|硬件产品|AI 智能|多媒体信息发布|交互屏|智能声像仪|智慧支付|其他|了解更多)\s*$/u',
+            '/^(business\s*phone|tel|email|phone)\s*[:：]?\s*$/iu',
+            '/^[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}$/iu',
+            '/^(copyright|©|版权所有|备案|公安备|工信备|技术支持|中企动力)\b.*$/iu',
+            '/^\d{3,4}-\d{6,8}$/u',
+            '/^0+$/u',
+        ];
+
+        $intro = '';
+        $companyBullets = [];
+        $products = [];
+        $contact = [];
+
+        $paragraphs = preg_split('/\n{2,}/u', $text) ?: [];
+        $paragraphs = array_map(static fn (string $p): string => trim($p), $paragraphs);
+        $paragraphs = array_values(array_filter($paragraphs, static fn (string $p): bool => mb_strlen($p, 'UTF-8') >= 14));
+
+        foreach ($paragraphs as $paragraph) {
+            if ($this->looksLikeNoise($paragraph, $noisePatterns)) {
+                continue;
+            }
+            $normalized = preg_replace('/\s+/u', ' ', $paragraph) ?? $paragraph;
+            $isProduct = (bool) preg_match('/[\p{Han}]{2,12}(系统|方案|平台|设备|终端|服务|产品)/u', $normalized);
+            $hasProduct = (bool) preg_match('/\d+[\p{Han}A-Za-z]*\s*[\p{Han}]{0,6}(系统|方案|平台|设备|终端|服务|产品|案例|国家|地区|城市|国家或地区|专利|证书|项目|合作|平方米|合作伙伴)/u', $normalized);
+            $isContact = (bool) preg_match('/(电话|邮箱|地址|联系人|联系方式|@|·|·|网址|官方微信|微信公众号|联系|热线|电话:|EMAIL|TEL|FAX)/u', $normalized);
+            $isCompanyIntro = (bool) preg_match('/(是一家|致力于|专注|创立于|成立于|总部|位于|经营范围|主营|简介)/u', $normalized);
+
+            if ($isContact) {
+                $contact[] = $normalized;
+                continue;
+            }
+            if ($isProduct || $hasProduct) {
+                $products[] = Str::limit($normalized, 220, '…');
+                continue;
+            }
+            if ($isCompanyIntro && mb_strlen($normalized, 'UTF-8') <= 320) {
+                $companyBullets[] = $normalized;
+                continue;
+            }
+            if ($intro === '' && mb_strlen($normalized, 'UTF-8') >= 40 && mb_strlen($normalized, 'UTF-8') <= 320) {
+                $intro = $normalized;
+            }
+        }
+
+        $out['intro'] = $intro !== '' ? $intro : ($companyBullets[0] ?? '');
+        $out['company'] = $companyBullets[0] ?? '';
+        $out['products'] = array_values(array_slice(array_unique($products), 0, 12));
+        $out['contact'] = implode('｜', array_slice(array_unique(array_filter($contact, static fn (string $c): bool => mb_strlen($c, 'UTF-8') <= 240)), 0, 4));
+
+        return $out;
+    }
+
+    /**
+     * @param  list<string>  $noisePatterns
+     */
+    private function looksLikeNoise(string $paragraph, array $noisePatterns): bool
+    {
+        foreach ($noisePatterns as $pattern) {
+            if (preg_match($pattern, trim($paragraph)) === 1) {
+                return true;
+            }
+        }
+
+        $lineCount = substr_count($paragraph, "\n") + 1;
+        if ($lineCount >= 2) {
+            $lines = preg_split('/\n/u', $paragraph) ?: [];
+            $meaningful = 0;
+            foreach ($lines as $line) {
+                $line = trim((string) $line);
+                if (mb_strlen($line, 'UTF-8') < 4) {
+                    continue;
+                }
+                $meaningful++;
+            }
+            if ($meaningful === 0) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -4002,5 +4627,53 @@ final class UrlImportProcessingService
         }
 
         return implode(',', array_slice($tags, 0, 8));
+    }
+
+    /**
+     * 根据 fetch 结果决定 fetch 节点的状态字符串。
+     * - 200 类 → success
+     * - 其它非 0 → failed（HTTP 错误）
+     * - 0 / 空 → failed（没有任何响应）
+     * - 被反爬识别（is_bot_challenge=true 且非 200）→ failed
+     *
+     * @param  array<string, mixed>  $fetched
+     */
+    private function resolveFetchNodeStatus(array $fetched): string
+    {
+        $status = (int) ($fetched['status'] ?? 0);
+        if ($status >= 200 && $status < 400) {
+            return 'success';
+        }
+        if ($status === 0) {
+            return 'failed';
+        }
+        if ((bool) ($fetched['is_bot_challenge'] ?? false)) {
+            return 'failed';
+        }
+
+        return 'failed';
+    }
+
+    /**
+     * 根据 parse 结果决定 parse 节点状态。
+     * - 拿到正文且长度达到基本阈值 → success
+     * - 命中 bot challenge → failed
+     * - 其它空/异常 → failed
+     *
+     * @param  array<string, mixed>  $directParsed
+     * @param  array<string, mixed>  $fetched
+     */
+    private function resolveParseNodeStatus(array $directParsed, array $fetched): string
+    {
+        if ((bool) ($fetched['is_bot_challenge'] ?? false)) {
+            return 'failed';
+        }
+        $text = (string) ($directParsed['text'] ?? '');
+        $minChars = max(40, (int) config('geoflow.url_import_min_text_chars', 80));
+        if (mb_strlen($text, 'UTF-8') >= $minChars) {
+            return 'success';
+        }
+
+        return 'failed';
     }
 }
