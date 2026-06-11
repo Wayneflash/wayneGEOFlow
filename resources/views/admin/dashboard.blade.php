@@ -194,7 +194,7 @@
                         $trendYTicks = [0, 0.25, 0.5, 0.75, 1.0];
                     @endphp
 
-                    <div class="relative">
+                    <div class="relative" data-trend-chart>
                         <svg viewBox="0 0 {{ $chartWidth }} {{ $chartHeight }}" class="h-64 w-full" preserveAspectRatio="none" role="img" aria-label="content production trend">
                             <defs>
                                 <linearGradient id="trendAreaGradient" x1="0" y1="0" x2="0" y2="1">
@@ -225,13 +225,16 @@
                                 <path d="{{ $trendLinePath }}" fill="none" stroke="#4f46e5" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
                             @endif
 
-                            {{-- 数据点 + 原生 SVG tooltip --}}
+                            {{-- 数据点 + 透明大圆扩大命中区 --}}
                             @foreach ($trendPoints as $pt)
-                                <g class="trend-point">
-                                    <circle cx="{{ $pt['x'] }}" cy="{{ $pt['y'] }}" r="6" fill="#ffffff" stroke="#4f46e5" stroke-width="2.5"/>
-                                    <circle cx="{{ $pt['x'] }}" cy="{{ $pt['y'] }}" r="14" fill="transparent" class="trend-hit">
-                                        <title>{{ $pt['date'] }}  新增 {{ $pt['count'] }} 篇</title>
-                                    </circle>
+                                <g>
+                                    <circle cx="{{ $pt['x'] }}" cy="{{ $pt['y'] }}" r="6" fill="#ffffff" stroke="#4f46e5" stroke-width="2.5" pointer-events="none"/>
+                                    <circle cx="{{ $pt['x'] }}" cy="{{ $pt['y'] }}" r="18" fill="transparent"
+                                            class="cursor-pointer"
+                                            data-tip-date="{{ $pt['date'] }}"
+                                            data-tip-count="{{ $pt['count'] }}"
+                                            data-tip-x="{{ $pt['x'] }}"
+                                            data-tip-y="{{ $pt['y'] }}"/>
                                 </g>
                             @endforeach
 
@@ -244,6 +247,14 @@
                                       font-size="11" fill="#94a3b8" font-family="ui-sans-serif,system-ui,sans-serif">{{ $label }}</text>
                             @endforeach
                         </svg>
+
+                        {{-- 自定义 hover tooltip (纯 CSS 定位 + 内联 JS, 无外部依赖) --}}
+                        <div data-trend-tooltip
+                             class="pointer-events-none absolute hidden z-10 -translate-x-1/2 -translate-y-full rounded-xl border border-indigo-100 bg-white/98 px-3 py-2 text-xs shadow-lg backdrop-blur"
+                             style="box-shadow: 0 10px 25px rgba(67, 56, 202, 0.18);">
+                            <div class="font-semibold text-slate-900" data-tip-date-out>-</div>
+                            <div class="mt-1 text-slate-600">新增 <b class="text-indigo-600" data-tip-count-out>0</b> 篇</div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -475,4 +486,36 @@
 @endpush
 
 @push('scripts')
+    <script>
+        // 内容生产趋势 - 自定义 hover tooltip
+        (() => {
+            document.querySelectorAll('[data-trend-chart]').forEach((box) => {
+                const tip = box.querySelector('[data-trend-tooltip]');
+                const dateOut = tip?.querySelector('[data-tip-date-out]');
+                const countOut = tip?.querySelector('[data-tip-count-out]');
+                if (!tip || !dateOut || !countOut) return;
+                const svg = box.querySelector('svg');
+                if (!svg) return;
+
+                box.querySelectorAll('[data-tip-date]').forEach((hit) => {
+                    hit.addEventListener('mouseenter', () => {
+                        dateOut.textContent = hit.dataset.tipDate || '-';
+                        countOut.textContent = hit.dataset.tipCount || '0';
+                        // SVG viewBox 坐标 → 容器内像素坐标
+                        const vbW = svg.viewBox.baseVal.width || 1;
+                        const vbH = svg.viewBox.baseVal.height || 1;
+                        const rect = svg.getBoundingClientRect();
+                        const px = (Number(hit.dataset.tipX) / vbW) * rect.width;
+                        const py = (Number(hit.dataset.tipY) / vbH) * rect.height;
+                        tip.style.left = px + 'px';
+                        tip.style.top = (py - 8) + 'px';
+                        tip.classList.remove('hidden');
+                    });
+                    hit.addEventListener('mouseleave', () => {
+                        tip.classList.add('hidden');
+                    });
+                });
+            });
+        })();
+    </script>
 @endpush
