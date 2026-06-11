@@ -18,9 +18,12 @@
     </script>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     <script src="{{ asset('js/lucide.min.js') }}"></script>
+    <script src="{{ asset('js/htmx.min.js') }}" defer></script>
     @stack('styles')
 </head>
-<body class="min-h-screen overflow-x-hidden bg-[#f4f8ff] text-slate-900 antialiased">
+<body class="min-h-screen overflow-x-hidden bg-[#f4f8ff] text-slate-900 antialiased"
+      hx-boost="true"
+      hx-headers='{"X-CSRF-TOKEN": "{{ csrf_token() }}"}'>
 <div id="admin-page-progress" class="fixed left-0 top-0 z-[80] hidden h-0.5 w-full bg-blue-100">
     <div class="h-full w-1/3 rounded-r-full bg-blue-600 shadow-[0_0_12px_rgba(37,99,235,0.45)] transition-all duration-700" data-admin-progress-bar></div>
 </div>
@@ -310,6 +313,60 @@
         });
     })();
 </script>
+
+{{-- HTMX hx-boost 集成：让所有点击/表单变 AJAX 切换 body, 体验接近 SPA --}}
+<script>
+    (() => {
+        const renderIconsSafe = () => window.lucide?.createIcons?.();
+
+        // 进度条与 HTMX 请求生命周期联动
+        document.addEventListener('htmx:beforeRequest', (event) => {
+            const xhr = event.detail?.xhr;
+            // 只对完整页面切换（boosted）显示进度条
+            if (event.detail?.boosted) {
+                document.getElementById('admin-page-progress')?.classList.remove('hidden');
+                const bar = document.querySelector('[data-admin-progress-bar]');
+                if (bar) { bar.style.width = '35%'; }
+            }
+        });
+
+        document.addEventListener('htmx:afterSettle', () => {
+            renderIconsSafe();
+            const progress = document.getElementById('admin-page-progress');
+            const bar = progress?.querySelector('[data-admin-progress-bar]');
+            if (bar) bar.style.width = '100%';
+            window.setTimeout(() => {
+                progress?.classList.add('hidden');
+                if (bar) bar.style.width = '0%';
+            }, 180);
+            // 滚回顶部，避免新页面卡在旧位置
+            window.scrollTo({ top: 0, behavior: 'auto' });
+        });
+
+        // 切换页面后，让 admin-page-ready 动画再触发一次
+        document.addEventListener('htmx:afterSwap', () => {
+            document.documentElement.classList.add('admin-page-ready');
+            window.setTimeout(() => document.documentElement.classList.remove('admin-page-ready'), 260);
+        });
+
+        // 请求失败时收起进度条
+        ['htmx:responseError', 'htmx:sendError', 'htmx:timeout', 'htmx:swapError'].forEach((ev) => {
+            document.addEventListener(ev, () => {
+                document.getElementById('admin-page-progress')?.classList.add('hidden');
+            });
+        });
+
+        // 5xx / 4xx 不要静默：让浏览器看到错误页面（HTMX 默认不 swap 错误响应）
+        document.addEventListener('htmx:beforeSwap', (event) => {
+            const status = event.detail?.xhr?.status;
+            if (status >= 400) {
+                event.detail.shouldSwap = true;
+                event.detail.isError = false;
+            }
+        });
+    })();
+</script>
+
 @stack('scripts')
 </body>
 </html>
