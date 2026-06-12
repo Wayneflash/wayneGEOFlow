@@ -1,16 +1,16 @@
 {
-  "version": "2.0",
-  "release_date": "2026-05-21",
+  "version": "2.1",
+  "release_date": "2026-06-12",
   "release_type": "feature",
   "payload": {
-    "title_zh": "GEOFlow v2.0",
-    "title_en": "GEOFlow v2.0",
-    "summary_zh": "GEOFlow 2.0 强化后台运营闭环，补充分发管理、目标渠道站点包、静态页面生成、远端设置同步、分发队列与日志可见性，并将首次安装后的后台说明改为部署检查清单。",
-    "summary_en": "GEOFlow 2.0 strengthens the admin operating loop with distribution management, target-site packages, static page generation, remote settings sync, distribution queue visibility, richer logs, and a first-deployment admin guide.",
-    "upgrade_tip_zh": "升级前请备份数据库、.env、uploads、storage 和目标渠道站点包；升级后请重新清理配置/视图缓存，并按分发管理页面提示重新下载目标站点包。",
-    "upgrade_tip_en": "Before upgrading, back up your database, .env, uploads, storage, and target-site packages. After upgrading, clear config/view caches and download the refreshed target-site package from Distribution Management.",
-    "release_url": "https://github.com/yaojingang/GEOFlow",
-    "changelog_url_zh": "https://github.com/yaojingang/GEOFlow/blob/main/docs/CHANGELOG.md",
-    "changelog_url_en": "https://github.com/yaojingang/GEOFlow/blob/main/docs/CHANGELOG_en.md"
+    "title_zh": "GEOFlow v2.1",
+    "title_en": "GEOFlow v2.1",
+    "summary_zh": "GEOFlow 2.1 切换到 PHP-FPM + Nginx 架构，dashboard 加 60s 缓存，URL 采集入库章节结构由 AI 补充调研 7 节 markdown 重组，修复联系方式误判与 entrypoint 并发锁死锁，并补上 Embedding 全局 SSL 校验策略。",
+    "summary_en": "GEOFlow 2.1 switches to PHP-FPM + Nginx, adds 60s dashboard cache, restructures URL import knowledge markdown around the AI web-research 7-section output, fixes contact-info misdetection and entrypoint concurrent-lock deadlock, and adds global SSL verify policy for Embedding calls.",
+    "upgrade_tip_zh": "升级前请确认 .env 中 PHP_CLI_IMAGE=php:8.4-fpm-bookworm；升级后请重建 geoflow-app 镜像（首次切到 FPM 时需要）并清理所有 Laravel 缓存。",
+    "upgrade_tip_en": "Before upgrading, ensure .env has PHP_CLI_IMAGE=php:8.4-fpm-bookworm. After upgrading, rebuild the geoflow-app image (required when first switching to FPM) and clear all Laravel caches.",
+    "release_url": "https://gitee.com/WayneFlash/GEO",
+    "changelog_url_zh": "https://gitee.com/WayneFlash/GEO/blob/main/docs/CHANGELOG.md",
+    "changelog_url_en": "https://gitee.com/WayneFlash/GEO/blob/main/docs/CHANGELOG_en.md"
   }
 }
