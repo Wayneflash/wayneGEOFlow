@@ -205,8 +205,64 @@
         @apply !hidden;
     }
 
-    .admin-page-ready #admin-main-content {
-        animation: admin-page-enter 180ms ease-out both;
+    #admin-main-content {
+        position: relative;
+        transition: opacity 140ms ease, transform 140ms ease, filter 140ms ease;
+    }
+
+    #admin-main-content::before {
+        content: '';
+        position: absolute;
+        top: 0.35rem;
+        left: 1rem;
+        right: 1rem;
+        z-index: 20;
+        height: 3px;
+        border-radius: 999px;
+        pointer-events: none;
+        opacity: 0;
+        transform: scaleX(0.96);
+        transform-origin: left;
+        background: linear-gradient(90deg, transparent 0%, rgba(37, 99, 235, 0.2) 16%, rgba(14, 165, 233, 0.95) 44%, rgba(34, 197, 94, 0.74) 64%, transparent 100%);
+        background-size: 220% 100%;
+        box-shadow: 0 0 18px rgba(14, 165, 233, 0.22);
+        transition: opacity 120ms ease, transform 160ms ease;
+    }
+
+    .admin-route-pending #admin-main-content::before {
+        opacity: 1;
+        transform: scaleX(1);
+        animation: admin-route-flow 920ms ease-in-out infinite;
+    }
+
+    .admin-route-link-pending {
+        position: relative;
+        transform: translateY(0);
+        @apply !bg-blue-50 !text-blue-700 ring-1 ring-blue-100 shadow-sm;
+    }
+
+    .admin-route-link-pending::after {
+        content: '';
+        position: absolute;
+        right: 0.75rem;
+        width: 0.7rem;
+        height: 0.7rem;
+        border-radius: 999px;
+        border: 2px solid rgba(37, 99, 235, 0.18);
+        border-top-color: rgb(37 99 235);
+        animation: admin-route-spin 700ms linear infinite;
+    }
+
+    .admin-route-leaving #admin-main-content {
+        opacity: 0.78;
+        transform: translateY(2px);
+        filter: saturate(0.98);
+        pointer-events: none;
+    }
+
+    .admin-page-ready #admin-main-content,
+    .admin-route-entering #admin-main-content {
+        animation: admin-page-enter 160ms ease-out both;
     }
 
     .admin-page-loading #admin-main-content {
@@ -227,15 +283,15 @@
     }
 
     .analytics-card {
-        @apply overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_8px_24px_-12px_rgba(37,99,235,0.08)] transition duration-200 hover:shadow-[0_1px_2px_rgba(15,23,42,0.04),0_18px_40px_-16px_rgba(37,99,235,0.18)];
+        @apply overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.035),0_16px_38px_-24px_rgba(14,165,233,0.24)] transition duration-200 hover:shadow-[0_1px_2px_rgba(15,23,42,0.04),0_22px_52px_-26px_rgba(20,184,166,0.28)];
     }
 
     .analytics-card-head {
-        @apply flex items-center justify-between gap-3 border-b border-slate-100/80 px-5 py-4;
+        @apply flex items-center justify-between gap-3 border-b border-slate-100/80 bg-gradient-to-r from-white via-sky-50/35 to-emerald-50/25 px-5 py-4;
     }
 
     .analytics-stat {
-        @apply rounded-2xl border border-slate-200/80 bg-white px-4 py-3.5 transition duration-150 hover:border-slate-300/80;
+        @apply rounded-2xl border border-slate-200/80 bg-white px-4 py-3.5 transition duration-150 hover:border-sky-200/90 hover:bg-sky-50/20;
     }
 
     .analytics-tabs {
@@ -255,7 +311,7 @@
     }
 
     .analytics-kpi {
-        @apply rounded-2xl border border-slate-100 bg-gradient-to-br from-white to-slate-50/60 px-4 py-3.5;
+        @apply rounded-2xl border border-slate-100 px-4 py-3.5 shadow-sm shadow-slate-200/40;
     }
 
     .analytics-kpi-fancy {
@@ -273,8 +329,8 @@
     }
 
     .analytics-main-tabs .admin-tab-button.is-active {
-        background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 50%, #e0e7ff 100%);
-        @apply text-blue-700 shadow-sm ring-1 ring-blue-200/70 hover:text-blue-800;
+        background: linear-gradient(135deg, #ecfeff 0%, #e0f2fe 52%, #eef2ff 100%);
+        @apply text-sky-700 shadow-sm ring-1 ring-sky-200/80 hover:text-sky-800;
     }
 
     .materials-shell,
@@ -1212,6 +1268,15 @@
             opacity: 1;
             transform: translateY(0);
         }
+    }
+
+    @keyframes admin-route-flow {
+        0% { background-position: 120% 0; }
+        100% { background-position: -120% 0; }
+    }
+
+    @keyframes admin-route-spin {
+        to { transform: rotate(360deg); }
     }
 
     @keyframes url-import-glow-pulse {

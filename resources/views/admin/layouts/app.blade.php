@@ -24,8 +24,8 @@
 <body class="min-h-screen overflow-x-hidden bg-[#f4f8ff] text-slate-900 antialiased"
       hx-boost="true"
       hx-headers='{"X-CSRF-TOKEN": "{{ csrf_token() }}"}'>
-<div id="admin-page-progress" class="fixed left-0 top-0 z-[80] hidden h-0.5 w-full bg-blue-100">
-    <div class="h-full w-1/3 rounded-r-full bg-blue-600 shadow-[0_0_12px_rgba(37,99,235,0.45)] transition-all duration-700" data-admin-progress-bar></div>
+<div id="admin-page-progress" class="pointer-events-none fixed left-0 top-0 z-[80] hidden h-px w-full bg-sky-100/70">
+    <div class="h-full w-0 rounded-r-full bg-sky-500 shadow-[0_0_10px_rgba(14,165,233,0.35)] transition-[width,opacity] duration-300 ease-out" data-admin-progress-bar></div>
 </div>
 @include('admin.partials.header', [
     'adminBrandName' => $adminBrandName,
@@ -68,11 +68,16 @@
     </div>
 </div>
 <div id="admin-toast-region" class="fixed right-4 top-4 z-[70] flex w-[min(24rem,calc(100vw-2rem))] flex-col gap-3" aria-live="polite" aria-atomic="true"></div>
+<div id="admin-route-indicator" class="pointer-events-none fixed bottom-4 right-4 z-[70] hidden items-center gap-2 rounded-full border border-sky-100 bg-white/92 px-3 py-2 text-xs font-medium text-sky-700 shadow-lg shadow-sky-950/10 backdrop-blur" aria-live="polite" aria-atomic="true">
+    <i data-lucide="loader-2" class="h-3.5 w-3.5 animate-spin"></i>
+    <span>正在打开</span>
+</div>
 <script>
     (() => {
         const processingLabel = @js(__('admin.message.processing'));
         const toastRegion = () => document.getElementById('admin-toast-region');
         let progressTimer = null;
+        let progressShowTimer = null;
         const prefetchedUrls = new Set();
         let prefetchTimer = null;
         let prefetchTarget = '';
@@ -103,28 +108,44 @@
         const startProgress = () => {
             const progress = document.getElementById('admin-page-progress');
             const bar = progress?.querySelector('[data-admin-progress-bar]');
-            if (!progress || !bar || progress.dataset.active === '1') return;
-            progress.dataset.active = '1';
+            if (!progress || !bar || progress.dataset.active === '1' || progress.dataset.pending === '1') return;
+            progress.dataset.pending = '1';
             document.documentElement.classList.add('admin-page-loading');
-            progress.classList.remove('hidden');
-            bar.style.width = '35%';
-            window.setTimeout(() => { bar.style.width = '72%'; }, 80);
-            progressTimer = window.setTimeout(() => { bar.style.width = '88%'; }, 1200);
+            progressShowTimer = window.setTimeout(() => {
+                progress.dataset.pending = '0';
+                progress.dataset.active = '1';
+                progress.classList.remove('hidden');
+                bar.style.opacity = '1';
+                bar.style.width = '18%';
+                window.requestAnimationFrame(() => { bar.style.width = '58%'; });
+                progressTimer = window.setTimeout(() => { bar.style.width = '82%'; }, 900);
+            }, 160);
         };
 
         const stopProgress = () => {
             const progress = document.getElementById('admin-page-progress');
             const bar = progress?.querySelector('[data-admin-progress-bar]');
             if (!progress || !bar) return;
+            if (progressShowTimer) window.clearTimeout(progressShowTimer);
             if (progressTimer) window.clearTimeout(progressTimer);
+            progressShowTimer = null;
             progressTimer = null;
+            progress.dataset.pending = '0';
+            if (progress.dataset.active !== '1') {
+                progress.classList.add('hidden');
+                document.documentElement.classList.remove('admin-page-loading');
+                bar.style.width = '0%';
+                bar.style.opacity = '0';
+                return;
+            }
             bar.style.width = '100%';
             window.setTimeout(() => {
                 progress.classList.add('hidden');
                 progress.dataset.active = '0';
                 document.documentElement.classList.remove('admin-page-loading');
                 bar.style.width = '0%';
-            }, 180);
+                bar.style.opacity = '0';
+            }, 150);
         };
 
         const sameDocumentPath = (url) => url.pathname + url.search + url.hash === window.location.pathname + window.location.search + window.location.hash;
@@ -143,6 +164,8 @@
         };
 
         window.AdminUtils = window.AdminUtils || {};
+        window.AdminUtils.startPageProgress = startProgress;
+        window.AdminUtils.stopPageProgress = stopProgress;
         window.AdminUtils.showToast = (message, type = 'info', timeout = 4200) => {
             const region = toastRegion();
             if (!region || !message) return;
@@ -288,7 +311,6 @@
             if (href === '' || href.startsWith('#') || href.startsWith('javascript:') || href.startsWith('mailto:') || href.startsWith('tel:')) return;
             const url = new URL(href, window.location.href);
             if (sameDocumentPath(url)) return;
-            startProgress();
         });
 
         const handlePrefetchIntent = (event) => {
@@ -318,27 +340,87 @@
 <script>
     (() => {
         const renderIconsSafe = () => window.lucide?.createIcons?.();
+        let routeLeaveTimer = null;
+        let routeIndicatorTimer = null;
+        let pendingRouteLink = null;
+
+        const routeIndicator = () => document.getElementById('admin-route-indicator');
+
+        const isRoutableLink = (link) => {
+            if (!link || link.target || link.hasAttribute('download')) return false;
+            if (link.closest('[data-admin-confirm-cancel], [data-admin-confirm-ok]')) return false;
+            const href = link.getAttribute('href') || '';
+            if (!href || href.startsWith('#') || href.startsWith('javascript:') || href.startsWith('mailto:') || href.startsWith('tel:')) return false;
+            const url = new URL(href, window.location.href);
+            if (url.origin !== window.location.origin) return false;
+            return url.pathname + url.search !== window.location.pathname + window.location.search;
+        };
+
+        const clearPendingRouteLink = () => {
+            pendingRouteLink?.classList.remove('admin-route-link-pending');
+            pendingRouteLink?.removeAttribute('aria-busy');
+            pendingRouteLink = null;
+        };
+
+        const startRouteTransition = (trigger = null) => {
+            if (routeLeaveTimer) window.clearTimeout(routeLeaveTimer);
+            if (routeIndicatorTimer) window.clearTimeout(routeIndicatorTimer);
+            document.documentElement.classList.add('admin-route-pending');
+            if (trigger && trigger !== pendingRouteLink) {
+                clearPendingRouteLink();
+                pendingRouteLink = trigger;
+                pendingRouteLink.classList.add('admin-route-link-pending');
+                pendingRouteLink.setAttribute('aria-busy', 'true');
+            }
+            routeLeaveTimer = window.setTimeout(() => {
+                document.documentElement.classList.add('admin-route-leaving');
+            }, 90);
+            routeIndicatorTimer = window.setTimeout(() => {
+                const indicator = routeIndicator();
+                indicator?.querySelector('span')?.replaceChildren(document.createTextNode('正在打开页面'));
+                indicator?.classList.remove('hidden');
+                indicator?.classList.add('inline-flex');
+                renderIconsSafe();
+            }, 140);
+        };
+
+        const finishRouteTransition = () => {
+            if (routeLeaveTimer) window.clearTimeout(routeLeaveTimer);
+            if (routeIndicatorTimer) window.clearTimeout(routeIndicatorTimer);
+            routeLeaveTimer = null;
+            routeIndicatorTimer = null;
+            clearPendingRouteLink();
+            const indicator = routeIndicator();
+            indicator?.classList.add('hidden');
+            indicator?.classList.remove('inline-flex');
+            document.documentElement.classList.remove('admin-route-pending');
+            document.documentElement.classList.remove('admin-route-leaving');
+            document.documentElement.classList.add('admin-route-entering');
+            window.setTimeout(() => {
+                document.documentElement.classList.remove('admin-route-entering');
+            }, 180);
+        };
 
         // 进度条与 HTMX 请求生命周期联动
+        document.addEventListener('click', (event) => {
+            if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+            const link = event.target?.closest?.('a[href]');
+            if (!isRoutableLink(link)) return;
+            startRouteTransition(link);
+        }, true);
+
         document.addEventListener('htmx:beforeRequest', (event) => {
-            const xhr = event.detail?.xhr;
-            // 只对完整页面切换（boosted）显示进度条
+            // 普通页面切换不显示顶部进度条，避免造成“卡到一半”的错觉。
+            // 表单提交等真实等待操作仍由 submit 监听触发进度提示。
             if (event.detail?.boosted) {
-                document.getElementById('admin-page-progress')?.classList.remove('hidden');
-                const bar = document.querySelector('[data-admin-progress-bar]');
-                if (bar) { bar.style.width = '35%'; }
+                startRouteTransition(event.detail?.elt?.closest?.('a[href]') || null);
             }
         });
 
         document.addEventListener('htmx:afterSettle', () => {
             renderIconsSafe();
-            const progress = document.getElementById('admin-page-progress');
-            const bar = progress?.querySelector('[data-admin-progress-bar]');
-            if (bar) bar.style.width = '100%';
-            window.setTimeout(() => {
-                progress?.classList.add('hidden');
-                if (bar) bar.style.width = '0%';
-            }, 180);
+            window.AdminUtils?.stopPageProgress?.();
+            finishRouteTransition();
             // 滚回顶部，避免新页面卡在旧位置
             window.scrollTo({ top: 0, behavior: 'auto' });
         });
@@ -352,7 +434,8 @@
         // 请求失败时收起进度条
         ['htmx:responseError', 'htmx:sendError', 'htmx:timeout', 'htmx:swapError'].forEach((ev) => {
             document.addEventListener(ev, () => {
-                document.getElementById('admin-page-progress')?.classList.add('hidden');
+                window.AdminUtils?.stopPageProgress?.();
+                finishRouteTransition();
             });
         });
 

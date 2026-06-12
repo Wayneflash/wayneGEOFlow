@@ -23,6 +23,7 @@ use App\Support\AdminWeb;
 use App\Support\Tenancy\AdminTenant;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\View\View;
@@ -34,33 +35,44 @@ class DashboardController extends Controller
 {
     public function index(): View
     {
-        $stats = $this->buildStats();
-        $todayStats = $this->buildTodayStats();
-        $weekStats = $this->buildWeekStats();
-        $taskHealth = $this->buildTaskHealth();
-        $materialHealth = $this->buildMaterialHealth();
-        $aiHealth = $this->buildAiHealth();
-        $urlImportHealth = $this->buildUrlImportHealth();
-        $articleTrend = $this->buildArticleTrendSeries();
+        $tenantId = (int) (AdminTenant::currentTenantId() ?? 0);
+        $cacheKey = 'dashboard:payload:tenant:'.$tenantId.':'.app()->getLocale();
 
-        return view('admin.dashboard', [
-            'pageTitle' => __('admin.dashboard.page_title'),
-            'activeMenu' => 'dashboard',
-            'adminSiteName' => AdminWeb::siteName(),
-            'stats' => $stats,
-            'todayStats' => $todayStats,
-            'weekStats' => $weekStats,
-            'taskHealth' => $taskHealth,
-            'materialHealth' => $materialHealth,
-            'aiHealth' => $aiHealth,
-            'urlImportHealth' => $urlImportHealth,
-            'articleTrend' => $articleTrend,
-            'contentFunnel' => $this->buildContentFunnel($stats),
-            'articleTrendChart' => $this->buildArticleTrendChartPaths($articleTrend),
-            'latestArticles' => $this->buildLatestArticles(),
-            'popularArticles' => $this->buildPopularArticles(),
-            'performanceStats' => $this->buildPerformanceStats((int) ($stats['completed_tasks'] ?? 0), (int) ($stats['failed_jobs'] ?? 0)),
-        ]);
+        $payload = Cache::remember($cacheKey, 60, function () {
+            $stats = $this->buildStats();
+            $todayStats = $this->buildTodayStats();
+            $weekStats = $this->buildWeekStats();
+            $taskHealth = $this->buildTaskHealth();
+            $materialHealth = $this->buildMaterialHealth();
+            $aiHealth = $this->buildAiHealth();
+            $urlImportHealth = $this->buildUrlImportHealth();
+            $articleTrend = $this->buildArticleTrendSeries();
+
+            return [
+                'stats' => $stats,
+                'todayStats' => $todayStats,
+                'weekStats' => $weekStats,
+                'taskHealth' => $taskHealth,
+                'materialHealth' => $materialHealth,
+                'aiHealth' => $aiHealth,
+                'urlImportHealth' => $urlImportHealth,
+                'articleTrend' => $articleTrend,
+                'contentFunnel' => $this->buildContentFunnel($stats),
+                'articleTrendChart' => $this->buildArticleTrendChartPaths($articleTrend),
+                'latestArticles' => $this->buildLatestArticles(),
+                'popularArticles' => $this->buildPopularArticles(),
+                'performanceStats' => $this->buildPerformanceStats((int) ($stats['completed_tasks'] ?? 0), (int) ($stats['failed_jobs'] ?? 0)),
+            ];
+        });
+
+        return view('admin.dashboard', array_merge(
+            [
+                'pageTitle' => __('admin.dashboard.page_title'),
+                'activeMenu' => 'dashboard',
+                'adminSiteName' => AdminWeb::siteName(),
+            ],
+            $payload,
+        ));
     }
 
     /**
