@@ -3,6 +3,63 @@ set -eu
 
 cd /var/www/html
 
+# 在并发容器之间用 bind-mount 里的目录做互斥锁。
+# 历史实现是直接 `while ! mkdir`，一旦持有者异常退出没清理 lock 目录，
+# 后续所有容器会永远卡在等锁。这里加 stale 检测：
+#   1. 写一个 .pid 进去记录持有者 PID
+#   2. 若 lock 已存在，看 PID 是否还活着、目录 mtime 是否过老
+#   3. 满足任一条件 → 视为 stale，强制清理后重试
+# 同时设绝对超时，避免极端情况下永远卡死。
+GEOFLOW_LOCK_MAX_AGE=300       # 秒；持有者若已死，或 mtime 超过这个，视为 stale
+GEOFLOW_LOCK_MAX_WAIT=1800     # 秒；总等待上限（30 分钟）
+
+acquire_geoflow_lock() {
+  _lock_dir="$1"
+  _purpose="$2"
+  _started=$(date +%s)
+  while ! mkdir "${_lock_dir}" 2>/dev/null; do
+    _now=$(date +%s)
+    _elapsed=$((_now - _started))
+    if [ "${_elapsed}" -ge "${GEOFLOW_LOCK_MAX_WAIT}" ]; then
+      echo "[entrypoint] gave up waiting for lock (${_lock_dir}) after ${_elapsed}s"
+      return 1
+    fi
+    # 检查 stale：PID 死了 或 mtime 太老
+    _stale=0
+    if [ -f "${_lock_dir}/.pid" ]; then
+      _holder_pid=$(cat "${_lock_dir}/.pid" 2>/dev/null || echo "")
+      if [ -n "${_holder_pid}" ] && ! kill -0 "${_holder_pid}" 2>/dev/null; then
+        _stale=1
+        echo "[entrypoint] lock holder PID=${_holder_pid} no longer alive, treating as stale"
+      fi
+    fi
+    if [ "${_stale}" -eq 0 ] && [ -d "${_lock_dir}" ]; then
+      _mtime=0
+      # GNU stat: %Y (mtime epoch); BSD/macOS stat: %m
+      _mtime=$(stat -c %Y "${_lock_dir}" 2>/dev/null || stat -f %m "${_lock_dir}" 2>/dev/null || echo 0)
+      if [ "${_mtime}" -gt 0 ] && [ $((_now - _mtime)) -gt "${GEOFLOW_LOCK_MAX_AGE}" ]; then
+        _stale=1
+        echo "[entrypoint] lock is stale (mtime age=$((_now - _mtime))s > ${GEOFLOW_LOCK_MAX_AGE}s)"
+      fi
+    fi
+    if [ "${_stale}" -eq 1 ]; then
+      rm -rf "${_lock_dir}" 2>/dev/null || true
+      continue
+    fi
+    echo "[entrypoint] waiting for another container to finish ${_purpose}"
+    sleep 2
+  done
+  # 拿到锁后记录持有者 PID
+  echo "$$" > "${_lock_dir}/.pid"
+  echo "$$ $(date -u +%FT%TZ)" > "${_lock_dir}/.owner"
+}
+
+release_geoflow_lock() {
+  _lock_dir="$1"
+  rm -f "${_lock_dir}/.pid" "${_lock_dir}/.owner" 2>/dev/null || true
+  rmdir "${_lock_dir}" 2>/dev/null || true
+}
+
 if [ ! -f .env ] && [ -f .env.example ]; then
   cp .env.example .env
 fi
@@ -25,11 +82,8 @@ fi
 if [ "${RUN_COMPOSER}" = "true" ]; then
   mkdir -p storage/framework
   COMPOSER_LOCK_DIR="storage/framework/.geoflow-composer-install.lock"
-  while ! mkdir "${COMPOSER_LOCK_DIR}" 2>/dev/null; do
-    echo "[entrypoint] waiting for another container to finish composer install"
-    sleep 2
-  done
-  trap 'rmdir "${COMPOSER_LOCK_DIR}" 2>/dev/null || true' EXIT INT TERM
+  acquire_geoflow_lock "${COMPOSER_LOCK_DIR}" "composer install" || exit 1
+  trap 'release_geoflow_lock "${COMPOSER_LOCK_DIR}"' EXIT INT TERM
   # Packagist 中国镜像，加速 composer install。
   COMPOSER_PACKAGIST_MIRROR="${COMPOSER_PACKAGIST_MIRROR:-https://mirrors.aliyun.com/composer/}"
   COMPOSER_HOME="${COMPOSER_HOME:-/tmp/composer}"
@@ -62,7 +116,8 @@ if [ "${COMPOSER_NEED_POST_INSTALL}" = "true" ]; then
   composer dump-autoload --optimize --no-interaction
 fi
 
-mkdir -p storage/app/public storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs
+mkdir -p storage/app/public storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs /tmp
+chmod 1777 /tmp 2>/dev/null || true
 if [ ! -e public/storage ]; then
   php artisan storage:link --force --no-interaction
 fi
@@ -94,14 +149,11 @@ fi
 if [ "${AUTO_MIGRATE:-true}" = "true" ]; then
   mkdir -p storage/framework
   MIGRATE_LOCK_DIR="storage/framework/.geoflow-migrate.lock"
-  while ! mkdir "${MIGRATE_LOCK_DIR}" 2>/dev/null; do
-    echo "[entrypoint] waiting for another container to finish database migrations"
-    sleep 2
-  done
-  trap 'rmdir "${MIGRATE_LOCK_DIR}" 2>/dev/null || true' EXIT INT TERM
+  acquire_geoflow_lock "${MIGRATE_LOCK_DIR}" "database migrations" || exit 1
+  trap 'release_geoflow_lock "${MIGRATE_LOCK_DIR}"' EXIT INT TERM
   echo "[entrypoint] php artisan migrate --force"
   php artisan migrate --force --no-interaction
-  rmdir "${MIGRATE_LOCK_DIR}" 2>/dev/null || true
+  release_geoflow_lock "${MIGRATE_LOCK_DIR}"
   trap - EXIT INT TERM
 fi
 
