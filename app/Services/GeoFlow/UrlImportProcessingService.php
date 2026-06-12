@@ -218,7 +218,8 @@ final class UrlImportProcessingService
 
             $pageJson = $this->buildPageJson($parsed, $job);
             $this->abortIfCancelled($job);
-            $analysis = $this->buildAnalysis($parsed, $job, $pageJson);
+            $aiResearchText = trim((string) ($webOut['research_text'] ?? ''));
+            $analysis = $this->buildAnalysis($parsed, $job, $pageJson, $aiResearchText);
             $this->logAiAnalysisSummaryNode(
                 $job,
                 $parseOutput,
@@ -2056,14 +2057,14 @@ final class UrlImportProcessingService
      * @param  array<string, mixed>|null  $pageJson
      * @return array{summary:string,library_name:string,keywords:list<string>,titles:list<string>,knowledge_markdown:string,analysis_source:string,model:mixed}
      */
-    private function buildAnalysis(array $parsed, UrlImportJob $job, ?array $pageJson = null): array
+    private function buildAnalysis(array $parsed, UrlImportJob $job, ?array $pageJson = null, string $aiResearchText = ''): array
     {
         try {
             if ($this->isFastPipelineMode()) {
-                return $this->buildAnalysisFast($parsed, $job, $pageJson);
+                return $this->buildAnalysisFast($parsed, $job, $pageJson, $aiResearchText);
             }
 
-            return $this->buildAnalysisStandard($parsed, $job, $pageJson);
+            return $this->buildAnalysisStandard($parsed, $job, $pageJson, $aiResearchText);
         } catch (Throwable $exception) {
             $pageJson ??= $this->buildPageJson($parsed, $job);
 
@@ -2071,7 +2072,8 @@ final class UrlImportProcessingService
                 $parsed,
                 $job,
                 $pageJson,
-                $exception->getMessage()
+                $exception->getMessage(),
+                $aiResearchText
             );
         }
     }
@@ -2387,7 +2389,7 @@ final class UrlImportProcessingService
      * @param  array<string, mixed>  $pageJson
      * @return array{summary:string,library_name:string,keywords:list<string>,titles:list<string>,knowledge_markdown:string,analysis_source:string,model:mixed,page_json:array<string,mixed>,cleaned:array<string,mixed>}
      */
-    private function buildAnalysisHeuristicFallback(array $parsed, UrlImportJob $job, array $pageJson, string $reason): array
+    private function buildAnalysisHeuristicFallback(array $parsed, UrlImportJob $job, array $pageJson, string $reason, string $aiResearchText = ''): array
     {
         $title = (string) ($parsed['title'] ?? '');
         $text = (string) ($parsed['text'] ?? '');
@@ -2400,9 +2402,15 @@ final class UrlImportProcessingService
         if ($keywords === []) {
             $keywords = ['企业介绍', '产品服务'];
         }
-        $knowledgeMarkdown = UrlImportTextSanitizer::cleanMarkdown(
-            $this->buildKnowledgeMarkdown($parsed, $job, $keywords)
-        );
+        $analysisSource = 'heuristic';
+        if ($aiResearchText !== '') {
+            $knowledgeMarkdown = $this->wrapAiResearchAsKnowledge($aiResearchText, $parsed, $job, $keywords);
+            $analysisSource = 'heuristic_with_ai_research';
+        } else {
+            $knowledgeMarkdown = UrlImportTextSanitizer::cleanMarkdown(
+                $this->buildKnowledgeMarkdown($parsed, $job, $keywords)
+            );
+        }
         $titles = $this->generateTitles($libraryName, $keywords);
         $minTitles = max(4, (int) config('geoflow.url_import_fast.min_decision_titles', 10));
         if (count($titles) < $minTitles && $title !== '') {
@@ -2423,9 +2431,14 @@ final class UrlImportProcessingService
             $job,
             'ai_analysis_fallback',
             'AI 分析降级（规则正文）',
-            ['reason' => Str::limit($reason, 500, '…'), 'pipeline_mode' => $this->isFastPipelineMode() ? 'fast' : 'standard'],
             [
-                'analysis_source' => 'heuristic',
+                'reason' => Str::limit($reason, 500, '…'),
+                'pipeline_mode' => $this->isFastPipelineMode() ? 'fast' : 'standard',
+                'used_ai_research' => $aiResearchText !== '',
+                'ai_research_chars' => mb_strlen($aiResearchText, 'UTF-8'),
+            ],
+            [
+                'analysis_source' => $analysisSource,
                 'knowledge_chars' => mb_strlen($knowledgeMarkdown, 'UTF-8'),
                 'keywords' => $keywords,
                 'titles_count' => count($titles),
@@ -2441,11 +2454,40 @@ final class UrlImportProcessingService
             'keywords' => $keywords,
             'titles' => $titles,
             'knowledge_markdown' => $knowledgeMarkdown,
-            'analysis_source' => 'heuristic',
+            'analysis_source' => $analysisSource,
             'model' => null,
             'page_json' => $pageJson,
             'cleaned' => $cleaned,
         ];
+    }
+
+    /**
+     * 当 AI 一站式分析不可用、但 AI 补充调研已经成功生成 7 节 markdown 时，
+     * 直接以 AI 调研内容为主体构建入库正文（保留 AI 出的章节结构），只在头部/尾部补齐来源与标签。
+     */
+    private function wrapAiResearchAsKnowledge(string $aiResearchText, array $parsed, UrlImportJob $job, array $keywords): string
+    {
+        $title = trim((string) ($parsed['title'] ?? '')) ?: (string) $job->source_domain;
+        $body = UrlImportTextSanitizer::cleanMarkdown(trim($aiResearchText));
+
+        $lines = [];
+        $lines[] = '# '.$title;
+        $lines[] = '';
+        if ($keywords !== []) {
+            $lines[] = '## 关键标签';
+            $lines[] = implode('、', array_slice($keywords, 0, 16));
+            $lines[] = '';
+        }
+        if ($body !== '') {
+            $lines[] = $body;
+            $lines[] = '';
+        }
+        $lines[] = '---';
+        $lines[] = '- 来源 URL：'.(string) $job->normalized_url;
+        $lines[] = '- 来源域名：'.(string) $job->source_domain;
+        $lines[] = '- 整理方式：AI 一站式分析暂不可用，已用「AI 补充调研」7 节 Markdown 重组入库';
+
+        return trim(implode("\n", $lines));
     }
 
     /**
@@ -2539,7 +2581,7 @@ final class UrlImportProcessingService
             'AI 输出关键字段缺失，触发启发式兜底'
         );
 
-        return $this->buildAnalysisHeuristicFallback($parsed, $job, $pageJson, 'ai_response_incomplete');
+        return $this->buildAnalysisHeuristicFallback($parsed, $job, $pageJson, 'ai_response_incomplete', $aiResearchText);
     }
 
     /**
@@ -2588,7 +2630,7 @@ final class UrlImportProcessingService
      * Fast pipeline：1 次 AI 输出 clean + knowledge + keywords + titles。
      * 失败时回退到 buildAnalysisFastTwoStep（兼容旧 2 次 AI 路径）。
      */
-    private function buildAnalysisFast(array $parsed, UrlImportJob $job, ?array $pageJson = null): array
+    private function buildAnalysisFast(array $parsed, UrlImportJob $job, ?array $pageJson = null, string $aiResearchText = ''): array
     {
         $pageJson ??= $this->buildPageJson($parsed, $job);
         $pageJson = UrlImportPromptCatalog::compactPageJsonForPrompt($pageJson);
@@ -2597,16 +2639,16 @@ final class UrlImportProcessingService
             (array) ($pageJson['chunks'] ?? [])
         )));
 
-        $single = $this->tryBuildAnalysisSingleShot($parsed, $job, $pageJson, $chunkIds);
+        $single = $this->tryBuildAnalysisSingleShot($parsed, $job, $pageJson, $chunkIds, $aiResearchText);
         if ($single !== null) {
             return $single;
         }
 
         if ($this->pipelineBudget !== null && ! $this->pipelineBudget->hasTimeFor('ai_analysis')) {
-            return $this->buildAnalysisHeuristicFallback($parsed, $job, $pageJson, 'pipeline_budget_exhausted');
+            return $this->buildAnalysisHeuristicFallback($parsed, $job, $pageJson, 'pipeline_budget_exhausted', $aiResearchText);
         }
 
-        return $this->buildAnalysisFastTwoStep($parsed, $job, $pageJson);
+        return $this->buildAnalysisFastTwoStep($parsed, $job, $pageJson, $aiResearchText);
     }
 
     /**
@@ -2617,7 +2659,7 @@ final class UrlImportProcessingService
      * @param  list<string>  $chunkIds
      * @return array<string, mixed>|null
      */
-    private function tryBuildAnalysisSingleShot(array $parsed, UrlImportJob $job, array $pageJson, array $chunkIds): ?array
+    private function tryBuildAnalysisSingleShot(array $parsed, UrlImportJob $job, array $pageJson, array $chunkIds, string $aiResearchText = ''): ?array
     {
         $text = (string) ($parsed['text'] ?? '');
         $summary = (string) ($parsed['summary'] ?? '');
@@ -2826,7 +2868,7 @@ final class UrlImportProcessingService
         return null;
     }
 
-    private function buildAnalysisFastTwoStep(array $parsed, UrlImportJob $job, ?array $pageJson = null): array
+    private function buildAnalysisFastTwoStep(array $parsed, UrlImportJob $job, ?array $pageJson = null, string $aiResearchText = ''): array
     {
         $title = (string) ($parsed['title'] ?? '');
         $text = (string) ($parsed['text'] ?? '');
@@ -3060,7 +3102,8 @@ final class UrlImportProcessingService
             $parsed,
             $job,
             $pageJson ?? $this->buildPageJson($parsed, $job),
-            $errors !== [] ? implode('；', $errors) : 'ai_analysis_failed'
+            $errors !== [] ? implode('；', $errors) : 'ai_analysis_failed',
+            $aiResearchText
         );
     }
 
@@ -3922,7 +3965,23 @@ final class UrlImportProcessingService
             $normalized = preg_replace('/\s+/u', ' ', $paragraph) ?? $paragraph;
             $isProduct = (bool) preg_match('/[\p{Han}]{2,12}(系统|方案|平台|设备|终端|服务|产品)/u', $normalized);
             $hasProduct = (bool) preg_match('/\d+[\p{Han}A-Za-z]*\s*[\p{Han}]{0,6}(系统|方案|平台|设备|终端|服务|产品|案例|国家|地区|城市|国家或地区|专利|证书|项目|合作|平方米|合作伙伴)/u', $normalized);
-            $isContact = (bool) preg_match('/(电话|邮箱|地址|联系人|联系方式|@|·|·|网址|官方微信|微信公众号|联系|热线|电话:|EMAIL|TEL|FAX)/u', $normalized);
+            $isContact = (bool) preg_match(
+                '/(?:'
+                .'电话\s*[:：]?\s*[\d\-\s]{6,}'
+                .'|邮箱\s*[:：]?\s*[\w.+-]+@[\w.-]+'
+                .'|地址\s*[:：].{4,}'
+                .'|联系人\s*[:：]\s*\S{2,}'
+                .'|热线\s*[:：]?\s*[\d\-]{6,}'
+                .'|TEL\s*[:：]?\s*[\d\-\s]{6,}'
+                .'|FAX\s*[:：]?\s*[\d\-]{6,}'
+                .'|EMAIL\s*[:：]?\s*[\w.+-]+@[\w.-]+'
+                .'|官方微信\s*[:：]?\s*\S{2,}'
+                .'|微信公众号\s*[:：]?\s*\S{2,}'
+                .'|\b1[3-9]\d{9}\b'
+                .'|\b0\d{2,3}[\-\s]?\d{6,8}\b'
+                .')/iu',
+                $normalized
+            );
             $isCompanyIntro = (bool) preg_match('/(是一家|致力于|专注|创立于|成立于|总部|位于|经营范围|主营|简介)/u', $normalized);
 
             if ($isContact) {
