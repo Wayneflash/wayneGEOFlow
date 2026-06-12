@@ -11,6 +11,7 @@ use App\Services\GeoFlow\JobQueueService;
 use App\Services\GeoFlow\TaskLifecycleService;
 use App\Services\GeoFlow\TaskMonitoringQueryService;
 use App\Support\GeoFlow\OutboundHttpProxy;
+use App\Support\GeoFlow\OutboundHttpSsl;
 use App\View\Composers\SiteLayoutComposer;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\View;
@@ -37,6 +38,11 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // 全局出站 HTTPS 证书校验策略：env('APP_ENV')=local 时默认关闭，
+        // production 开启。Laravel\Ai\Embeddings 等 facade 也走 Http 客户端，
+        // 所以这一行同时覆盖 AI / Embedding / URL import / 任意第三方调用。
+        Http::globalOptions(OutboundHttpSsl::httpOptions());
+
         Http::globalMiddleware(OutboundHttpProxy::middleware());
 
         View::composer(['site.layout', 'theme.*.layout'], SiteLayoutComposer::class);
