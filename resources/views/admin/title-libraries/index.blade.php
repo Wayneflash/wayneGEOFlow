@@ -82,10 +82,6 @@
                                     </div>
                                 </div>
                                 <div class="flex shrink-0 flex-wrap items-center justify-end gap-2">
-                                    <a href="{{ route('admin.title-libraries.detail', ['libraryId' => (int) $library['id'], 'distill' => 1]) }}" class="admin-btn-teal h-8 px-3 text-xs">
-                                        <i data-lucide="sparkles" class="h-3.5 w-3.5"></i>
-                                        {{ __('admin.title_distill.button_open') }}
-                                    </a>
                                     <button type="button" onclick="showImportModal({{ (int) $library['id'] }}, @js($library['name']))" class="admin-btn-secondary h-8 px-3 text-xs">
                                         <i data-lucide="upload" class="h-3.5 w-3.5"></i>
                                         {{ __('admin.button.import') }}

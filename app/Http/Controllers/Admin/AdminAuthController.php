@@ -9,6 +9,7 @@ use App\Support\AdminWeb;
 use App\Support\GeoFlow\AdminLoginLockService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\View\View;
 
@@ -97,7 +98,7 @@ class AdminAuthController extends Controller
         return redirect()->route('admin.dashboard');
     }
 
-    public function logout(Request $request): RedirectResponse
+    public function logout(Request $request): RedirectResponse|Response
     {
         /** @var Admin|null $admin */
         $admin = Auth::guard('admin')->user();
@@ -111,7 +112,11 @@ class AdminAuthController extends Controller
         $request->session()->invalidate();
         $request->session()->regenerateToken();
 
-        return redirect()->route('admin.login');
+        if ($request->headers->has('HX-Request')) {
+            return response('', 204)->header('HX-Redirect', route('admin.login'));
+        }
+
+        return redirect()->route('admin.login', [], 303);
     }
 
     public function switchLocale(Request $request, string $locale): RedirectResponse

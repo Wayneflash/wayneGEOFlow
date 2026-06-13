@@ -190,7 +190,7 @@
                     <a href="{{ route('admin.site-settings.index') }}" class="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-slate-700 transition hover:bg-blue-50 hover:text-blue-700">
                         <i data-lucide="settings" class="h-4 w-4"></i>{{ __('admin.nav.site_settings') }}
                     </a>
-                    <form method="POST" action="{{ route('admin.logout') }}">
+                    <form method="POST" action="{{ route('admin.logout') }}" hx-boost="false" data-admin-logout-form>
                         @csrf
                         <button type="submit" class="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50">
                             <i data-lucide="log-out" class="h-4 w-4"></i>{{ __('admin.button.logout') }}
@@ -204,6 +204,15 @@
 
 <script>
     (() => {
+        document.addEventListener('submit', (event) => {
+            const form = event.target?.closest?.('[data-admin-logout-form]');
+            if (!form) return;
+
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            HTMLFormElement.prototype.submit.call(form);
+        }, true);
+
         const mobileSidebar = document.querySelector('[data-admin-mobile-sidebar]');
         const mobileToggle = document.querySelector('[data-admin-mobile-sidebar-toggle]');
         const menuButtons = document.querySelectorAll('[data-admin-menu-button]');

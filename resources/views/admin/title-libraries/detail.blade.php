@@ -323,8 +323,9 @@
                         </details>
 
                         <button type="button" id="distill-generate-btn" class="admin-btn-teal h-10 w-full text-sm sm:w-auto sm:min-w-[10rem]">
-                            <i data-lucide="sparkles" class="h-4 w-4"></i>
-                            {{ __('admin.title_distill.button_generate') }}
+                            <i id="distill-generate-icon" data-lucide="sparkles" class="h-4 w-4"></i>
+                            <i id="distill-generate-spinner" data-lucide="loader-circle" class="hidden h-4 w-4 animate-spin"></i>
+                            <span id="distill-generate-label">{{ __('admin.title_distill.button_generate') }}</span>
                         </button>
                         <p id="distill-status" class="min-h-[1.25rem] text-xs text-slate-500" role="status" aria-live="polite"></p>
                     </div>
@@ -345,8 +346,23 @@
                         <p class="mt-1 text-xs text-slate-500">{{ __('admin.title_distill.empty_result_hint') }}</p>
                     </div>
 
+                    <div id="distill-result-loading" class="hidden flex-1 flex-col items-center justify-center px-6 py-12 text-center">
+                        <i data-lucide="loader-circle" class="h-10 w-10 animate-spin text-teal-500"></i>
+                        <p class="mt-3 text-sm font-semibold text-slate-700">{{ __('admin.title_distill.generating_title') }}</p>
+                        <p class="mt-1 text-xs text-slate-500">{{ __('admin.title_distill.generating_hint') }}</p>
+                    </div>
+
                     <div id="distill-result-wrap" class="hidden min-h-0 flex-1 flex-col">
-                        <textarea id="distill-result" rows="20" class="distill-result-textarea w-full flex-1 px-5 py-4 outline-none focus:ring-0" placeholder=""></textarea>
+                        <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-white px-4 py-2">
+                            <div class="flex flex-wrap items-center gap-2 text-xs">
+                                <button type="button" id="distill-select-all-btn" class="rounded-lg border border-slate-200 px-2.5 py-1 font-medium text-slate-600 hover:bg-slate-50">{{ __('admin.title_distill.select_all') }}</button>
+                                <button type="button" id="distill-invert-btn" class="rounded-lg border border-slate-200 px-2.5 py-1 font-medium text-slate-600 hover:bg-slate-50">{{ __('admin.title_distill.invert_selection') }}</button>
+                                <button type="button" id="distill-dedupe-btn" class="rounded-lg border border-slate-200 px-2.5 py-1 font-medium text-slate-600 hover:bg-slate-50">{{ __('admin.title_distill.dedupe') }}</button>
+                            </div>
+                            <button type="button" id="distill-clear-btn" class="rounded-lg border border-rose-100 px-2.5 py-1 text-xs font-medium text-rose-600 hover:bg-rose-50">{{ __('admin.title_distill.clear_result') }}</button>
+                        </div>
+                        <textarea id="distill-result" class="hidden" aria-hidden="true"></textarea>
+                        <div id="distill-result-list" class="max-h-[22rem] overflow-y-auto px-4 py-3"></div>
                         <p class="border-t border-slate-200 bg-slate-50/60 px-4 py-2 text-xs text-slate-500">{{ __('admin.title_distill.result_edit_hint') }}</p>
                     </div>
                 </div>
@@ -395,6 +411,7 @@
         const keywordOptionsUrlTemplate = @json($keywordOptionsUrlTemplate);
         const distillCsrf = @json(csrf_token());
         const distillAiTimeoutMs = 120000;
+        let distillResultItems = [];
         const distillMessages = {
             keywordRequired: @json(__('admin.title_distill.error.seed_keyword_required')),
             aiModelRequired: @json(__('admin.title_distill.error.ai_model_required')),
@@ -410,7 +427,10 @@
             importCount: @json($distillImportCountLabel),
             resultCount: @json($distillResultCountLabel),
             importDefault: @json(__('admin.title_distill.button_import')),
+            generateDefault: @json(__('admin.title_distill.button_generate')),
+            generatingButton: @json(__('admin.title_distill.button_generating')),
             keywordBadge: @json(__('admin.title_distill.result_keyword_badge')),
+            selectedCount: @json(__('admin.title_distill.selected_count')),
         };
 
         function showDistillModal() {
@@ -472,16 +492,19 @@
         }
 
         function countDistillLines() {
+            return distillResultItems.filter((item) => item.selected && item.title.trim() !== '').length;
+        }
+
+        function syncDistillTextarea() {
             const textarea = document.getElementById('distill-result');
             if (!textarea) {
-                return 0;
+                return;
             }
 
-            return (textarea.value ?? '')
-                .split('\n')
-                .map((line) => line.trim())
-                .filter((line) => line !== '')
-                .length;
+            textarea.value = distillResultItems
+                .filter((item) => item.selected && item.title.trim() !== '')
+                .map((item) => item.title.trim())
+                .join('\n');
         }
 
         function updateDistillKeywordBadge() {
@@ -504,17 +527,20 @@
 
         function updateDistillResultUi() {
             const lineCount = countDistillLines();
+            const totalCount = distillResultItems.filter((item) => item.title.trim() !== '').length;
             const empty = document.getElementById('distill-result-empty');
             const wrap = document.getElementById('distill-result-wrap');
             const countBadge = document.getElementById('distill-result-count');
             const importBtn = document.getElementById('distill-import-btn');
             const importLabel = document.getElementById('distill-import-label');
 
-            empty?.classList.toggle('hidden', lineCount > 0);
-            wrap?.classList.toggle('hidden', lineCount === 0);
+            empty?.classList.toggle('hidden', totalCount > 0);
+            wrap?.classList.toggle('hidden', totalCount === 0);
 
             if (countBadge) {
-                countBadge.textContent = distillMessages.resultCount.replace(':count', String(lineCount));
+                countBadge.textContent = distillMessages.selectedCount
+                    .replace(':selected', String(lineCount))
+                    .replace(':total', String(totalCount));
             }
 
             if (importBtn) {
@@ -528,6 +554,7 @@
             }
 
             updateDistillKeywordBadge();
+            syncDistillTextarea();
         }
 
         function setDistillStatus(text) {
@@ -535,6 +562,40 @@
             if (status) {
                 status.textContent = text;
             }
+        }
+
+        function setDistillGenerating(isGenerating) {
+            const generateBtn = document.getElementById('distill-generate-btn');
+            const generateIcon = document.getElementById('distill-generate-icon');
+            const generateSpinner = document.getElementById('distill-generate-spinner');
+            const generateLabel = document.getElementById('distill-generate-label');
+            const empty = document.getElementById('distill-result-empty');
+            const loading = document.getElementById('distill-result-loading');
+            const wrap = document.getElementById('distill-result-wrap');
+
+            if (generateBtn) {
+                generateBtn.disabled = isGenerating;
+                generateBtn.classList.toggle('cursor-wait', isGenerating);
+                generateBtn.classList.toggle('opacity-90', isGenerating);
+            }
+
+            generateIcon?.classList.toggle('hidden', isGenerating);
+            generateSpinner?.classList.toggle('hidden', !isGenerating);
+
+            if (generateLabel) {
+                generateLabel.textContent = isGenerating ? distillMessages.generatingButton : distillMessages.generateDefault;
+            }
+
+            loading?.classList.toggle('hidden', !isGenerating);
+            loading?.classList.toggle('flex', isGenerating);
+
+            if (isGenerating) {
+                empty?.classList.add('hidden');
+                wrap?.classList.add('hidden');
+                return;
+            }
+
+            updateDistillResultUi();
         }
 
         function normalizeDistillPreviewLine(line) {
@@ -553,9 +614,9 @@
 
         function buildDistillImportText() {
             const seedKeyword = (document.getElementById('distill-seed-keyword')?.value ?? '').trim();
-            const lines = (document.getElementById('distill-result')?.value ?? '')
-                .split('\n')
-                .map((line) => normalizeDistillPreviewLine(line))
+            const lines = distillResultItems
+                .filter((item) => item.selected)
+                .map((item) => normalizeDistillPreviewLine(item.title))
                 .filter((line) => line !== '');
 
             return lines
@@ -563,17 +624,88 @@
                 .join('\n');
         }
 
-        function renderDistillTitles(titles) {
-            const textarea = document.getElementById('distill-result');
-            if (!textarea) {
+        function titleTagFor(title) {
+            const value = String(title ?? '');
+            if (/哪家|排名|排行|榜单|前十|推荐/.test(value)) {
+                return @json(__('admin.title_distill.tag_ranking'));
+            }
+            if (/怎么选|如何选择|避坑|指南|评估|判断/.test(value)) {
+                return @json(__('admin.title_distill.tag_decision'));
+            }
+            if (/什么|哪些|吗|？|\\?/.test(value)) {
+                return @json(__('admin.title_distill.tag_question'));
+            }
+
+            return @json(__('admin.title_distill.tag_general'));
+        }
+
+        function renderDistillResultList() {
+            const list = document.getElementById('distill-result-list');
+            if (!list) {
                 return;
             }
 
+            list.innerHTML = '';
+            distillResultItems.forEach((item, index) => {
+                const row = document.createElement('div');
+                row.className = 'distill-result-row';
+
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.checked = item.selected;
+                checkbox.className = 'mt-2 h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500';
+                checkbox.addEventListener('change', () => {
+                    distillResultItems[index].selected = checkbox.checked;
+                    updateDistillResultUi();
+                });
+
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.value = item.title;
+                input.className = 'distill-result-input';
+                input.addEventListener('input', () => {
+                    distillResultItems[index].title = input.value;
+                    badge.textContent = titleTagFor(input.value);
+                    updateDistillResultUi();
+                });
+
+                const badge = document.createElement('span');
+                badge.className = 'distill-result-tag';
+                badge.textContent = titleTagFor(item.title);
+
+                const remove = document.createElement('button');
+                remove.type = 'button';
+                remove.className = 'distill-result-remove';
+                remove.setAttribute('aria-label', @json(__('admin.button.delete')));
+                remove.innerHTML = '<i data-lucide="x" class="h-3.5 w-3.5"></i>';
+                remove.addEventListener('click', () => {
+                    distillResultItems.splice(index, 1);
+                    renderDistillResultList();
+                    updateDistillResultUi();
+                    window.lucide?.createIcons?.();
+                });
+
+                const content = document.createElement('div');
+                content.className = 'min-w-0 flex-1 space-y-2';
+                content.append(input, badge);
+
+                row.append(checkbox, content, remove);
+                list.appendChild(row);
+            });
+
+            window.lucide?.createIcons?.();
+        }
+
+        function renderDistillTitles(titles) {
             const lines = (titles ?? [])
                 .map((title) => normalizeDistillPreviewLine(title))
                 .filter((title) => title !== '');
 
-            textarea.value = lines.join('\n');
+            distillResultItems = lines.map((title) => ({
+                title,
+                selected: true,
+            }));
+            renderDistillResultList();
             updateDistillResultUi();
         }
 
@@ -637,8 +769,7 @@
                 return;
             }
 
-            const generateBtn = document.getElementById('distill-generate-btn');
-            generateBtn?.setAttribute('disabled', 'disabled');
+            setDistillGenerating(true);
             setDistillStatus(mode === 'ai' ? distillMessages.loadingAi : distillMessages.loadingRule);
 
             const controller = new AbortController();
@@ -690,7 +821,7 @@
                 setDistillStatus(isTimeout ? distillMessages.requestTimeout : distillMessages.requestFailed);
             } finally {
                 window.clearTimeout(timeoutId);
-                generateBtn?.removeAttribute('disabled');
+                setDistillGenerating(false);
             }
         }
 
@@ -704,7 +835,13 @@
             document.getElementById('delete-title-form').submit();
         }
 
-        document.addEventListener('DOMContentLoaded', () => {
+        function initTitleDistillModal() {
+            const modal = document.getElementById('distill-modal');
+            if (!modal || modal.dataset.initialized === '1') {
+                return;
+            }
+            modal.dataset.initialized = '1';
+
             window.lucide?.createIcons?.();
 
             if (new URLSearchParams(window.location.search).get('distill') === '1') {
@@ -727,6 +864,42 @@
             });
             document.getElementById('distill-result')?.addEventListener('input', updateDistillResultUi);
             document.getElementById('distill-seed-keyword')?.addEventListener('input', updateDistillKeywordBadge);
+            document.getElementById('distill-select-all-btn')?.addEventListener('click', () => {
+                const allSelected = distillResultItems.every((item) => item.selected);
+                distillResultItems = distillResultItems.map((item) => ({
+                    ...item,
+                    selected: !allSelected,
+                }));
+                renderDistillResultList();
+                updateDistillResultUi();
+            });
+            document.getElementById('distill-invert-btn')?.addEventListener('click', () => {
+                distillResultItems = distillResultItems.map((item) => ({
+                    ...item,
+                    selected: !item.selected,
+                }));
+                renderDistillResultList();
+                updateDistillResultUi();
+            });
+            document.getElementById('distill-dedupe-btn')?.addEventListener('click', () => {
+                const seen = new Set();
+                distillResultItems = distillResultItems.filter((item) => {
+                    const key = item.title.trim().toLowerCase();
+                    if (key === '' || seen.has(key)) {
+                        return false;
+                    }
+                    seen.add(key);
+                    return true;
+                });
+                renderDistillResultList();
+                updateDistillResultUi();
+            });
+            document.getElementById('distill-clear-btn')?.addEventListener('click', () => {
+                distillResultItems = [];
+                renderDistillResultList();
+                updateDistillResultUi();
+                setDistillStatus('');
+            });
 
             document.getElementById('distill-keyword-library')?.addEventListener('change', (event) => {
                 const libraryId = event.target.value;
@@ -755,8 +928,15 @@
                 document.getElementById('distill-import-text').value = text;
                 document.getElementById('distill-import-form').submit();
             });
+        }
 
-        });
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initTitleDistillModal);
+        } else {
+            initTitleDistillModal();
+        }
+
+        document.addEventListener('htmx:afterSettle', initTitleDistillModal);
 
         document.addEventListener('keydown', (event) => {
             if (event.key !== 'Escape') {
